@@ -35,6 +35,8 @@
 
 修复流程先扫描，复用通过验证的已有组件，再补齐缺失内容并检查修复结果。JDK 与 Gradle 安装在成员用户目录，完整变量包括 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`、`GRADLE_HOME`、`GRADLE_4_5_1_HOME`、`GRADLE_USER_HOME` 及对应 `PATH`。发生冲突或验证失败时保留原文件并记录失败阶段，不把“安装步骤结束”当作最终成功。
 
+已有 IDEA 项目配置时，有项目的修复会在构建前统一 JDK 8 的 SDK 登记与项目引用名称，默认 `azul-1.8`，可由维护者通过 `IDEA_JDK_NAME` 配置。执行前须退出 IDEA；同目录的重复 SDK 名称会合并。尚未导入的项目仍提示待配置，之后完成导入并运行名称同步，见 [IDE 指南](environment/ide.md#统一-jdk-8-登记与项目引用)。
+
 菜单 `6` 只下载，把文件保存到 `~/Downloads/team-java-env/` 的对应子目录。菜单 `8` 校验 IDEA DMG 后只读挂载，将应用复制到当前用户的 `~/Applications`，无需 `sudo`，不修改系统 `/Applications`，也不自动启动 IDEA。同版本、同 build 且完整的现有应用会复用；其他已有目标保留并报错，不覆盖。手动安装和两个应用目录的区别见 [IDE 指南](environment/ide.md)。
 
 工具不下载业务项目，Docker 本次仅登记官方入口，未纳入下载清单。完整工具包 `team-dev-env.zip` 是备用入口：解压后双击 `team-dev-env/开始配置.command`，同样进入菜单；隐藏的 `.support` 必须与入口保持在一起。

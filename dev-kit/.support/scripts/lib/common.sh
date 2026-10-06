@@ -100,3 +100,52 @@ is_jdk8() {
     [[ "$java_version" =~ version[[:space:]]\"1\.8\. ]] &&
         [[ "$javac_version" =~ javac[[:space:]]1\.8\. ]]
 }
+
+# IDEA XML 的统一只读安全入口：先以已知编码解码检查，再交给 XML 解析器。
+# --nonet 不禁止本地外部实体；不能让解析器先解码未检查的 UTF-7/EBCDIC 等内容。
+safe_xml_valid() (
+    set -o pipefail
+    local file="$1" magic encoding=UTF-8 decoder=UTF-8 bom=false
+    [ -f "$file" ] && [ ! -L "$file" ] || return 1
+    command -v iconv >/dev/null 2>&1 && command -v xmllint >/dev/null 2>&1 || return 1
+    magic="$(LC_ALL=C od -An -tx1 -N4 "$file" 2>/dev/null | LC_ALL=C tr -d ' \n')" || return 1
+    case "$magic" in
+        # UTF-32 和不常见字节序明确拒绝，不依赖宿主 libxml 的可选编码支持。
+        0000feff|fffe0000|0000003c|3c000000|00003c00|003c0000) return 1 ;;
+        feff*) encoding=UTF-16BE; decoder=UTF-16; bom=true ;;
+        fffe*) encoding=UTF-16LE; decoder=UTF-16; bom=true ;;
+        003c003f) encoding=UTF-16BE; decoder=UTF-16BE ;;
+        3c003f00) encoding=UTF-16LE; decoder=UTF-16LE ;;
+        *)
+            # UTF-8/ASCII 不含 NUL；避免未识别的 UTF-16 被 libxml 再次自动探测。
+            LC_ALL=C tr -d '\000' < "$file" | cmp -s "$file" - || return 1 ;;
+    esac
+    # iconv 只处理候选文件字节，不解析 XML、不读外部实体、不写临时文件。
+    iconv -f "$decoder" -t UTF-8 "$file" 2>/dev/null | LC_ALL=C awk -v actual="$encoding" -v bom="$bom" '
+        {document=document $0 "\n"}
+        END {
+            sub(/^\357\273\277/, "", document)
+            if (document ~ /<!DOCTYPE|<!ENTITY/) exit 1
+            sub(/^[ \t\r\n]*/, "", document)
+            if (substr(document, 1, 1) != "<") exit 1
+            declared=""
+            if (document ~ /^<\?xml[ \t\r\n]/) {
+                end=index(document, "?>")
+                if (!end) exit 1
+                declaration=substr(document, 1, end+1)
+                if (match(declaration, /encoding[ \t\r\n]*=[ \t\r\n]*["\047][^"\047]*["\047]/)) {
+                    declared=substr(declaration, RSTART, RLENGTH)
+                    sub(/^[^=]*=[ \t\r\n]*["\047]/, "", declared)
+                    sub(/["\047]$/, "", declared)
+                    declared=toupper(declared)
+                }
+            }
+            if (actual == "UTF-8") {
+                if (declared != "" && declared != "UTF-8" && declared != "ASCII" && declared != "US-ASCII") exit 1
+            } else {
+                if (declared != actual && !(bom == "true" && (declared == "" || declared == "UTF-16"))) exit 1
+            }
+        }
+    ' || return 1
+    xmllint --nonet --noout "$file" >/dev/null 2>&1
+)

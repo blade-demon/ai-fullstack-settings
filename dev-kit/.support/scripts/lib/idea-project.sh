@@ -1,11 +1,7 @@
 #!/bin/bash
 # 只读检查 IDEA 的项目关联。使用 macOS 自带 XML 工具，不加载项目脚本或启动 IDE。
 _idea_xml_valid() {
-    [ -f "$1" ] && [ ! -L "$1" ] || return 1
-    # 不解析 DTD/实体，也不把解析错误中的个人配置复制进报告。
-    # UTF-16/32 的 ASCII 标记含 NUL；先移除 NUL，避免编码绕过 DTD 检查。
-    LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C awk '/<!DOCTYPE|<!ENTITY/ {bad=1} END {exit bad}' || return 1
-    xmllint --nonet --noout "$1" >/dev/null 2>&1
+    safe_xml_valid "$1"
 }
 
 _idea_xml_value() {

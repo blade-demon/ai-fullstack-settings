@@ -17,7 +17,9 @@ Java 开发环境修复与验证（macOS）
 
 3. 保存工作并正常退出 IDEA，然后选菜单 1 一键修复。
    它处理 JDK、独立 Gradle、IDEA 和全部六个插件，复用已验证的同版安装，
-   修复完整环境变量，再做最终验证。工具不自动杀掉 IDEA，也不自动打开它。
+   修复完整环境变量；已导入的所选项目会统一 JDK 8 登记与引用名称，再做最终验证。
+   名称默认 azul-1.8，可由维护者通过 IDEA_JDK_NAME 配置。
+   工具不自动杀掉 IDEA，也不自动打开它。
 
 4. 已选择项目：按 IDEA 的 Wrapper 或 LOCAL 实际目录执行终端 build，默认包含测试。
    尚无 IDEA 项目配置时使用受管独立 Gradle，并提示待导入；未知分发配置会失败。
@@ -84,6 +86,13 @@ IDEA_CONFIG_DIR 默认 ~/Library/Application Support/JetBrains/IdeaIC2024.3。
 检查关注 Project SDK、Gradle JVM 是否登记且有效 JDK 8，以及 LOCAL 的 Gradle 目录。
 待配置时打印实际 JDK/Gradle 路径与设置入口，不自动修改 IDEA 配置或启动 GUI。
 已选项目待配置时，环境扫描返回 1；修复预检以阶段退出码 2 记录并继续 SDK/构建验证。
+
+有项目的修复会在预检前统一 SDK 登记名称、Project SDK、Gradle JVM 和模块旧名称引用，
+默认名称 azul-1.8。同目录的重复名称会合并，其他 JDK 与 Gradle 分发设置保留。
+执行前须完全退出 IDEA；首次修改备份 .bak，重复运行相同配置不再改写。
+名称冲突或配置无法安全解析时，停止并报告失败，不开始后续构建。
+尚未导入的项目先完成 IDEA 导入，再运行名称同步；扫描入口仍保持只读。
+其他项目若使用被合并的旧名称，也需逐一同步，否则 IDEA 可能再次补回旧名称。
 
 在 IDEA 中仍需手动确认：
   Project SDK：实际 JAVA_HOME 对应的 JDK 8；

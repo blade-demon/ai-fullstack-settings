@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from xml.parsers.expat import ExpatError
 
 
@@ -96,6 +97,39 @@ def dedicated_jdk(root, home):
     return True
 
 
+def request_idea_quit(app_path, pid, executable_path=None):
+    """向已经存在且路径匹配的 PID 发正常退出请求；不启动应用或强制终止。"""
+    if type(pid) is not int or pid <= 0:
+        raise CleanupError("无法确定 IDEA 实例的 PID，请保存工作并正常退出后重试。")
+    app_path = Path(app_path).resolve()
+    executable_path = Path(executable_path or app_path / "Contents/MacOS/idea").resolve()
+    try:
+        relative = executable_path.relative_to(app_path).as_posix()
+    except ValueError:
+        raise CleanupError("IDEA 运行可执行文件不在所选应用内，未发送退出请求；请正常退出后重试。")
+    if not re.fullmatch(r"Contents/(?:MacOS/idea|(?:jbr|jdk)/(?:Contents/Home/)?bin/java)", relative):
+        raise CleanupError("无法确认 IDEA 运行可执行路径，未发送退出请求；请正常退出后重试。")
+    script = '''ObjC.import("AppKit");
+function run() {
+    var running = $.NSRunningApplication.runningApplicationWithProcessIdentifier(%s);
+    if (running.isNil()) throw new Error("无法定位此 PID 的运行应用，未发送退出请求");
+    var bundlePath = ObjC.unwrap(running.bundleURL.path.stringByResolvingSymlinksInPath);
+    var executablePath = ObjC.unwrap(running.executableURL.path.stringByResolvingSymlinksInPath);
+    if (bundlePath !== %s || executablePath !== %s) {
+        throw new Error("IDEA PID 的应用或可执行路径已变化，未发送退出请求");
+    }
+    if (!running.terminate) throw new Error("macOS 拒绝正常退出请求");
+    return "requested";
+}''' % (pid, json.dumps(str(app_path)), json.dumps(str(executable_path)))
+    try:
+        result = subprocess.run(["/usr/bin/osascript", "-l", "JavaScript", "-e", script],
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise CleanupError("无法发送 IDEA 正常退出请求；请保存工作并正常退出后重试：{}".format(error)) from error
+    if result.returncode:
+        raise CleanupError("IDEA 正常退出请求失败（可能未获 Automation 权限）；请保存工作并正常退出后重试：{}".format(result.stderr.strip()))
+
+
 @dataclass
 class Removal:
     path: Path
@@ -104,6 +138,7 @@ class Removal:
     system: bool = False
     ownership: tuple = ()
     content: bytes = None
+    app_files: tuple = ()
 
 
 @dataclass
@@ -133,6 +168,9 @@ class Plan:
 
     @staticmethod
     def verify_removal(item):
+        for path, stamp, content in item.app_files:
+            if not path.is_file() or identity(path) != stamp or (content is not None and path.read_bytes() != content):
+                raise CleanupError("IDEA 应用标识或可执行文件在预览后发生变化，已保留：{}".format(item.path))
         if item.content is not None:
             if item.path.is_symlink() or not item.path.is_file() or item.path.read_bytes() != item.content:
                 raise CleanupError("待清理的旧配置备份已变化，停止清理：{}".format(item.path))
@@ -163,9 +201,10 @@ class Plan:
         lines.append("安装、插件及配置直接删除，不生成备份，不自动回滚；请保存工作并退出相关程序。")
         return "\n".join(lines)
 
-    def preflight(self):
-        for check in self.checks:
-            check()
+    def preflight(self, check_processes=True):
+        if check_processes:
+            for check in self.checks:
+                check()
         if self.blockers:
             raise CleanupError("存在无法安全处理的项目，尚未执行任何修改：\n" + "\n".join(self.blockers))
         if not self.include_system and any(item.system for item in self.removals):
@@ -262,7 +301,7 @@ class Cleaner:
                  environ=None, include_system=False, remove_caches=False,
                  extra_jdks=(), extra_gradles=(), extra_profiles=(), include_idea=False,
                  extra_idea_apps=(), extra_idea_plugins=(), system_apps=Path("/Applications"),
-                 process_reader=None):
+                 process_reader=None, include_idea_apps=False, quit_requester=None, quit_timeout=30):
         self.home = Path(home).resolve()
         if self.home == Path("/"):
             raise CleanupError("HOME 不能是根目录。")
@@ -275,12 +314,17 @@ class Cleaner:
         self.plan = Plan(self.home, include_system)
         self.bin_paths = set()
         self.include_idea = include_idea
+        self.include_idea_apps = include_idea_apps or include_idea
         self.extra_idea_apps = extra_idea_apps
         self.extra_idea_plugins = extra_idea_plugins
         self.system_apps = Path(system_apps)
         self.process_reader = process_reader or self.read_processes
-        if (extra_idea_apps or extra_idea_plugins) and not include_idea:
-            raise CleanupError("自定义 IDEA 应用或插件目录须同时使用 --include-idea。")
+        self.quit_requester = quit_requester or request_idea_quit
+        self.quit_timeout = quit_timeout
+        if extra_idea_apps and not self.include_idea_apps:
+            raise CleanupError("自定义 IDEA 应用须同时使用 --include-idea-apps 或 --include-idea。")
+        if extra_idea_plugins and not include_idea:
+            raise CleanupError("自定义 IDEA 插件目录须同时使用 --include-idea。")
 
     def path(self, value):
         value = str(value).replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))
@@ -586,7 +630,7 @@ class Cleaner:
 
     def scan(self):
         self.scan_legacy_backup()
-        if self.include_idea:
+        if self.include_idea_apps:
             self.scan_idea()
         team = self.home / ".local/share/java-dev"
         self.container(team, "JDK", "jdk*")
@@ -645,7 +689,9 @@ class Cleaner:
         self.plan.blockers = list(dict.fromkeys(self.plan.blockers))
         self.plan.notes = list(dict.fromkeys(self.plan.notes))
         self.plan.notes.append("保留业务项目、系统 Java 占位程序、其他 SDKMAN 工具及 SDK 下载压缩包。")
-        if not self.include_idea:
+        if self.include_idea_apps and not self.include_idea:
+            self.plan.notes.append("仅删除所选 IDEA 软件；保留 IDEA 用户配置、SDK 登记、用户插件、缓存及 Local History。")
+        elif not self.include_idea:
             self.plan.notes.append("保留 IDEA 与其内置 JBR；清理 IDEA 应用、配置和插件须加 --include-idea。")
         self.plan.notes.append("/etc 全局配置、launchctl 环境、安装器收据及未列出的自定义位置需另行核对。")
         return self.plan
@@ -687,16 +733,70 @@ class Cleaner:
 
     @staticmethod
     def read_processes():
-        result = subprocess.run(["/bin/ps", "-ax", "-o", "command="], text=True,
+        result = subprocess.run(["/bin/ps", "-ax", "-ww", "-o", "pid=", "-o", "command="], text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
         if result.returncode:
             raise CleanupError("无法检查 IDEA 进程，停止清理：" + result.stderr.strip())
         return result.stdout.splitlines()
 
+    def running_idea_instances(self):
+        instances = []
+        for line in self.process_reader():
+            parsed = re.match(r"^\s*([0-9]+)\s+(.*)$", line)
+            pid, command = (int(parsed.group(1)), parsed.group(2)) if parsed else (None, line.strip())
+            selector = re.search(r"-Didea\.paths\.selector=(?:IdeaIC|IntelliJIdea|IntelliJ)[0-9]", command)
+            app = re.match(r"^((/.*?\.app)/Contents/(MacOS/idea|(?:jbr|jdk)/(?:Contents/Home/)?bin/java))(?:\s|$)", command)
+            if app and (app.group(3) == "MacOS/idea" or selector):
+                path = Path(app.group(2)).resolve()
+                executable = Path(app.group(1)).resolve()
+                # 其他 JetBrains 应用即使可执行文件同名，也不属于 IDEA 范围。
+                try:
+                    with (path / "Contents/Info.plist").open("rb") as source:
+                        metadata = plistlib.load(source)
+                    if isinstance(metadata, dict) and metadata.get("CFBundleIdentifier") not in IDEA_IDS:
+                        continue
+                except (OSError, ValueError, plistlib.InvalidFileException, ExpatError):
+                    pass  # 无法识别的运行实例保守阻止完整 IDEA 配置清理。
+                instances.append((path, pid, executable))
+            elif selector:
+                instances.append((None, pid, None))
+        return instances
+
+    def selected_idea_apps(self):
+        return {item.path.resolve() for item in self.plan.removals
+                if item.kind == "IDEA 应用" and not item.path.is_symlink()}
+
     def ensure_idea_stopped(self):
-        for command in self.process_reader():
-            if re.search(r"\.app/Contents/MacOS/idea(?:\s|$)", command) or re.search(r"-Didea\.paths\.selector=(?:IdeaIC|IntelliJIdea|IntelliJ)[0-9]", command):
-                raise CleanupError("IDEA 仍在运行，请保存工作并正常退出后重新执行；工具不会结束进程。")
+        selected = self.selected_idea_apps()
+        if any(self.include_idea or app is None or app in selected for app, _, _ in self.running_idea_instances()):
+            raise CleanupError("所选 IDEA 仍在运行，请保存工作并正常退出后重试；尚未执行清理。")
+
+    def quit_selected_idea(self):
+        """只在最终确认后调用；任一实例未退出则不执行任何清理。"""
+        if not self.include_idea_apps:
+            return False
+        selected = self.selected_idea_apps()
+        instances = self.running_idea_instances()
+        if any(app is None or (self.include_idea and app not in selected) for app, _, _ in instances):
+            raise CleanupError("另有未选定或无法定位的 IDEA 正在使用配置；请保存工作并正常退出后重试，尚未执行清理。")
+        running = [(app, pid, executable) for app, pid, executable in instances if app in selected]
+        if any(pid is None for _, pid, _ in running):
+            raise CleanupError("无法精确确定所选 IDEA 的 PID；请保存工作并正常退出后重试，尚未执行清理。")
+        for app, pid, executable in running:
+            print("请求 IDEA 正常退出：{}（PID {}）；若出现保存对话框，请处理后退出。".format(app, pid))
+            try:
+                self.quit_requester(app, pid, executable)
+            except (CleanupError, OSError, subprocess.TimeoutExpired) as error:
+                raise CleanupError("IDEA 未能正常退出，软件和清理目标均保留；请保存工作并正常退出后重试：{}".format(error)) from error
+        deadline = time.monotonic() + self.quit_timeout
+        while running:
+            if not any(app is None or app in selected for app, _, _ in self.running_idea_instances()):
+                break
+            if time.monotonic() >= deadline:
+                raise CleanupError("IDEA 正常退出超时或已取消（可能仍有保存对话框）；软件和清理目标均保留，请正常退出后重试。")
+            time.sleep(min(0.25, max(0, deadline - time.monotonic())))
+        self.ensure_idea_stopped()
+        return bool(running)
 
     def idea_path_guard(self, path):
         protected = {self.home, *self.home.parents, self.system_apps, Path("/Library"),
@@ -739,8 +839,8 @@ class Cleaner:
         if plist.is_symlink():
             raise CleanupError("IDEA 应用标识是符号链接，已保留：{}".format(plist))
         try:
-            with plist.open("rb") as source:
-                metadata = plistlib.load(source)
+            content = plist.read_bytes()
+            metadata = plistlib.loads(content)
         except (OSError, ValueError, plistlib.InvalidFileException, ExpatError) as error:
             raise CleanupError("无法识别 IDEA 应用标识：{}".format(path)) from error
         if not isinstance(metadata, dict) or metadata.get("CFBundleIdentifier") not in IDEA_IDS:
@@ -752,10 +852,11 @@ class Cleaner:
         resolved = path.resolve()
         if path.is_symlink():
             self.plan.notes.append("IDEA 应用只删除链接，不跟随外部目标：{} -> {}".format(path, resolved))
-        self.plan.removals.append(Removal(path, "IDEA 应用", identity(path), self.system_apps in path.parents))
+        executable = path / "Contents/MacOS/idea"
+        self.plan.removals.append(Removal(path, "IDEA 应用", identity(path), self.system_apps in path.parents,
+                                          app_files=((plist, identity(plist), content), (executable, identity(executable), None))))
 
-    def scan_idea(self):
-        self.plan.checks.append(self.ensure_idea_stopped)
+    def scan_idea_apps(self):
         for root in (self.home / "Applications", self.system_apps):
             if not present(root):
                 continue
@@ -774,6 +875,12 @@ class Cleaner:
             apps.append(self.environ["IDEA_APP"])
         for path in apps:
             self.add_idea_app(path, explicit=True)
+
+    def scan_idea(self):
+        self.plan.checks.append(self.ensure_idea_stopped)
+        self.scan_idea_apps()
+        if not self.include_idea:
+            return
         roots = [(self.home / "Library/Application Support/JetBrains", "IDEA 用户配置与插件"),
                  (self.home / "Library/Application Support", "IDEA 旧版插件"),
                  (self.home / "Library/Preferences", "IDEA 旧版用户配置")]
@@ -819,15 +926,29 @@ class Cleaner:
 
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description="macOS 维护者测试工具：只清理有本工具来源标记的 JDK/Gradle，可包含 IDEA 与插件；无备份，默认只预览。")
+def verify_confirmed_scope(approved, refreshed):
+    """IDEA 退出可能写配置；允许内容变化，不扩大已经确认的操作路径。"""
+    previous = {(item.path, item.kind, item.system): item for item in approved.removals}
+    for item in refreshed.removals:
+        old = previous.get((item.path, item.kind, item.system))
+        if old is None or old.stamp[:2] != item.stamp[:2] or old.ownership != item.ownership or old.app_files != item.app_files:
+            raise CleanupError("IDEA 退出后清理目标发生变化；尚未执行清理，请重新运行并确认计划：{}".format(item.path))
+    if not {edit.path for edit in refreshed.edits}.issubset({edit.path for edit in approved.edits}):
+        raise CleanupError("IDEA 退出后出现新的配置清理目标；尚未执行清理，请重新确认计划。")
+    if not {item.path for item in refreshed.empty_dirs}.issubset({item.path for item in approved.empty_dirs}):
+        raise CleanupError("IDEA 退出后出现新的空目录清理目标；尚未执行清理，请重新确认计划。")
+
+
+def main(argv=None, cleaner_factory=None, input_reader=None):
+    parser = argparse.ArgumentParser(description="macOS 维护者测试工具：交互终端引导选择并确认；非交互默认仅预览，无备份。")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="执行计划，需输入 DELETE")
-    mode.add_argument("--dry-run", action="store_true", help="只预览（默认）")
+    mode.add_argument("--dry-run", action="store_true", help="只预览，不提问、不退出应用")
     parser.add_argument("--yes", action="store_true", help="仅配合 --apply 跳过输入确认")
     parser.add_argument("--include-system", action="store_true", help="包含系统 JDK 与系统 Applications 中的 IDEA，必要时逐项 sudo")
     parser.add_argument("--include-idea", action="store_true", help="直接删除 IDEA 全版本应用、配置及插件，不备份")
-    parser.add_argument("--idea-app", action="append", default=[], metavar="绝对路径", help="额外 IDEA .app，可重复，须 --include-idea")
+    parser.add_argument("--include-idea-apps", action="store_true", help="只删除 IDEA 应用，保留用户配置、SDK 登记及插件")
+    parser.add_argument("--idea-app", action="append", default=[], metavar="绝对路径", help="额外 IDEA .app，可重复，须 --include-idea-apps 或 --include-idea")
     parser.add_argument("--idea-plugins-dir", action="append", default=[], metavar="绝对路径", help="额外 IDEA 专属插件目录，可重复，须 --include-idea")
     parser.add_argument("--remove-caches", action="store_true", help="包含 IDEA 时删除其缓存、日志和本地历史；Gradle 共享缓存始终保留")
     parser.add_argument("--jdk-dir", action="append", default=[], metavar="绝对路径", help="额外 JDK 查找目录，仍须有本工具来源标记，可重复")
@@ -841,22 +962,52 @@ def main(argv=None):
             raise CleanupError("本工具面向 macOS；不在 Windows/Linux 上执行清理。")
         if os.geteuid() == 0:
             raise CleanupError("请以目标用户运行，不要对整个脚本使用 sudo。")
-        cleaner = Cleaner(Path.home(), include_system=args.include_system,
-                          remove_caches=args.remove_caches, extra_jdks=args.jdk_dir,
-                          extra_gradles=args.gradle_dir, extra_profiles=args.profile,
-                          include_idea=args.include_idea, extra_idea_apps=args.idea_app,
-                          extra_idea_plugins=args.idea_plugins_dir)
+        factory = cleaner_factory or Cleaner
+        read_answer = input_reader or input
+        terminal = sys.stdin.isatty() and sys.stdout.isatty()
+        guided = terminal and not args.dry_run and not args.yes
+
+        def make_cleaner(include_apps=None):
+            return factory(Path.home(), include_system=args.include_system,
+                           remove_caches=args.remove_caches, extra_jdks=args.jdk_dir,
+                           extra_gradles=args.gradle_dir, extra_profiles=args.profile,
+                           include_idea=args.include_idea, extra_idea_apps=args.idea_app,
+                           extra_idea_plugins=args.idea_plugins_dir,
+                           include_idea_apps=args.include_idea_apps if include_apps is None else include_apps)
+
+        if guided and not (args.include_idea or args.include_idea_apps):
+            discovery = make_cleaner(True)
+            discovery.scan_idea_apps()
+            apps = [item.path for item in discovery.plan.removals if item.kind == "IDEA 应用"]
+            if apps:
+                print("检测到以下 IDEA 软件：\n" + "\n".join("  " + str(path) for path in apps))
+                print("选择删除时仅包含这些应用；保留 IDEA 用户配置、SDK 登记和用户插件。")
+                args.include_idea_apps = read_answer("是否删除上述 IDEA 软件？[y/N]：").strip().lower() in ("y", "yes")
+            else:
+                print("未在当前扫描范围发现可识别的 IDEA 软件。")
+            if not args.include_idea_apps:
+                print("本次保留 IDEA 软件、配置和插件；继续核对本工具 SDK 与环境配置清理计划。")
+        cleaner = make_cleaner()
         plan = cleaner.scan()
         print(plan.describe())
-        if not args.apply:
+        if not args.apply and not guided:
             print("仅预览，未修改文件。执行需加 --apply；完整重装测试加 --include-idea --include-system --remove-caches。")
             return 0
-        plan.preflight()
+        # 系统目录、来源标记与文件保护先核对；最终确认前不退出应用。
+        plan.preflight(check_processes=False)
         if not args.yes:
-            if not sys.stdin.isatty():
+            if not terminal:
                 raise CleanupError("非交互输入不执行删除；自动测试须明确指定 --apply --yes。")
-            if input("确认按上述计划永久清理软件、插件和配置（无备份）？输入 DELETE：").strip() != "DELETE":
+            if read_answer("确认按上述计划永久清理软件、插件和配置（无备份）？输入 DELETE：").strip() != "DELETE":
                 raise CleanupError("已取消，未执行清理。")
+        plan.preflight(check_processes=False)
+        if cleaner.quit_selected_idea():
+            refreshed_cleaner = make_cleaner()
+            refreshed = refreshed_cleaner.scan()
+            verify_confirmed_scope(plan, refreshed)
+            refreshed.preflight()
+            print("IDEA 已正常退出；重新核对后的清理计划：\n" + refreshed.describe())
+            plan = refreshed
         plan.apply()
         return 0
     except (CleanupError, OSError, subprocess.TimeoutExpired) as error:

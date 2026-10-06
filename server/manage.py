@@ -36,7 +36,7 @@ SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 SERVER = re.compile(r"(?:[A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?\Z")
 PUBLISHED = ("start.command", "start.zip", "team-dev-env.zip",
              "dev-env/team-dev-env.tar.gz", "dev-env/team-dev-env.tar.gz.sha256")
-TEXT_SUFFIXES = {".sh", ".command", ".txt", ".yaml", ".yml", ".tsv", ".json", ".in"}
+TEXT_SUFFIXES = {".sh", ".command", ".txt", ".yaml", ".yml", ".tsv", ".json", ".in", ".xsl"}
 DEVICES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
 DEVICES.update("%s%s" % (prefix, number) for prefix in ("COM", "LPT") for number in "123456789¹²³")
 

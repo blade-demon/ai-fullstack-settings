@@ -6,7 +6,7 @@
 
 1. 连接团队内网，下载维护者提供的 **`start.zip`**，解压并双击 **「开始配置.command」**。入口下载、校验完整工具后打开菜单，先显示环境扫描结果。
 2. 有业务项目时，先选 **菜单 `3`**，选择包含 `build.gradle` 或 `build.gradle.kts` 的项目根目录。选择本地 Gradle 时不要求 Wrapper；IDEA 选择 Wrapper 时需有完整可执行的 Wrapper。本工具仓库不能代替业务项目。
-3. 保存工作并退出 IDEA，然后选 **菜单 `1` 一键修复**。它修复 JDK、独立 Gradle、IDEA 和全部六个插件，检查完整持久化环境变量；已验证的同版安装会复用。
+3. 保存工作并退出 IDEA，然后选 **菜单 `1` 一键修复**。它修复 JDK、独立 Gradle、IDEA 和全部六个插件，检查完整持久化环境变量；已验证的同版安装会复用。已导入 IDEA 的所选项目会统一 JDK 8 登记与引用名称，默认 `azul-1.8`。
 4. 查看最终结果及修复历史。已选项目时，按 IDEA 的 Wrapper 或 LOCAL 分发设置执行终端 `build`；无 IDEA 项目配置时使用受管独立 Gradle 并提示待导入。只有退出码为零且输出包含 `BUILD SUCCESSFUL`，才算构建通过。IDEA 待配置时报告 `PROJECT_BUILD_VERIFIED_IDEA_PENDING`，仍需完成 IDEA 设置；未选项目时明确显示**未执行项目构建**。
 5. 新开终端使环境配置生效；打开 IDEA 后按 [IDE 指南](docs/environment/ide.md)确认 Project SDK、Gradle JVM 和分发设置，并执行 Gradle 同步。静态配置可解析及终端构建通过均不代表 GUI 同步成功。
 
@@ -36,6 +36,7 @@
 | Gradle 用户缓存 | `~/.gradle`，可通过 `GRADLE_USER_HOME` 指定 |
 | IDEA | `~/Applications/IntelliJ IDEA CE.app`，不是系统 `/Applications` |
 | IDEA 配置 | `~/Library/Application Support/JetBrains/IdeaIC2024.3`，可通过 `IDEA_CONFIG_DIR` 指定 |
+| IDEA JDK 8 名称 | `azul-1.8`，可通过 `IDEA_JDK_NAME` 指定；与实际安装路径分别管理 |
 | IDEA 插件 | `~/Library/Application Support/JetBrains/IdeaIC2024.3/plugins` |
 | 受管环境 | `~/.config/java-dev/jdk.sh`、`gradle.sh`，由同目录 `env.sh` 聚合加载 |
 
@@ -54,7 +55,7 @@ JDK 配置包含 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`；Gradle 配置包含 
 ├── result.tsv               # 最终状态、退出码、范围及项目
 ├── logs/                    # SDK、IDEA、插件、构建等阶段输出
 ├── before/、after/          # 前后配置快照
-├── config-changes.diff      # 工具管理区块的配置差异
+├── config-changes.diff      # 受管环境与 IDEA SDK 相关字段差异
 └── plugin-backups/          # 若替换插件，保存对应原目录
 ```
 
@@ -100,6 +101,9 @@ bash dev-kit/.support/scripts/runtime/verify-gradle.sh --project "/absolute/path
 # 只读检查 IDEA 项目配置；不会修改配置或启动 GUI
 bash dev-kit/.support/scripts/check-idea-project.sh --project "/absolute/path/to/java-project"
 
+# 单独统一 SDK 登记和所选项目引用；执行前保存工作并退出 IDEA
+bash dev-kit/.support/scripts/runtime/config-idea-sdk.sh --project "/absolute/path/to/java-project"
+
 # 在当前终端加载已生成环境；自定义 ENV_FILE 时替换路径
 source "$HOME/.config/java-dev/env.sh"
 
@@ -112,7 +116,7 @@ python3 -m unittest discover -s tests -v
 
 `repair-env.sh --scope all|jdk|gradle|idea|plugins` 可选择修复范围；指定 `--project` 时仍需通过实际项目构建，并检查报告中的 IDEA 配置状态。直接调用 SDK 安装脚本适合单项调试；需要完整前后快照和汇总历史时，使用菜单或 `repair-env.sh`。
 
-维护者进行 macOS 实机重装测试前，可运行 `bash tools/uninstall-java-gradle.sh` 预览本工具 JDK/Gradle 与受管配置的清理计划；仅删除带有效 `.team-java-env-install.json` 来源标记的 SDK，复用或旧版无标记安装、外部 SDK 的原有变量与 PATH、Gradle 用户配置和缓存均保留。加 `--include-idea` 同时清理各版本 IDEA 应用、专属配置和插件，再按需加 `--apply` 执行；系统安装需 `--include-system`，`--remove-caches` 仅额外删除 IDEA 缓存、Local History 和日志。清理不创建配置或插件备份、不自动回滚，只保存操作记录。此工具需要 Python 3.8+，独立于成员菜单和分发；参数与范围限制见[实机清理指南](docs/environment/cleanup.md)。
+维护者进行 macOS 实机重装测试前，可运行 `bash tools/uninstall-java-gradle.sh` 进入交互引导，选择是否删除 IDEA 软件、核对清理计划并输入 `DELETE` 确认；确认后请求正常退出 IDEA，再删除软件。退出失败会停止清理。仅预览时加 `--dry-run`，非交互默认也只预览。SDK 仅删除带有效 `.team-java-env-install.json` 来源标记的安装，外部 SDK 与 Gradle 用户配置和缓存均保留。`--include-idea-apps` 仅删除 IDEA 软件，`--include-idea` 同时清理配置和用户插件；系统安装需 `--include-system`，`--remove-caches` 仅额外删除 IDEA 缓存、Local History 和日志。清理不创建配置或插件备份、不自动回滚，只保存操作记录。此工具需要 Python 3.8+，独立于成员菜单和分发；参数与范围限制见[实机清理指南](docs/environment/cleanup.md)。
 
 本仓库测试使用临时 HOME、微型 SDK 和模拟项目；这些结果不代表真实业务项目已经构建通过，也不代表 Windows 实机安装已经验证。安装资源不包含业务 Maven/Gradle 依赖缓存、额外 JDBC 驱动或 MySQL 镜像，完全离线构建仍需项目维护者准备并实测。
 

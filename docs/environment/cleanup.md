@@ -1,12 +1,12 @@
 # 维护者实机测试前清理 JDK、Gradle 与 IDEA
 
-`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置；加 `--include-idea` 后同时删除各版本 IDEA 应用、专属配置和用户插件，便于重新测试安装流程。它需要 **Python 3.8+**，仅供维护者使用，不进入成员菜单或分发工具包。
+`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置。交互运行时会询问是否同时删除检测到的 IDEA 软件；默认保留 IDEA 配置和用户插件。完整重装可显式加 `--include-idea`，同时删除应用、专属配置和用户插件。它需要 **Python 3.8+**，仅供维护者使用，不进入成员菜单或分发工具包。
 
 本项目通过 tar 归档安装 JDK、ZIP 安装 Gradle、DMG 安装 IDEA。JDK/Gradle 的删除依据是安装根目录中的有效来源标记 `.team-java-env-install.json`：`schema` 为 `1`、`tool` 为 `team-java-env`、`kind` 分别为 `jdk` 或 `gradle`，并且目录结构通过相应 SDK 校验。IDEA 应用继续按静态应用标识识别。
 
 只有今后本工具新下载、校验并发布的 SDK 才写入来源标记。复用已有或外部 SDK 时不添加标记；旧版安装即使位于默认 `~/.local/share/java-dev` 下，只要没有有效标记也会保留。目录名、版本号、`JAVA_HOME` 或其他环境引用都不能代替来源证明。
 
-默认只预览。脚本不会执行已安装的 Java/Gradle/IDEA，也不会加载用户环境文件或 Shell 配置。先保存工作、退出使用这些 SDK 的程序及 IDEA，检查预览中的具体路径，再决定执行范围。发现 IDEA 正在运行时，IDEA 清理会被阻止；工具不会自动结束进程。
+真实交互终端默认进入清理引导；非交互默认和显式 `--dry-run` 只预览。脚本不执行已安装的 Java/Gradle/IDEA 二进制，也不加载用户环境文件或 Shell 配置。先保存工作，核对展示的路径和范围；最终输入 `DELETE` 确认后，才请求正常退出所选 IDEA。若有未保存内容、用户取消退出、系统拒绝自动化请求或退出超时，会停止全部清理并保留软件，提示手动退出后重试；不会强制结束 IDEA。
 
 **清理工具直接删除或清理所选内容，不备份 JDK/Gradle 配置、IDEA 应用、配置或插件，也不自动回滚。** 外部 SDK、原有 Shell 变量与 PATH 引用、用户的版本管理选择以及 Gradle 用户配置和缓存都会保留。
 
@@ -15,11 +15,17 @@
 在仓库根目录运行：
 
 ```bash
-# 默认预览；与 --dry-run 相同，不卸载、不改配置
+# 在交互终端中进入引导，选择是否删除 IDEA，再核对并确认完整计划
 bash tools/uninstall-java-gradle.sh
+
+# 只预览；不询问、不退出 IDEA、不卸载或改配置
+bash tools/uninstall-java-gradle.sh --dry-run
 
 # 执行所选范围；显示计划后必须输入 DELETE 确认
 bash tools/uninstall-java-gradle.sh --apply
+
+# 只删除 IDEA 软件，保留用户配置和插件
+bash tools/uninstall-java-gradle.sh --include-idea-apps --apply
 
 # 纳入带有效来源标记的系统 JDK；Gradle 用户配置和缓存仍保留
 bash tools/uninstall-java-gradle.sh --include-system --dry-run
@@ -34,21 +40,24 @@ bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-cac
 bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-caches --apply
 ```
 
-`--apply --yes` 可省略输入确认，适合已经核对计划的自动化测试；`--yes` 必须与 `--apply` 搭配。预览不修改文件，也不创建操作记录。
+交互引导中的“是否删除 IDEA”用于选择范围；输入 `DELETE` 是对完整永久清理计划的最终确认。回答否、留空或取消 IDEA 选择时，会明确提示保留 IDEA。最终确认之前不关闭应用，也不删除文件。退出应用后重新扫描并校验，避免 IDEA 保存配置使旧计划失效。
 
-发现计划删除的带有效来源标记的系统 JDK，或 `/Applications` 中的 IDEA 时，未加 `--include-system` 会阻止整个 `--apply`，此时尚未修改文件或卸载软件。IDEA 仅在指定 `--include-idea` 时纳入计划。加上所需参数重新预览并核对后，再执行清理；不要对整个脚本使用 `sudo`。
+`--apply --yes` 可省略输入确认，适合已经核对计划的自动化测试；`--yes` 必须与 `--apply` 搭配。非交互执行须显式指定删除范围；预览不修改文件、不退出 IDEA，也不创建操作记录。
+
+发现计划删除的带有效来源标记的系统 JDK，或 `/Applications` 中的 IDEA 时，未加 `--include-system` 会阻止清理，且不会请求退出 IDEA。IDEA 在交互选择后或显式使用 `--include-idea-apps` / `--include-idea` 时纳入计划。加上所需参数重新预览并核对后，再执行清理；不要对整个脚本使用 `sudo`。
 
 | 参数 | 用途 |
 | --- | --- |
-| `--dry-run` | 只展示安装、配置及待处理问题，默认行为 |
+| `--dry-run` | 只展示安装、配置及待处理问题；不询问、不退出应用；非交互默认行为 |
 | `--apply` | 按计划执行；默认要求输入 `DELETE` |
 | `--yes` | 与 `--apply` 搭配，省略输入确认 |
 | `--include-system` | 允许清理带有效来源标记的系统 JDK；开启 IDEA 清理时也允许 `/Applications` 中的 IDEA；必要时仅针对具体系统安装目录使用 `sudo` |
-| `--include-idea` | 额外扫描并删除全部可识别版本的 IDEA 应用、专属配置及用户插件；默认不开启 |
+| `--include-idea-apps` | 额外删除可识别的 IDEA 软件，保留配置、用户插件和缓存 |
+| `--include-idea` | 额外删除可识别版本的 IDEA 应用、专属配置及用户插件 |
 | `--remove-caches` | 仅在同时指定 `--include-idea` 时额外删除 IDEA 缓存、Local History 和日志；不删除 Gradle 用户配置或缓存 |
 | `--jdk-dir /absolute/path` | 补充一个自定义 JDK 候选安装目录，可重复；仍须有效来源标记，不强制删除外部 SDK |
 | `--gradle-dir /absolute/path` | 补充一个自定义 Gradle 候选安装目录，可重复；仍须有效来源标记，不强制删除外部 SDK |
-| `--idea-app /absolute/path/App.app` | 显式添加一个自定义 IDEA 应用，可重复；须同时指定 `--include-idea` |
+| `--idea-app /absolute/path/App.app` | 显式添加一个自定义 IDEA 应用，可重复；须同时指定 `--include-idea-apps` 或 `--include-idea` |
 | `--idea-plugins-dir /absolute/path` | 显式添加一个专用 IDEA 用户插件目录，可重复；须同时指定 `--include-idea` |
 | `--profile /absolute/path` | 添加需要检查的配置文件，可重复 |
 

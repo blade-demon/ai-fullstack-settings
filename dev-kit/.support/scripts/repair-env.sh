@@ -31,6 +31,11 @@ if "$dry_run"; then
     log "[预演] Gradle 安装包：$(package_url "$GRADLE_PACKAGE_PATH")"
     log "[预演] 扫描 JDK 8、Gradle ${GRADLE_VERSION}、IDEA 和完整环境变量；修复范围：$scope"
     log '[预演] 缺失项才下载安装；校验受管环境、IDEA、插件并记录前后差异。'
+    if [ -n "$project" ]; then
+        case "$scope" in
+            all|jdk|gradle|idea) log "[预演] IDEA SDK 名称统一为 ${IDEA_JDK_NAME}，同步全局登记和所选项目引用；未导入的项目继续标记待配置。" ;;
+        esac
+    fi
     [ -z "$project" ] || log "[预演] 项目：${project}；检查 IDEA 的项目 SDK、Gradle JVM 和分发，再执行对应 Gradle --no-daemon --console=plain build，失败则整体失败。"
     log '[预演] 本次不安装、不构建、不创建历史目录。'
     exit 0
@@ -57,7 +62,9 @@ audit_begin "$scope" "$project"
 
 step_number=0
 run_step() {
-    local name="$1" logfile results code
+    local allow_pending=false name logfile results code
+    if [ "$1" = --allow-pending ]; then allow_pending=true; shift; fi
+    name="$1"
     shift
     step_number=$((step_number + 1))
     logfile="$REPAIR_RUN_DIR/logs/$(printf '%02d' "$step_number").log"
@@ -70,6 +77,11 @@ run_step() {
     [ "$code" -ne 0 ] || code="${results[1]}"
     if [ "$code" -eq 0 ]; then
         audit_step "$name" verified 0 "logs/${logfile##*/}" || { failure=1; return 1; }
+        return 0
+    fi
+    if "$allow_pending" && [ "$code" -eq 2 ] && [ "${results[1]}" -eq 0 ]; then
+        idea_project_pending=true
+        audit_step "$name" pending 2 "logs/${logfile##*/}" || { failure=1; return 1; }
         return 0
     fi
     audit_step "$name" failed "$code" "logs/${logfile##*/}" || { failure=1; return 1; }
@@ -113,6 +125,17 @@ case "$scope" in
         fi ;;
 esac
 
+if [ -n "$project" ]; then
+    case "$scope" in
+        all|jdk|gradle|idea)
+            if "$sdk_ready" && "$idea_ready"; then
+                if ! run_step --allow-pending 'IDEA SDK 名称同步' "$REPO_ROOT/scripts/runtime/config-idea-sdk.sh" --project "$project"; then sdk_ready=false; fi
+            else
+                sdk_ready=false
+                audit_step 'IDEA SDK 名称同步' skipped - 'JDK、Gradle或IDEA未就绪'
+            fi ;;
+    esac
+fi
 run_step '修复后完整验证' "$REPO_ROOT/scripts/verify-environment.sh" --scope "$scope" || true
 if [ -n "$project" ]; then
     if "$sdk_ready"; then
@@ -136,7 +159,7 @@ if [ -n "$project" ]; then
         fi
         run_step '项目构建验证' "$REPO_ROOT/scripts/runtime/verify-gradle.sh" --project "$project" || true
     else
-        audit_step '项目构建验证' skipped - 'JDK或Gradle未就绪'
+        audit_step '项目构建验证' skipped - 'JDK、Gradle或IDEA SDK同步未就绪'
     fi
 fi
 /bin/bash "$REPO_ROOT/scripts/check-env.sh" ${scan_args[@]+"${scan_args[@]}"} > "$REPAIR_RUN_DIR/after-scan.txt" 2>&1 || true

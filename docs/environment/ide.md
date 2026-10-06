@@ -6,7 +6,7 @@
 
 ## 操作前退出 IDEA
 
-先保存项目和未保存文件，再正常退出 IDEA，确认应用已关闭后运行插件修复。工具不会自动结束或强制杀掉 IDEA 进程；IDEA 尚在运行时，应按提示退出后重试。
+先保存项目和未保存文件，再正常退出 IDEA，确认应用已关闭后运行插件修复或 SDK 名称同步。工具不会自动结束或强制杀掉 IDEA 进程；IDEA 尚在运行时，应按提示退出后重试。
 
 安装结束后工具不自动打开 IDEA。首次启动及插件实际功能仍需在 IDEA 中确认，不能把文件校验通过说成已验证了所有 IDE 功能。
 
@@ -73,9 +73,9 @@ IDEA Lombok 插件用于编辑器识别，业务项目仍需在 `build.gradle` �
 
 SDK 配置完成后，在 IDEA 中检查：
 
-1. **项目 JDK**：在 Project Structure 中添加并选择实际 `JAVA_HOME` 指向的 JDK 8。默认下载外层目录是 `~/.local/share/java-dev/jdk8`，真实 JDK Home 可能位于其内部 `Contents/Home`；复用已有 JDK 时路径也可能不同。
+1. **项目 JDK**：确认 Project Structure 的 SDK 为 `IDEA_JDK_NAME`，默认 `azul-1.8`，并指向实际 `JAVA_HOME` 对应的 JDK 8。尚未导入的项目先完成导入，再运行名称同步。默认下载外层目录是 `~/.local/share/java-dev/jdk8`，真实 JDK Home 可能位于其内部 `Contents/Home`；复用已有 JDK 时路径也可能不同。
 2. **Gradle 分发**：在 `Settings → Build Tools → Gradle` 中确认项目使用 Wrapper 还是本地安装。选本地安装时，目录填实际 `GRADLE_HOME`，默认 `~/.local/share/java-dev/gradle-4.5.1`；选 Wrapper 时，项目需有完整可执行的 Wrapper，并使用团队要求的 Gradle 版本。
-3. **Gradle JVM**：选择同一个 JDK 8。IDEA 自带运行时用于 IDE 本身，不等于项目或 Gradle 的 JDK。
+3. **Gradle JVM**：确认使用同一个 `IDEA_JDK_NAME`。IDEA 自带运行时用于 IDE 本身，不等于项目或 Gradle 的 JDK。`Project SDK`、`JAVA_HOME` 是引用入口，仍可能显示在下拉列表中。
 4. **注解处理**：项目使用 Lombok 时，按上面的安装与启用步骤检查 annotation processing；Gradle 构建中的处理器依赖仍由业务项目维护。
 5. **项目导入与功能**：导入真实业务项目，执行 `Reload All Gradle Projects`，再核对依赖仓库、运行配置、数据库连接及插件实际功能。
 
@@ -102,6 +102,27 @@ printf '%s\n' "$JAVA_HOME" "$JAVA_8_HOME" "$JRE_HOME" "$GRADLE_HOME" "$GRADLE_4_
 ```
 
 自定义过 `ENV_FILE` 时使用实际文件。IDEA 安装成功、插件安装验证通过和 SDK 版本通过，都不能替代项目构建；先菜单 `3` 选项目，再菜单 `1` 完成整体修复和构建，或使用[独立构建验证入口](gradle.md#维护者命令行)。
+
+## 统一 JDK 8 登记与项目引用
+
+已导入 IDEA 的所选项目在一键修复或带项目的 JDK、Gradle、IDEA 修复中，使用 `IDEA_JDK_NAME`（默认 `azul-1.8`）统一名称：
+
+- 在 `${IDEA_CONFIG_DIR}/options/jdk.table.xml` 中登记实际 JDK 8 Home，并将指向同一物理目录的其他名称合并。
+- 更新所选项目 `.idea/misc.xml` 的 Project SDK、`.idea/gradle.xml` 当前关联项目的 Gradle JVM，以及现有模块中引用被合并名称的显式 SDK 设置。
+- 保留其他 JDK、其他 Gradle 项目关联及 Wrapper / LOCAL 分发设置；首次改写已有文件保存 `.bak`，重复运行相同配置不再改写。
+
+执行前须完全退出 IDEA，避免 IDE 保存内存中的旧配置覆盖修复结果。同名 SDK 指向另一目录、XML 无法安全解析、配置或模块路径不在允许范围时，在改写前报错。尚未导入的项目返回待配置状态，不生成新的分发设置。
+
+单独运行时，不安装其他组件或执行项目构建：
+
+```bash
+bash dev-kit/.support/scripts/runtime/config-idea-sdk.sh --project "/absolute/path/to/java-project" --dry-run
+bash dev-kit/.support/scripts/runtime/config-idea-sdk.sh --project "/absolute/path/to/java-project"
+```
+
+维护者可通过 `IDEA_JDK_NAME` 指定另一固定名称，并让团队所有项目使用同一配置。名称同步仅迁移所选项目；其他项目若仍引用被合并的旧名称，也应逐一运行该入口，否则 IDEA 可能为满足旧引用再次登记。删除 SDK 名称不会删除 JDK 安装目录。
+
+同步完成后启动 IDEA，执行 `Reload All Gradle Projects`。`Project SDK` 和 `JAVA_HOME` 两个引用入口仍会显示，这与同目录的重复 SDK 登记不同。
 
 ## 历史与其他资源
 

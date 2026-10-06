@@ -8,7 +8,7 @@ audit_field() {
 
 audit_begin() {
     AUDIT_SCOPE="$1"; AUDIT_PROJECT="${2:-}"
-    local history="${REPAIR_HISTORY_DIR:-$HOME/Library/Logs/team-java-env/history}"
+    local history="${REPAIR_HISTORY_DIR:-$HOME/Library/Logs/team-java-env/history}" module index=0
     require_absolute_path REPAIR_HISTORY_DIR "$history"
     [ ! -L "$history" ] || die '历史目录不能是符号链接'
     (umask 077; mkdir -p "$history") || die '无法创建修复历史目录'
@@ -21,13 +21,27 @@ audit_begin() {
     fi
     AUDIT_KEYS=(environment jdk-environment gradle-environment shell-profile)
     AUDIT_PATHS=("$ENV_FILE" "${JDK_ENV_FILE:-${ENV_FILE%/*}/jdk.sh}" "${GRADLE_ENV_FILE:-${ENV_FILE%/*}/gradle.sh}" "$AUDIT_PROFILE")
-    if [ -n "$AUDIT_PROJECT" ]; then
-        AUDIT_KEYS+=(wrapper-properties)
-        AUDIT_PATHS+=("$AUDIT_PROJECT/gradle/wrapper/gradle-wrapper.properties")
-    fi
     printf 'step\tstatus\texit_code\tlog\n' > "$REPAIR_RUN_DIR/steps.tsv"
     printf 'status\texit_code\tscope\tproject\nRUNNING\t-\t%s\t%s\n' "$AUDIT_SCOPE" "$(audit_field "$AUDIT_PROJECT")" > "$REPAIR_RUN_DIR/result.tsv"
     mkdir "$REPAIR_RUN_DIR/logs"
+    if [ -n "$AUDIT_PROJECT" ]; then
+        AUDIT_KEYS+=(wrapper-properties)
+        AUDIT_PATHS+=("$AUDIT_PROJECT/gradle/wrapper/gradle-wrapper.properties")
+        case "$AUDIT_SCOPE" in
+            all|jdk|gradle|idea)
+                AUDIT_KEYS+=(idea-sdk-table idea-project-sdk idea-gradle-jvm)
+                AUDIT_PATHS+=("$IDEA_CONFIG_DIR/options/jdk.table.xml" "$AUDIT_PROJECT/.idea/misc.xml" "$AUDIT_PROJECT/.idea/gradle.xml")
+                # find 默认不进入符号链接目录；保留现有模块文件的私有快照。
+                find "$AUDIT_PROJECT" -name '*.iml' -print0 > "$REPAIR_RUN_DIR/module-paths.tmp" || return 1
+                while IFS= read -r -d '' module; do
+                    [ -f "$module" ] || [ -L "$module" ] || continue
+                    index=$((index + 1))
+                    AUDIT_KEYS+=("idea-module-$(printf '%04d' "$index")")
+                    AUDIT_PATHS+=("$module")
+                done < "$REPAIR_RUN_DIR/module-paths.tmp"
+                rm -f "$REPAIR_RUN_DIR/module-paths.tmp" || return 1 ;;
+        esac
+    fi
     audit_snapshot before
 }
 
@@ -66,7 +80,53 @@ audit_record_failure() {
     printf '# 环境修复记录\n\n- 最终状态：**FAILED**\n- 退出码：%s\n\n修复或审计保存未完成。请检查 result.tsv、steps.tsv、logs/ 和已有配置快照。\n' "$1" > "$REPAIR_RUN_DIR/report.md" || return 1
 }
 
+audit_xml_field() {
+    local value
+    value="$(xmllint --nonet --xpath "string($2)" "$1" 2>/dev/null)" || return 1
+    printf '%s=%s\n' "$3" "$(audit_field "$value")"
+}
+
+audit_xml_review() {
+    local file="$1" key="$2" base count index
+    [ "$file" != /dev/null ] || return 0
+    # 与项目预检和改写共用解码后检查；错误只输出固定说明。
+    if ! safe_xml_valid "$file"; then
+        printf '%s\n' 'XML 无法安全解析；相关字段摘要不可用。'
+        return 0
+    fi
+    case "$key" in
+        idea-sdk-table) base='/application/component[@name="ProjectJdkTable"]/jdk' ;;
+        idea-project-sdk) base='/project/component[@name="ProjectRootManager"]' ;;
+        idea-gradle-jvm) base='/project/component[@name="GradleSettings"]/option[@name="linkedExternalProjectsSettings"]/GradleProjectSettings' ;;
+        idea-module-*) base='/module/component[@name="NewModuleRootManager"]/orderEntry[@type="jdk"]' ;;
+        *) return 1 ;;
+    esac
+    count="$(xmllint --nonet --xpath "count($base)" "$file" 2>/dev/null)" || return 1
+    case "$count" in ''|*[!0-9]*) return 1 ;; esac
+    if [ "$count" -gt 256 ]; then
+        printf '%s\n' 'XML 相关设置过多；相关字段摘要不可用。'
+        return 0
+    fi
+    for ((index=1; index<=count; index++)); do
+        case "$key" in
+            idea-sdk-table)
+                audit_xml_field "$file" "($base)[$index]/name/@value" "SDK[$index].name" || return 1
+                audit_xml_field "$file" "($base)[$index]/homePath/@value" "SDK[$index].home" || return 1
+                audit_xml_field "$file" "($base)[$index]/type/@value" "SDK[$index].type" || return 1 ;;
+            idea-project-sdk)
+                audit_xml_field "$file" "($base)[$index]/@project-jdk-name" "Project[$index].SDK" || return 1
+                audit_xml_field "$file" "($base)[$index]/@project-jdk-type" "Project[$index].SDKType" || return 1 ;;
+            idea-gradle-jvm)
+                audit_xml_field "$file" "($base)[$index]/option[@name='gradleJvm']/@value" "Gradle[$index].gradleJvm" || return 1 ;;
+            idea-module-*)
+                audit_xml_field "$file" "($base)[$index]/@jdkName" "Module[$index].jdkName" || return 1
+                audit_xml_field "$file" "($base)[$index]/@jdkType" "Module[$index].jdkType" || return 1 ;;
+        esac
+    done
+}
+
 audit_review_content() {
+    case "${2:-}" in idea-*) audit_xml_review "$1" "$2"; return ;; esac
     # 原始配置留在私有备份里；可分享差异只展示工具管理区块。
     # 不对完整配置做 diff，避免末尾换行修复把原有个人令牌带进报告。
     awk '
@@ -100,13 +160,13 @@ audit_finish() {
             if [ ! -f "$before" ]; then printf '新增\n'; before=/dev/null
             elif [ ! -f "$after" ]; then printf '移除\n'; after=/dev/null
             else printf '修改；原文件备份：`before/%s`\n' "$key"; fi
-            audit_review_content "$before" > "$REPAIR_RUN_DIR/before-review.tmp" || return 1
-            audit_review_content "$after" > "$REPAIR_RUN_DIR/after-review.tmp" || return 1
-            diff -U0 --label "before/$key (managed)" --label "after/$key (managed)" \
+            audit_review_content "$before" "$key" > "$REPAIR_RUN_DIR/before-review.tmp" || return 1
+            audit_review_content "$after" "$key" > "$REPAIR_RUN_DIR/after-review.tmp" || return 1
+            diff -U0 --label "before/$key (managed fields)" --label "after/$key (managed fields)" \
                 "$REPAIR_RUN_DIR/before-review.tmp" "$REPAIR_RUN_DIR/after-review.tmp" >> "$REPAIR_RUN_DIR/config-changes.diff" || [ "$?" -eq 1 ] || return 1
         done
         [ "$changes" -ne 0 ] || printf '受管配置未发生变化，已复用现有设置。\n'
-        printf '\n工具管理区块差异见 `config-changes.diff`（仅受管区块、零行上下文）；前后摘要见 `before-files.tsv`、`after-files.tsv`。完整文件变化可在本机比较私有备份，不将其他个人配置复制到差异报告。\n'
+        printf '\n工具管理区块和 IDEA SDK 相关字段差异见 `config-changes.diff`（零行上下文）；前后摘要见 `before-files.tsv`、`after-files.tsv`。XML 仅展示 SDK 名称、目录、类型以及项目和模块 SDK、Gradle JVM 引用。完整文件变化可在本机比较私有备份，不将其他个人配置复制到差异报告。\n'
         printf '\n## 安装与项目构建\n\n安装路径、复用或失败信息见各步骤日志；插件安装结果见 `plugins-result.tsv`，最终验证见 `plugins-verification.tsv`（若执行该阶段）。插件备份在本次记录的 `plugin-backups/` 下。\n'
         printf '\n项目构建由独立步骤记录；只有成功退出并确认构建成功才标为通过。未选择项目时不宣称构建通过。构建可能生成项目 build/ 与 Gradle 缓存。\n'
         printf '\n这些备份仅供本机review；共享时优先提供本报告与必要步骤日志，原始配置备份可能含个人配置。\n'

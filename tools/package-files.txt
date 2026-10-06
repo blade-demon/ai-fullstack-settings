@@ -7,10 +7,13 @@
 .support/scripts/lib/common.sh
 .support/scripts/lib/environment.sh
 .support/scripts/lib/idea-project.sh
+.support/scripts/lib/idea-sdk.sh
+.support/scripts/lib/idea-sdk-sync.xsl
 .support/scripts/lib/managed-env.sh
 .support/scripts/lib/audit.sh
 .support/scripts/lib/plugin-metadata.sh
 .support/scripts/runtime/config-jdk.sh
+.support/scripts/runtime/config-idea-sdk.sh
 .support/scripts/runtime/config-gradle.sh
 .support/scripts/runtime/install-gradle.sh
 .support/scripts/runtime/verify-gradle.sh

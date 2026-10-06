@@ -23,7 +23,7 @@
 
 JDK 探测依次考虑已生成环境文件中的 `JAVA_HOME`、当前环境的 `JAVA_HOME`、`JDK_INSTALL_DIR`；`JDK_AUTO_DETECT=true` 时还检查系统登记与可识别的 PATH JDK。只有 `java`、`javac` 都符合 1.8 才采用，写入 `JRE_HOME` 前还要求实际 `jre` 目录存在。系统 `/usr/bin/java` 占位程序不代表已有可用 JDK 8，也不用于触发系统安装提示。
 
-IDEA 项目检查通过 macOS 的 `xmllint` 读取 `.idea/misc.xml`、`.idea/gradle.xml` 和 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`，成员无需 Python。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。工具不自动改写 IDEA 配置或启动 GUI；设置可解析仍需在 IDEA 中执行 Gradle 同步。
+IDEA 项目检查通过 macOS 的 `xmllint` 读取 `.idea/misc.xml`、`.idea/gradle.xml` 和 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`，成员无需 Python。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。扫描保持只读；修复所选的已导入项目时会统一 SDK 名称，见 [IDE 指南](ide.md#统一-jdk-8-登记与项目引用)。工具不启动 GUI；设置可解析仍需在 IDEA 中执行 Gradle 同步。
 
 Wrapper 缓存由下载 URL 和项目缓存设置共同决定，仅有 ZIP 或另一个 URL 的同版缓存不算当前项目完整缓存。独立 SDK 安装不依赖该缓存；项目构建则遵循 IDEA 的 Wrapper 或 LOCAL 分发选择。无法可靠解析的配置显示待确认；构建入口无法确定分发时会报错。
 
@@ -127,7 +127,8 @@ bash dev-kit/.support/scripts/runtime/config-jdk.sh
 | `ENV_FILE` / `JDK_ENV_FILE` / `GRADLE_ENV_FILE` | 上述聚合文件与两个模块文件 |
 | `SHELL_PROFILE` | 默认随 Shell 选择 `.zshrc` / `.bash_profile` |
 | `IDEA_APP` / `IDEA_PLUGINS_DIR` | 个人 IDEA 应用目录及 `IdeaIC2024.3/plugins` 目录 |
-| `IDEA_CONFIG_DIR` | `~/Library/Application Support/JetBrains/IdeaIC2024.3`；用于读取 SDK 登记表 |
+| `IDEA_CONFIG_DIR` | `~/Library/Application Support/JetBrains/IdeaIC2024.3`；IDEA 配置与 SDK 登记表位置 |
+| `IDEA_JDK_NAME` | `azul-1.8`；修复时统一使用的 JDK 8 SDK 名称 |
 | `REPAIR_HISTORY_DIR` | `~/Library/Logs/team-java-env/history` |
 
 `REPAIR_RUN_DIR` 由修复入口为当前运行自动设置，成员不必填写。服务器准备见[服务启动指南](../service-startup.md)，固定包来源见[运行环境来源](../resources/runtime-sources.md)。安装包齐全不代表业务依赖已缓存；完全离线构建仍需项目维护者准备依赖并验证。

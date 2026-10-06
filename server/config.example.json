@@ -1,0 +1,9 @@
+{
+  "server": "127.0.0.1:8080",
+  "scheme": "http",
+  "output": "dist/server",
+  "resources_dir": "resources",
+  "directory": "dist/server",
+  "bind": "127.0.0.1",
+  "port": 8080
+}

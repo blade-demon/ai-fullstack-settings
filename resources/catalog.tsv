@@ -1,0 +1,13 @@
+# id	group	version	arch	path	url	sha256
+jdk8-macos-arm64	runtime	8u504+1	arm64	runtime/jdk/jdk8-macos-arm64.tar.gz	https://cdn.azul.com/zulu/bin/zulu8.96.0.205-ca-jdk8.0.504-macosx_aarch64.tar.gz	58bb3c08f2aa63d9743cf31899fa4b8c6c9effefce9479e7288c26621c3bb21b
+jdk8-macos-x64	runtime	8u504+1	x64	runtime/jdk/jdk8-macos-x64.tar.gz	https://cdn.azul.com/zulu/bin/zulu8.96.0.205-ca-jdk8.0.504-macosx_x64.tar.gz	e35bc8a4401193aa670146762bbad132bf0651fee5e3f16acbb3a5db0e0b0cff
+gradle-4.5.1-bin	runtime	4.5.1	any	runtime/gradle/gradle-4.5.1-bin.zip	https://services.gradle.org/distributions/gradle-4.5.1-bin.zip	3e2ea0d8b96605b7c528768f646e0975bd9822f06df1f04a64fd279b1a17805e
+dbeaver-ce-macos-arm64	software	26.2.2	arm64	software/dbeaver/dbeaver-ce-26.2.2-macos-aarch64.dmg	https://dbeaver.io/files/26.2.2/dbeaver-ce-26.2.2-macos-aarch64.dmg	7f47579bc583571ca0ccef9fdce7d6cc56f84b74844e4e700ab7a46d1e501ec5
+dbeaver-ce-macos-x64	software	26.2.2	x64	software/dbeaver/dbeaver-ce-26.2.2-macos-x86_64.dmg	https://dbeaver.io/files/26.2.2/dbeaver-ce-26.2.2-macos-x86_64.dmg	e8d60c79a9e0191ede23d33b4f6c21385da3474d8aa34c63bae0a553a0c510de
+idea-ce-2024-arm64	software	2024.3.7.1	arm64	software/idea/ideaIC-2024.3.7.1-aarch64.dmg	https://download.jetbrains.com/idea/ideaIC-2024.3.7.1-aarch64.dmg	9ea06122b3917fe1f252e28cd0448fed47e5c723917e1cd3188356a728b16461
+idea-ce-2024-x64	software	2024.3.7.1	x64	software/idea/ideaIC-2024.3.7.1.dmg	https://download.jetbrains.com/idea/ideaIC-2024.3.7.1.dmg	3decf9108691293922f87b3596154a6b7738edff0c2170ecc4cb39737117153a
+database-navigator	plugins	4.1.0.3	any	plugins/idea/DBN-4.1.0.3.zip	https://plugins.jetbrains.com/files/1800/1177352/DBN-4.1.0.3.zip	-
+mybatisx	plugins	1.7.6	any	plugins/idea/MybatisX-1.7.6.zip	https://plugins.jetbrains.com/files/10119/1049967/MybatisX-1.7.6.zip	-
+generate-all-setter	plugins	2.8.5	any	plugins/idea/GenerateAllSetter-2.8.5.zip	https://plugins.jetbrains.com/files/9360/1062692/GenerateAllSetter-2.8.5.zip	-
+gsonformatplus	plugins	1.6.1	any	plugins/idea/GsonFormatPlus-1.6.1.zip	https://plugins.jetbrains.com/files/14949/115983/GsonFormatPlus.zip	-
+key-promoter-x	plugins	2026.1.2	any	plugins/idea/Key_Promoter_X-2026.1.2.zip	https://plugins.jetbrains.com/files/9792/1098878/Key_Promoter_X-2026.1.2.zip	-

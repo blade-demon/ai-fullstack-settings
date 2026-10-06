@@ -1,0 +1,108 @@
+#!/bin/bash
+# 单文件启动器：可移动、重命名；只使用 macOS 自带命令。
+set -euo pipefail
+
+SERVER_ADDR="${SERVER_ADDR:-@SERVER_ADDR@}"
+SERVER_SCHEME="${SERVER_SCHEME:-@SERVER_SCHEME@}"
+WORK_DIR=""
+PAYLOAD_STARTED=0
+PAUSE_ON_FAILURE=0
+if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then PAUSE_ON_FAILURE=1; fi
+
+cleanup() {
+  status=$?
+  trap - EXIT
+  if [ -n "$WORK_DIR" ]; then rm -rf -- "$WORK_DIR"; fi
+  if [ "$status" -ne 0 ] && [ "$PAYLOAD_STARTED" -eq 0 ] && [ "$PAUSE_ON_FAILURE" -eq 1 ]; then
+    printf '\n启动未完成，请查看上面的提示。按回车关闭窗口…'
+    IFS= read -r _ || true
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+die() { printf '\n启动失败：%s\n' "$*" >&2; exit 1; }
+usage() {
+  cat <<'HELP'
+用法：开始配置.command [--dry-run] [完整工具参数]
+
+直接双击会下载并校验最新工具，然后显示配置菜单。
+--dry-run  仅显示轻量工具包下载地址，不联网或写入文件。
+--help     显示帮助。
+其他参数原样传给完整工具，例如 --project '/路径/Java 项目'。
+可通过环境变量 SERVER_ADDR 和 SERVER_SCHEME 覆盖团队服务器。
+HELP
+}
+
+DRY_RUN=0
+for argument in "$@"; do
+  case "$argument" in
+    --help|-h) usage; exit 0 ;;
+    --dry-run) DRY_RUN=1 ;;
+  esac
+done
+
+SERVER_PATTERN='^([A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(:[0-9]+)?$'
+[[ "$SERVER_ADDR" =~ $SERVER_PATTERN ]] || die '服务器应为主机:端口，不能包含协议、路径、空格或引号。'
+case "$SERVER_SCHEME" in http|https) ;; *) die '服务器协议仅支持 http 或 https。' ;; esac
+TOOL_URL="$SERVER_SCHEME://$SERVER_ADDR/dev-env/team-dev-env.tar.gz"
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf '工具包：%s\n校验文件：%s.sha256\n' "$TOOL_URL" "$TOOL_URL"
+  exit 0
+fi
+
+for command in curl tar shasum awk mktemp; do
+  command -v "$command" >/dev/null 2>&1 || die "找不到系统命令 ${command}，请联系管理员。"
+done
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/team-dev-env.XXXXXXXX")" || die '无法创建临时下载目录。'
+ARCHIVE="$WORK_DIR/team-dev-env.tar.gz"
+CHECKSUM="$ARCHIVE.sha256"
+download() {
+  local status curl_status=0
+  status="$(curl --fail --location --silent --show-error --connect-timeout 10 --max-time 120 \
+    --proto '=http,https' --proto-redir '=http,https' --write-out '%{http_code}' --output "$2" "$1")" || curl_status=$?
+  [ "$curl_status" -ne 0 ] || return 0
+  printf '\n下载地址：%s\nHTTP %s\n' "$1" "${status:-000}" >&2
+  if [ "$status" = 404 ]; then
+    printf '%s\n' '服务器已响应，但没有这个文件。请维护者确认：' \
+      '1. 此端口运行的是本工具的静态文件服务。' \
+      '2. 网站根目录指向发布目录 dist/server（或实际打包输出目录）。' \
+      '3. 已发布 dev-env/team-dev-env.tar.gz 及其 .sha256 校验文件。' >&2
+  fi
+  return "$curl_status"
+}
+
+printf '正在获取团队配置工具…\n'
+printf '服务器：%s://%s\n' "$SERVER_SCHEME" "$SERVER_ADDR"
+download "$TOOL_URL" "$ARCHIVE" || die '工具包下载失败，请检查内网连接和服务器地址。'
+download "$TOOL_URL.sha256" "$CHECKSUM" || die '校验文件下载失败，请联系管理员补齐分发文件。'
+EXPECTED="$(awk 'NR == 1 {print $1} END {if (NR != 1) exit 1}' "$CHECKSUM")" || die '工具包校验文件格式不正确。'
+[[ "$EXPECTED" =~ ^[a-fA-F0-9]{64}$ ]] || die '工具包校验文件格式不正确。'
+ACTUAL="$(shasum -a 256 "$ARCHIVE")" || die '无法计算工具包校验值。'
+ACTUAL="${ACTUAL%% *}"
+EXPECTED="$(printf '%s' "$EXPECTED" | tr 'A-F' 'a-f')"
+[ "$ACTUAL" = "$EXPECTED" ] || die '工具包校验失败，文件可能不完整；请稍后重试或联系管理员。'
+
+# 在任何解压操作前验证顶层目录、路径以及成员类型，拒绝链接与设备文件。
+tar -tzf "$ARCHIVE" > "$WORK_DIR/entries" || die '工具包格式无效，无法读取目录。'
+awk '
+  BEGIN { count = 0 }
+  {
+    count++
+    if ($0 != "team-dev-env" && index($0, "team-dev-env/") != 1) exit 1
+    if ($0 ~ /(^|\/)\.\.(\/|$)/ || $0 ~ /^\//) exit 1
+  }
+  END { if (count == 0) exit 1 }
+' "$WORK_DIR/entries" || die '工具包包含不安全的解压路径。'
+tar -tvzf "$ARCHIVE" > "$WORK_DIR/types" || die '工具包目录读取失败。'
+awk 'substr($0, 1, 1) != "d" && substr($0, 1, 1) != "-" { exit 1 }' \
+  "$WORK_DIR/types" || die '工具包包含不允许的链接或特殊文件。'
+COPYFILE_DISABLE=1 tar -xzf "$ARCHIVE" -C "$WORK_DIR" --no-same-owner || die '工具包解压失败。'
+ENTRY="$WORK_DIR/team-dev-env/开始配置.command"
+[ -f "$ENTRY" ] && [ ! -L "$ENTRY" ] || die '工具包缺少配置入口，请联系管理员重新打包。'
+
+export SERVER_ADDR SERVER_SCHEME
+PAYLOAD_STARTED=1
+/bin/bash "$ENTRY" "$@"

@@ -1,0 +1,18 @@
+# MySQL 是可选数据库，和开发工具静态包服务器无关。
+# 请使用 scripts/services/mysql.sh 管理，避免依赖当前目录的项目名或 .env。
+services:
+  mysql:
+    image: "${MYSQL_IMAGE:-mysql:8.0}"
+    platform: "${MYSQL_PLATFORM:-}"
+    restart: unless-stopped
+    environment:
+      # 非必填插值允许无密码执行 down/status/logs；实际 up 由脚本检查密码。
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-app_dev}"
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:

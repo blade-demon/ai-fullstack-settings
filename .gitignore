@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.bak
+*.tmp.*
+.env
+*.tar.gz
+*.zip
+resources/**/*.dmg
+resources/**/*.jar
+resources/**/*.sha256
+resources/**/*.part.*
+dist/
+dev-kit/.support/config/team.sh
+server/config.json

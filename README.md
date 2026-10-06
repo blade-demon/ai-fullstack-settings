@@ -63,20 +63,19 @@ JDK 配置包含 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`；Gradle 配置包含 
 
 ## 维护者准备分发
 
-服务端支持 Windows 和 macOS，需要 Python 3.8+。在仓库根目录执行，将示例地址替换为成员可以访问的内网主机；Windows 把下方 `python3` 换成 `py -3`：
+服务端支持 Windows 和 macOS，需要 Python 3.8+。首次部署时，先在运行脚本的维护者电脑或服务器上按[Python 3 安装指引](docs/service-startup.md#部署前安装-python-3)完成安装与验证；服务端只使用标准库，无需安装第三方 Python 包。
+
+在**实际运行下载服务的机器**上，进入项目根目录执行；Windows 把下方 `python3` 换成 `py -3`：
 
 ```bash
-python3 server/manage.py prepare
-python3 server/manage.py prepare --verify
-python3 server/manage.py package --server "192.168.1.20:8080" --scheme http --with-resources --output dist/server
-python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 8080
+python3 server/manage.py start
 ```
 
-安装资源与插件按固定清单保存到 `resources/`，已有且校验通过的文件会复用。分组下载与摘要说明见[资源准备指南](docs/resources/README.md)。大包单独放在 `dist/server/resources/`，不进入启动 ZIP 或完整工具 ZIP。
+也可双击 macOS 的 `server/start-server.command` 或 Windows 的 `server/start-server.cmd`。`start` 自动检测本机活动 IPv4 地址；多个候选时按提示选择序号。它先占用默认的 `8080` 端口，再校验已有资源、下载缺失文件、带资源打包到 `dist/server`，最后通过 HTTP 提供下载并显示实际链接。保持窗口运行，从成员电脑验证链接后再分发。
 
-打包只生成文件，**不会启动或部署服务器**。服务启动、停止、重启、端口选择及临时内网托管统一见[服务启动指南](docs/service-startup.md)。静态服务器根目录应直接指向打包输出目录；完成 HTTP 验证后，再发送 `http://实际内网地址:端口/start.zip`。发布结构和更新要求见[内网分发指南](docs/distribution.md)。
+重复运行会复用校验通过的资源；遇到损坏文件会保留并报错。资源默认保存在 `resources/`，发布副本位于 `dist/server/resources/`，大包不进入启动 ZIP 或完整工具 ZIP。分组下载与摘要说明见[资源准备指南](docs/resources/README.md)。
 
-`127.0.0.1` 仅指向运行入口的那台电脑，不可作为其他成员访问维护者电脑的地址。仅更新工具时可省略 `--with-resources`，保留服务器上已有资源；地址变化后须重新打包并重新下载启动包。
+`start` 监听 `0.0.0.0`，自动选址不保证能穿过防火墙或 VPN；显式地址和端口可用 `start --server "192.168.1.20" --port 8080` 指定。IP 变化后重新 `start`，并让成员重新下载启动包。`127.0.0.1` 只指向成员自己的电脑，不可作为团队下载地址。停止、重启、参数，以及分机器部署或 HTTPS 所需的高级分步流程见[服务启动指南](docs/service-startup.md)；发布结构和更新要求见[内网分发指南](docs/distribution.md)。
 
 ## 维护者命令行
 
@@ -107,6 +106,8 @@ python3 -m unittest discover -s tests -v
 
 `repair-env.sh --scope all|jdk|gradle|idea|plugins` 可选择修复范围；指定 `--project` 时仍需通过实际项目构建才能报告该次任务成功。直接调用 SDK 安装脚本适合单项调试；需要完整前后快照和汇总历史时，使用菜单或 `repair-env.sh`。
 
+维护者进行 macOS 实机重装测试前，可运行 `bash tools/uninstall-java-gradle.sh` 预览各版本 JDK/Gradle 与配置的清理计划，再按需加 `--apply` 执行。此工具需要 Python 3.8+，独立于成员菜单和分发；系统安装、缓存、备份及范围限制见[实机清理指南](docs/environment/cleanup.md)。
+
 本仓库测试使用临时 HOME、微型 SDK 和模拟项目；这些结果不代表真实业务项目已经构建通过，也不代表 Windows 实机安装已经验证。安装资源不包含业务 Maven/Gradle 依赖缓存、额外 JDBC 驱动或 MySQL 镜像，完全离线构建仍需项目维护者准备并实测。
 
 真实预下载 SDK 的构建成功/失败、五个插件的临时安装和平台验证边界见[验证记录](docs/verification.md)。
@@ -117,6 +118,6 @@ python3 -m unittest discover -s tests -v
 - [独立 Gradle 安装与项目构建](docs/environment/gradle.md)
 - [IDEA 与五个插件](docs/environment/ide.md)
 - [修复历史与 review](docs/repair-history.md)
-- [服务器启动与排错](docs/service-startup.md)
+- [Python 3 安装、服务器启动与排错](docs/service-startup.md)
 - [分发流程](docs/distribution.md)
 - [全部环境指南](docs/environment/README.md)

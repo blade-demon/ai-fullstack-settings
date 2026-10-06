@@ -1,7 +1,9 @@
 """Cross-platform server contracts; only temporary payloads and loopback ports."""
 import functools
+import contextlib
 import hashlib
 import http.server
+import io
 import json
 import os
 from pathlib import Path
@@ -14,9 +16,12 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 import zipfile
+
+from server import manage
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +31,11 @@ HEADER = "# id\tgroup\tversion\tarch\tpath\turl\tsha256"
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+
+class InteractiveInput(io.StringIO):
+    def isatty(self):
+        return True
 
 
 class ServerTests(unittest.TestCase):
@@ -112,6 +122,173 @@ class ServerTests(unittest.TestCase):
                          "https://official.invalid/" + name, sha if digest else "-"))
         self.catalog(rows)
         return rows
+
+    def free_port(self):
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            return reservation.getsockname()[1]
+
+    def start_once(self, arguments, candidates=None, stdin=None):
+        """Keep real preparation/packaging/binding, stop before the endless HTTP loop."""
+        output = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(manage, "ROOT", self.repo))
+            stack.enter_context(mock.patch.dict(os.environ, self.env, clear=True))
+            stack.enter_context(mock.patch.object(manage, "discover_ipv4_addresses", create=True,
+                                                 return_value=candidates or []))
+            stack.enter_context(mock.patch.object(manage.DownloadServer, "serve_forever", return_value=None))
+            stack.enter_context(mock.patch.object(sys, "stdin", stdin or io.StringIO()))
+            stack.enter_context(contextlib.redirect_stdout(output))
+            stack.enter_context(contextlib.redirect_stderr(output))
+            try:
+                status = manage.main(arguments)
+            except SystemExit as error:
+                status = error.code
+        return status, output.getvalue()
+
+    def test_start_automatically_packages_lan_address_and_reuses_resources(self):
+        self.resources()
+        target = self.repo / "resources/runtime/jdk.bin"
+        before = target.stat().st_mtime_ns
+        port = self.free_port()
+        status, output = self.start_once(
+            ["start", "--port", str(port), "--output", str(self.output)], ["192.168.50.8"])
+        self.assertEqual(status, 0, output)
+        address = "192.168.50.8:%s" % port
+        with zipfile.ZipFile(self.output / "start.zip") as archive:
+            self.assertIn(address, archive.read("开始配置.command").decode())
+        with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
+            self.assertIn(address, archive.extractfile("team-dev-env/.support/config/team.sh").read().decode())
+        self.assertEqual((self.output / "resources/runtime/jdk.bin").read_bytes(), b"jdk\x00\r\n")
+        self.assertEqual(target.stat().st_mtime_ns, before)
+        self.assertIn("http://" + address + "/start.zip", output)
+
+    def test_no_arguments_starts_and_replaces_legacy_loopback_config_address(self):
+        self.resources()
+        port = self.free_port()
+        (self.repo / "server/config.json").write_text(json.dumps({
+            "server": "127.0.0.1:8080", "bind": "127.0.0.1", "port": port,
+            "output": str(self.output)}))
+        status, output = self.start_once([], ["10.10.0.6"])
+        self.assertEqual(status, 0, output)
+        self.assertIn("10.10.0.6:%s" % port, (self.output / "start.command").read_text())
+
+    def test_start_ambiguous_addresses_require_selection_and_support_interactive_choice(self):
+        self.resources()
+        arguments = ["start", "--output", str(self.output), "--port", str(self.free_port())]
+        candidates = ["10.10.0.6", "192.168.50.8"]
+        status, output = self.start_once(arguments, candidates)
+        self.assertNotEqual(status, 0)
+        self.assertIn("--server", output)
+        self.assertFalse(self.output.exists())
+        status, output = self.start_once(arguments, candidates, InteractiveInput("2\n"))
+        self.assertEqual(status, 0, output)
+        self.assertIn("192.168.50.8:", (self.output / "start.command").read_text())
+
+    def test_start_without_address_or_with_invalid_selection_does_not_publish(self):
+        for candidates, stdin in [([], None), (["10.0.0.2", "10.0.1.2"], InteractiveInput("99\n")),
+                                  (["10.0.0.2", "10.0.1.2"], InteractiveInput(""))]:
+            with self.subTest(candidates=candidates, stdin=stdin):
+                status, output = self.start_once(["start", "--output", str(self.output)], candidates, stdin)
+                self.assertNotEqual(status, 0)
+                self.assertIn("--server", output)
+                self.assertFalse(self.output.exists())
+
+    def test_start_occupied_port_preserves_publication_and_does_not_download(self):
+        self.resources()
+        self.assert_ok(self.package("--with-resources"))
+        previous = (self.output / "start.zip").read_bytes()
+        missing = self.repo / "resources/runtime/jdk.bin"
+        missing.unlink()
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            status, output = self.start_once(["start", "--server", "192.168.50.8",
+                                             "--port", str(listener.getsockname()[1]),
+                                             "--output", str(self.output)])
+        self.assertNotEqual(status, 0)
+        self.assertIn("端口", output)
+        self.assertNotIn("下载：", output)
+        self.assertFalse(missing.exists())
+        self.assertEqual((self.output / "start.zip").read_bytes(), previous)
+
+    def test_start_rejects_mismatched_port_and_https_before_publication(self):
+        for options in [["--server", "team.example:8088", "--port", "8089"],
+                        ["--server", "team.example:99999"], ["--server", "0.0.0.0"]]:
+            with self.subTest(options=options):
+                status, output = self.start_once(["start", "--output", str(self.output)] + options)
+                self.assertNotEqual(status, 0)
+                self.assertFalse(self.output.exists())
+        (self.repo / "server/config.json").write_text(json.dumps({"scheme": "https"}))
+        status, output = self.start_once(["start", "--server", "team.example", "--output", str(self.output)])
+        self.assertNotEqual(status, 0)
+        self.assertIn("HTTPS", output)
+        self.assertFalse(self.output.exists())
+
+    def test_start_command_line_port_overrides_inherited_address_port(self):
+        self.resources()
+        port = self.free_port()
+        for source in ("config", "environment"):
+            with self.subTest(source=source):
+                if source == "config":
+                    (self.repo / "server/config.json").write_text(json.dumps({"server": "team.example:8080"}))
+                else:
+                    (self.repo / "server/config.json").unlink()
+                    self.env["SERVER_ADDR"] = "team.example:8080"
+                status, output = self.start_once(["start", "--port", str(port), "--output", str(self.output)])
+                self.assertEqual(status, 0, output)
+                self.assertIn("team.example:%s" % port, (self.output / "start.command").read_text())
+
+    def test_start_downloads_into_custom_resource_directory_and_serves_publication(self):
+        source, address = self.fixture_server()
+        payload = b"one-click-resource"
+        (source / "artifact.bin").write_bytes(payload)
+        self.catalog([("jdk", "runtime", "8", "any", "runtime/artifact.bin",
+                       address + "/artifact.bin", hashlib.sha256(payload).hexdigest())])
+        custom_catalog = self.repo / "custom.tsv"
+        (self.repo / "resources/catalog.tsv").rename(custom_catalog)
+        storage = self.base / "custom resources"
+        port = self.free_port()
+        log = self.base / "start.log"
+        with log.open("wb") as output:
+            process = subprocess.Popen([sys.executable, str(self.manage), "start", "--server", "127.0.0.1:%s" % port,
+                                        "--output", str(self.output), "--resources-dir", str(storage),
+                                        "--catalog", str(custom_catalog)], cwd=self.base,
+                                       env=self.env, stdout=output, stderr=subprocess.STDOUT)
+        self.processes.append(process)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        deadline = time.monotonic() + 8
+        while True:
+            try:
+                with opener.open("http://127.0.0.1:%s/start.zip" % port, timeout=0.3) as response:
+                    data = response.read()
+                break
+            except (urllib.error.URLError, TimeoutError):
+                if time.monotonic() >= deadline or process.poll() is not None:
+                    self.fail(log.read_text(encoding="utf-8"))
+                time.sleep(0.03)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            self.assertIn("127.0.0.1:%s" % port, archive.read("开始配置.command").decode())
+        with opener.open("http://127.0.0.1:%s/resources/runtime/artifact.bin" % port) as response:
+            self.assertEqual(response.read(), payload)
+        self.assertEqual((storage / "runtime/artifact.bin").read_bytes(), payload)
+        self.assertFalse((self.output / "runtime/artifact.bin").exists())
+
+    def test_start_corrupt_resource_preserves_old_publication_and_releases_port(self):
+        self.resources()
+        self.assert_ok(self.package("--with-resources"))
+        previous = (self.output / "start.zip").read_bytes()
+        target = self.repo / "resources/runtime/jdk.bin"
+        target.write_bytes(b"corrupt")
+        port = self.free_port()
+        status, output = self.start_once(["start", "--server", "team.example", "--port", str(port),
+                                         "--output", str(self.output)])
+        self.assertNotEqual(status, 0)
+        self.assertIn("SHA-256", output)
+        self.assertEqual(target.read_bytes(), b"corrupt")
+        self.assertEqual((self.output / "start.zip").read_bytes(), previous)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", port))
 
     def test_package_without_shell_normalizes_text_and_preserves_unix_archive_modes(self):
         template = self.repo / "tools/start.command.in"

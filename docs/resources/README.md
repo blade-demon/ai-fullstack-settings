@@ -14,9 +14,21 @@
 
 版本、官方直链、系统支持范围及校验依据见[运行环境与桌面工具来源](runtime-sources.md)、[IDEA 与插件来源](plugin-sources.md)。来源核验、文件下载、目标电脑安装和业务构建验收是不同步骤，不应互相替代。
 
-## 维护者准备文件
+## 默认：一键准备并启动
 
-在项目根目录执行。下例为 macOS，Windows 将 `python3` 替换为 `py -3`，或已确认是 Python 3.8+ 的 `python`：
+先按[Python 3 安装指引](../service-startup.md#部署前安装-python-3)在实际运行下载服务的机器上安装并验证，再在项目根目录执行。下例为 macOS，Windows 将 `python3` 替换为 `py -3`，或已确认是 Python 3.8+ 的 `python`：
+
+```bash
+python3 server/manage.py start
+```
+
+也可双击 `server/start-server.command`（macOS）或 `server/start-server.cmd`（Windows），无参入口默认执行 `start`。它检测本机活动 IPv4 地址，多候选时选择序号；先绑定 `0.0.0.0:8080`，再按清单校验已有资源、下载缺失项、带资源打包到 `dist/server`，最后显示实际 HTTP 下载链接。保持窗口运行，并从成员电脑验证地址、防火墙及 VPN 是否允许访问。
+
+资源默认保存在 `resources/`，重复启动会复用校验通过的文件；损坏资源会保留并报错，不自动覆盖。可用 `--server` 覆盖自动选址，或用 `--port`、`--output`、`--resources-dir`、`--catalog` 自定义端口、发布目录、资源库和清单。IP 变化后重新 `start`，让成员重新下载启动包。完整参数、重启方式与配置说明见[服务启动指南](../service-startup.md)。
+
+## 高级：单独准备或校验文件
+
+需要提前下载资源、分组准备或在不同机器上部署时，单独使用 `prepare`：
 
 ```bash
 python3 server/manage.py prepare --dry-run
@@ -48,7 +60,7 @@ cp resources/catalog.tsv /absolute/path/team-resources/catalog.tsv
 
 已有且校验通过的资源会复用。校验不符时保留原文件并停止，由维护者检查后移走异常文件再重试；不要仅为了让校验通过而修改摘要。有官方 SHA-256 的 JDK、Gradle、IDEA、DBeaver 使用清单中的固定值。五个插件的官方元数据未提供独立 SHA-256，清单记为 `-`，首次下载时生成同名 `.sha256` 本地记录，后续用它检查文件是否变化；这不等于官方发布了该摘要。保留原始 ZIP、DMG、许可证及校验文件。
 
-## 发布到内网
+## 高级：单独打包与托管
 
 完成全部资源准备与校验后执行：
 
@@ -61,7 +73,7 @@ python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 808
 
 只更新成员脚本时省略 `--with-resources`，保留输出目录已有资源，不必重复复制或上传大包。打包仍会根据本地完整资源库校验并生成成员清单，因此应保留本地 `resources/`。成员清单包含确定的文件摘要，成员下载时据此核对；插件的摘要仍来自维护者首次下载的本地记录。打包不等于发布服务器，上传步骤见[内网分发指南](../distribution.md)。
 
-Windows 用 `py -3` 执行同样的 `package` / `serve`，也可用 `server/start-server.cmd`；Mac 原生入口为 `server/start-server.command`。无参入口仅托管已打包目录，默认 `127.0.0.1:8080`。`preview` 可组合打包与本机服务，默认 8081，并在端口占用时先退出。打包地址与协议按命令行、环境变量、JSON 配置、安全字面默认值的顺序确定，详见[服务启动与配置](../service-startup.md)。当前没有 Windows 实机验收结果。
+Windows 用 `py -3` 执行同样的 `package` / `serve`，原生入口也可显式传入这些子命令。`serve` 只读托管已有发布目录，不改写包；`preview` 则会重新打包并默认监听本机 `127.0.0.1:8081`，在端口占用时先退出。HTTPS 静态服务或反向代理使用高级打包流程及 `package --scheme https`。地址与协议优先级见[服务启动与配置](../service-startup.md)。当前没有 Windows 实机验收结果。
 
 ## 成员下载和安装
 

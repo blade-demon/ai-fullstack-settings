@@ -3,6 +3,7 @@ set -euo pipefail
 source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)/common.sh"
 source "$REPO_ROOT/scripts/lib/environment.sh"
 source "$REPO_ROOT/scripts/lib/managed-env.sh"
+source "$REPO_ROOT/scripts/lib/idea-project.sh"
 parse_args "$@"
 if "$SHOW_HELP"; then
     log '用法：check-env.sh [--project 项目路径]；扫描JDK8、Gradle4.5.1、IDEA和完整环境配置，不执行构建。'
@@ -44,6 +45,9 @@ if [ "$PROBE_GRADLE_STATE" = project_cached ]; then log "[Wrapper缓存] ${PROBE
 if [ -n "$PROJECT_DIR" ]; then
     if [ -d "$PROJECT_DIR" ] && { [ -f "$PROJECT_DIR/build.gradle" ] || [ -f "$PROJECT_DIR/build.gradle.kts" ]; }; then
         log "[待构建验证] ${PROJECT_DIR}；必须实际 build 成功才确认最终任务成功。"
+        probe_idea_project "$PROJECT_DIR"
+        report_idea_project
+        [ "$PROBE_IDEA_PROJECT_STATE" = ready ] || failed=1
     else log '[缺失] 所选项目不存在或缺少 build.gradle/build.gradle.kts。'; failed=1; fi
 else log '[未选择项目] 本次未执行构建，不能据此宣称业务项目通过。'; fi
 log '[验证边界] 扫描不运行 Gradle 构建或启动 IDEA；签名、运行时、插件与项目构建由修复后的验证步骤确认。'

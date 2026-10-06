@@ -8,7 +8,7 @@
 
 | 菜单 | 用途 |
 | --- | --- |
-| `1` | 修复 JDK、独立 Gradle、IDEA 和全部五个插件，完成最终验证 |
+| `1` | 修复 JDK、独立 Gradle、IDEA 和全部六个插件，完成最终验证 |
 | `2` | 修复 JDK 8 及完整 JDK 环境变量 |
 | `3` | 选择项目后重新扫描，不开始安装或构建 |
 | `7` | 修复独立 Gradle；有选定项目时必须实际构建 |
@@ -19,11 +19,13 @@
 
 ## 环境预检
 
-扫描同时关注安装状态和持久化配置：JDK 是否为完整 1.8、独立 Gradle 是否为目标 4.5.1、IDEA 是否为团队版本，以及受管环境和 Shell 入口是否完整。扫描不会开始安装或业务构建；静态缓存与文件检查只作定位参考，不能替代修复后的实际版本验证和项目构建。
+扫描同时关注安装状态和持久化配置：JDK 是否为完整 1.8、独立 Gradle 是否为目标 4.5.1、IDEA 是否为团队版本，以及受管环境和 Shell 入口是否完整。已选项目时，还会只读检查 IDEA 的 Project SDK、Gradle JVM 和分发设置；待配置时 `check-env.sh` 返回 `1` 并打印实际路径及设置入口。扫描不会开始安装或业务构建；静态检查不能替代实际版本验证、终端构建或 IDEA 同步。
 
 JDK 探测依次考虑已生成环境文件中的 `JAVA_HOME`、当前环境的 `JAVA_HOME`、`JDK_INSTALL_DIR`；`JDK_AUTO_DETECT=true` 时还检查系统登记与可识别的 PATH JDK。只有 `java`、`javac` 都符合 1.8 才采用，写入 `JRE_HOME` 前还要求实际 `jre` 目录存在。系统 `/usr/bin/java` 占位程序不代表已有可用 JDK 8，也不用于触发系统安装提示。
 
-Wrapper 缓存可作为补充信息显示：它由下载 URL 和项目缓存设置共同决定，仅有 ZIP 或另一个 URL 的同版缓存不算当前项目完整缓存。默认安装方案已改为独立 Gradle，不依赖 Wrapper 缓存，也不要求项目具有 Wrapper JAR。无法可靠解析的复杂配置应显示待确认，不猜测已经就绪。
+IDEA 项目检查通过 macOS 的 `xmllint` 读取 `.idea/misc.xml`、`.idea/gradle.xml` 和 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`，成员无需 Python。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。工具不自动改写 IDEA 配置或启动 GUI；设置可解析仍需在 IDEA 中执行 Gradle 同步。
+
+Wrapper 缓存由下载 URL 和项目缓存设置共同决定，仅有 ZIP 或另一个 URL 的同版缓存不算当前项目完整缓存。独立 SDK 安装不依赖该缓存；项目构建则遵循 IDEA 的 Wrapper 或 LOCAL 分发选择。无法可靠解析的配置显示待确认；构建入口无法确定分发时会报错。
 
 ## SDK 安装位置与导出变量
 
@@ -92,9 +94,9 @@ bash dev-kit/.support/scripts/runtime/config-jdk.sh
 
 ## Gradle 与项目验证
 
-菜单 `7` 安装或复用独立 Gradle，修复完整 SDK 环境。未选择项目时验证 SDK 版本和环境，不运行构建；已选择项目时必须调用目标 `$GRADLE_HOME/bin/gradle` 执行 `--no-daemon --console=plain build`，默认包含测试。
+菜单 `7` 安装或复用独立 Gradle，修复完整 SDK 环境。未选择项目时验证 SDK 版本和环境，不运行构建；已选择项目时，按 IDEA 分发选择 Wrapper 或 LOCAL 实际 `gradleHome`，执行 `--no-daemon --console=plain build`，默认包含测试。没有 IDEA 项目配置时使用受管 `GRADLE_HOME` 并提示待导入，未知分发配置会失败。
 
-菜单 `1` 会在所有组件修复及环境验证之后，执行同样的项目构建检查。非零退出码，或退出零但缺少 `BUILD SUCCESSFUL`，均不能报告最终成功。具体命令和排错见 [Gradle 指南](gradle.md)。
+菜单 `1` 会增加 IDEA 项目配置预检，并在组件修复及环境验证之后执行同样的终端构建检查。构建非零退出，或退出零但缺少 `BUILD SUCCESSFUL`，均不能报告构建通过。项目配置待设置以阶段退出码 `2` 记录；SDK 与终端构建通过时，总体退出码为 `0`，仍明确要求完成 IDEA 设置。具体命令和排错见 [Gradle 指南](gradle.md)。
 
 ## 修复历史与结果
 
@@ -106,7 +108,7 @@ bash dev-kit/.support/scripts/runtime/config-jdk.sh
 - `before/`、`after/`、`config-changes.diff`：配置前后快照及差异；同时保留文件摘要和扫描结果。
 - `plugin-backups/`：执行插件替换时保留的旧目录；插件阶段还有逐项结果。
 
-最终结果区分“修复及项目构建全部通过”“环境或所选组件验证通过，未选择项目、未构建”和“失败”。菜单 `10` 可查看历史。单独运行底层 SDK 脚本用于调试时，不等于启动了一次完整审计流程；需要汇总历史时使用菜单或 `repair-env.sh`。预演不创建历史。
+最终结果区分 `SUCCEEDED`（所选修复、SDK 和终端构建通过，IDEA 静态配置可解析）、`PROJECT_BUILD_VERIFIED_IDEA_PENDING`（SDK 和终端构建通过，IDEA 待配置）、未选项目的环境或组件验证通过，以及失败。前两者均需手动启动 IDEA 并同步，不代表 GUI 已可用。菜单 `10` 可查看历史；需要完整汇总记录时使用菜单或 `repair-env.sh`，底层 SDK 脚本仅用于单项调试。预演不创建历史。
 
 ## 维护者默认配置
 
@@ -125,6 +127,7 @@ bash dev-kit/.support/scripts/runtime/config-jdk.sh
 | `ENV_FILE` / `JDK_ENV_FILE` / `GRADLE_ENV_FILE` | 上述聚合文件与两个模块文件 |
 | `SHELL_PROFILE` | 默认随 Shell 选择 `.zshrc` / `.bash_profile` |
 | `IDEA_APP` / `IDEA_PLUGINS_DIR` | 个人 IDEA 应用目录及 `IdeaIC2024.3/plugins` 目录 |
+| `IDEA_CONFIG_DIR` | `~/Library/Application Support/JetBrains/IdeaIC2024.3`；用于读取 SDK 登记表 |
 | `REPAIR_HISTORY_DIR` | `~/Library/Logs/team-java-env/history` |
 
 `REPAIR_RUN_DIR` 由修复入口为当前运行自动设置，成员不必填写。服务器准备见[服务启动指南](../service-startup.md)，固定包来源见[运行环境来源](../resources/runtime-sources.md)。安装包齐全不代表业务依赖已缓存；完全离线构建仍需项目维护者准备依赖并验证。

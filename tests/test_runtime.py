@@ -61,31 +61,33 @@ class RuntimeTests(unittest.TestCase):
         self.assertFalse(self.props.with_suffix(".properties.bak").exists())
 
     def test_wrapper_update_preserves_settings_backup_and_is_idempotent(self):
+        env = self.fixture_gradle()
         args = ("--project", str(self.project))
-        result = self.run_script("scripts/runtime/config-gradle.sh", *args)
+        result = self.run_script("scripts/runtime/config-gradle.sh", *args, extra=env)
         self.assert_ok(result)
-        expected = "# keep\ndistributionUrl=http\\://127.0.0.1:8080/resources/runtime/gradle/gradle-4.5.1-bin.zip\nzipStorePath=wrapper/dists\n"
+        expected = f"# keep\ndistributionUrl=http\\://{env['SERVER_ADDR']}/resources/runtime/gradle/gradle-4.5.1-bin.zip\nzipStorePath=wrapper/dists\n"
         self.assertEqual(self.props.read_text(), expected)
         self.assertEqual(self.props.with_suffix(".properties.bak").read_text(), self.original)
-        self.assert_ok(self.run_script("scripts/runtime/config-gradle.sh", *args))
+        self.assert_ok(self.run_script("scripts/runtime/config-gradle.sh", *args, extra=env))
         self.assertEqual(self.props.read_text(), expected)
         self.assertEqual(self.props.with_suffix(".properties.bak").read_text(), self.original)
 
     def test_wrapper_custom_path_and_checksum(self):
         old = self.original + "distributionSha256Sum=" + "a" * 64 + "\n"
         self.props.write_text(old)
-        env = {"SERVER_ADDR": "mirror.example:9090", "SERVER_SCHEME": "https",
+        env = {**self.fixture_gradle("tools/gradle.zip"),
                "GRADLE_PACKAGE_PATH": "tools/gradle.zip", "GRADLE_SHA256": "B" * 64}
         self.assert_ok(self.run_script("scripts/runtime/config-gradle.sh", "--project", str(self.project), extra=env))
         contents = self.props.read_text()
-        self.assertIn("distributionUrl=https\\://mirror.example:9090/tools/gradle.zip\n", contents)
+        self.assertIn(f"distributionUrl=http\\://{env['SERVER_ADDR']}/tools/gradle.zip\n", contents)
         self.assertIn("distributionSha256Sum=" + "b" * 64 + "\n", contents)
 
     def test_relative_project_works_with_exported_cdpath(self):
+        env = {**self.fixture_gradle(), "CDPATH": str(self.base)}
         result = self.run_script("scripts/runtime/config-gradle.sh", "--project", self.project.name,
-                                 extra={"CDPATH": str(self.base)})
+                                 extra=env)
         self.assert_ok(result)
-        self.assertIn("127.0.0.1:8080", self.props.read_text())
+        self.assertIn(env["SERVER_ADDR"], self.props.read_text())
 
     def test_repair_preview_accepts_project_without_complete_wrapper(self):
         (self.wrapper / "gradle-wrapper.jar").unlink()
@@ -112,6 +114,18 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("build.gradle", result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
+
+    def fixture_gradle(self, path="resources/runtime/gradle/gradle-4.5.1-bin.zip"):
+        web = self.base / "gradle-web"
+        package = web / path
+        package.parent.mkdir(parents=True)
+        package.write_bytes(b"fixture used only for HEAD availability check")
+        handler = lambda *args, **kwargs: QuietHandler(*args, directory=str(web), **kwargs)
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return {"SERVER_ADDR": f"127.0.0.1:{server.server_port}"}
 
     def fixture_jdk(self, version="1.8.0_432"):
         package = self.base / "web/packages"

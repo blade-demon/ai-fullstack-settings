@@ -1,5 +1,25 @@
 # IDEA 2024 与离线插件来源核验
 
+## 新增 Lombok
+
+2026-10-06 将 Lombok 纳入默认插件清单。使用 JetBrains 官方按 build 下载接口传入 `IC-243.28141.41`，解析到以下 stable 版本，已下载官方原包并读取内部 `META-INF/plugin.xml`：
+
+| 插件 | 固定版本 / updateId | 声明的兼容 build | 必需依赖 | 官方原包 |
+| --- | --- | --- | --- | --- |
+| Lombok | `243.28141.18` / `854391` | `243.28141 — 243.*` | `com.intellij.modules.lang`、`com.intellij.modules.platform`、`com.intellij.modules.java` | [lombok-243.28141.18.zip](https://plugins.jetbrains.com/files/6317/854391/lombok-243.28141.18.zip) |
+
+ZIP 为 494873 字节，唯一条目为 `lombok/lib/lombok.jar`；XML ID 使用历史拼写 `Lombook Plugin`。描述文件使用旧式 `<depends>`，无额外必需插件及新式 `<dependencies>` 子元素，兼容当前自动安装器。官方 Marketplace 标记 `pricingModel=FREE`，许可链接指向 [JetBrains User Agreement](https://www.jetbrains.com/legal/docs/toolbox/user.html)；归档未附独立 LICENSE/NOTICE 文件，不将其标记为 Apache 2.0。
+
+来源：[按 build 下载接口](https://plugins.jetbrains.com/pluginManager?action=download&id=Lombook%20Plugin&build=IC-243.28141.41)、[指定更新](https://plugins.jetbrains.com/api/updates/854391)、[插件详情](https://plugins.jetbrains.com/api/plugins/6317)、[版本页](https://plugins.jetbrains.com/plugin/6317-lombok/versions/stable/854391)。
+
+ZIP 和内部 JAR 完整性检查通过，本地计算的 SHA-256 为：
+
+```text
+cfd5f5dea4cfff7291219f143a53941f12f85fecb55f62d7f36ff61f0e2e8290  lombok-243.28141.18.zip
+```
+
+该摘要来自实际下载文件，不是官方独立公布的摘要。IDE 插件版本与业务项目的 Lombok 库版本分别管理，安装、启用、注解处理和项目验收步骤见 [IDE 指南](../environment/ide.md#lombok-安装与启用步骤)。此次核验未在真实 IDEA 中验收编辑器功能。
+
 ## 新增 GsonFormatPlus 与 Key Promoter X
 
 2026-10-06 根据团队选择追加两款免费插件，已下载并读取 ZIP 内的 `plugin.xml`：

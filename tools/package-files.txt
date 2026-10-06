@@ -6,6 +6,7 @@
 .support/config/mysql.compose.yaml
 .support/scripts/lib/common.sh
 .support/scripts/lib/environment.sh
+.support/scripts/lib/idea-project.sh
 .support/scripts/lib/managed-env.sh
 .support/scripts/lib/audit.sh
 .support/scripts/lib/plugin-metadata.sh
@@ -17,6 +18,7 @@
 .support/scripts/software/install-idea-plugins.sh
 .support/scripts/services/mysql.sh
 .support/scripts/check-env.sh
+.support/scripts/check-idea-project.sh
 .support/scripts/download-tools.sh
 .support/scripts/repair-env.sh
 .support/scripts/verify-environment.sh

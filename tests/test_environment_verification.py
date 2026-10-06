@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,6 +47,117 @@ class EnvironmentVerificationTests(unittest.TestCase):
 
     def run_script(self, script, *args):
         return subprocess.run(['/bin/bash',str(self.support/'scripts'/script),*args],env=self.env,text=True,capture_output=True,timeout=15)
+
+    def idea_project(self, sdk='fixture-jdk-8', jvm='#PROJECT', home=None, distribution=None):
+        self.project = self.base / "业务项目's"
+        idea = self.project / '.idea'; idea.mkdir(parents=True)
+        (self.project / 'build.gradle').write_text('// project fixture\n')
+        (self.project / 'gradlew').write_text('#!/bin/sh\necho SHOULD_NOT_RUN_WRAPPER\nexit 97\n')
+        wrapper = self.project / 'gradle/wrapper'; wrapper.mkdir(parents=True)
+        (wrapper / 'gradle-wrapper.jar').write_bytes(b'fixture')
+        (wrapper / 'gradle-wrapper.properties').write_text('distributionUrl=https\\://example.invalid/gradle-4.5.1-bin.zip\n')
+        root = ET.Element('project')
+        ET.SubElement(root, 'component', name='ProjectRootManager', **{'project-jdk-name': sdk, 'project-jdk-type': 'JavaSDK'})
+        ET.ElementTree(root).write(idea / 'misc.xml', encoding='utf-8')
+        root = ET.Element('project')
+        settings = ET.SubElement(ET.SubElement(root, 'component', name='GradleSettings'), 'option', name='linkedExternalProjectsSettings')
+        project_settings = ET.SubElement(settings, 'GradleProjectSettings')
+        ET.SubElement(project_settings, 'option', name='externalProjectPath', value='$PROJECT_DIR$')
+        ET.SubElement(project_settings, 'option', name='gradleJvm', value=jvm)
+        if distribution:
+            ET.SubElement(project_settings, 'option', name='distributionType', value=distribution)
+        ET.ElementTree(root).write(idea / 'gradle.xml', encoding='utf-8')
+        root = ET.Element('application')
+        jdk = ET.SubElement(ET.SubElement(root, 'component', name='ProjectJdkTable'), 'jdk')
+        ET.SubElement(jdk, 'name', value='fixture-jdk-8')
+        ET.SubElement(jdk, 'type', value='JavaSDK')
+        ET.SubElement(jdk, 'homePath', value=str(home or self.jdk))
+        config = self.home / 'Library/Application Support/JetBrains/IdeaIC2024.3/options'
+        config.mkdir(parents=True)
+        ET.ElementTree(root).write(config / 'jdk.table.xml', encoding='utf-8')
+        return idea
+
+    def test_project_inherited_missing_sdk_is_pending_despite_valid_terminal_sdk(self):
+        idea = self.idea_project(sdk='removed-sdk')
+        before = {p: p.read_bytes() for p in idea.iterdir()}
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('IDEA 项目待配置', result.stdout)
+        self.assertIn('#PROJECT', result.stdout)
+        self.assertIn(str(self.jdk), result.stdout)
+        self.assertNotIn('SHOULD_NOT_RUN_WRAPPER', result.stdout)
+        self.assertEqual(before, {p: p.read_bytes() for p in idea.iterdir()})
+
+    def test_registered_project_sdk_and_explicit_jvm_are_checked_without_running_wrapper(self):
+        self.idea_project(jvm='fixture-jdk-8')
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('IDEA 项目配置可解析', result.stdout)
+        self.assertIn('fixture-jdk-8', result.stdout)
+        self.assertIn('Wrapper', result.stdout)
+        self.assertIn('同步', result.stdout)
+        self.assertNotIn('SHOULD_NOT_RUN_WRAPPER', result.stdout)
+
+    def test_registered_sdk_with_missing_installation_is_pending(self):
+        self.idea_project(home=self.base / 'deleted-jdk')
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('IDEA 项目待配置', result.stdout)
+
+    def test_malformed_idea_configuration_is_not_reported_ready(self):
+        idea = self.idea_project()
+        (idea / 'gradle.xml').write_text('<project><broken>')
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('IDEA 项目待配置', result.stdout)
+
+    def test_idea_xml_external_entity_is_rejected_without_reading_its_content(self):
+        idea = self.idea_project()
+        secret = self.base / 'private'; secret.write_text('PRIVATE_ENTITY_CONTENT')
+        (idea / 'misc.xml').write_text(f'<!DOCTYPE project [<!ENTITY leak SYSTEM "{secret.as_uri()}">]><project>&leak;</project>')
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn('PRIVATE_ENTITY_CONTENT', result.stdout + result.stderr)
+
+    def test_local_idea_distribution_requires_its_own_gradle_home(self):
+        self.idea_project(distribution='LOCAL')
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('Gradle', result.stdout)
+        self.assertIn(str(self.gradle), result.stdout)
+
+    def test_project_sdk_type_must_match_registered_java_sdk(self):
+        idea = self.idea_project()
+        xml = ET.parse(idea / 'misc.xml')
+        xml.find('component').set('project-jdk-type', 'UnknownSDK')
+        xml.write(idea / 'misc.xml', encoding='utf-8')
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('IDEA 项目待配置', result.stdout)
+
+    def test_utf16_dtd_is_rejected_before_sdk_entity_expansion(self):
+        idea = self.idea_project()
+        content = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE project [<!ENTITY sdk "fixture-jdk-8">]><project><component name="ProjectRootManager" project-jdk-name="&sdk;" project-jdk-type="JavaSDK" /></project>'
+        (idea / 'misc.xml').write_bytes(content.encode('utf-16'))
+        result = self.run_script('check-env.sh', '--project', str(self.project))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('IDEA 项目待配置', result.stdout)
+
+    def test_duplicate_distribution_settings_refuse_to_run_either_gradle(self):
+        idea = self.idea_project()
+        xml = ET.parse(idea / 'gradle.xml')
+        settings = xml.find('.//GradleProjectSettings')
+        ET.SubElement(settings, 'option', name='distributionType', value='DEFAULT_WRAPPED')
+        ET.SubElement(settings, 'option', name='distributionType', value='LOCAL')
+        xml.write(idea / 'gradle.xml', encoding='utf-8')
+        calls = self.base / 'wrapper-calls'
+        self.env['IDEA_ROUTE_RECORD'] = str(calls)
+        wrapper = self.project / 'gradlew'
+        wrapper.write_text('#!/bin/sh\nprintf "%s\\n" "$@" >> "$IDEA_ROUTE_RECORD"\nif [ "$1" = --version ]; then echo "Gradle 4.5.1"; else echo "BUILD SUCCESSFUL"; fi\n')
+        wrapper.chmod(0o755)
+        result = self.run_script('runtime/verify-gradle.sh', '--project', str(self.project))
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(calls.exists())
 
     def test_full_scan_lists_all_variables_and_idea_without_running_ide(self):
         result=self.run_script('check-env.sh')

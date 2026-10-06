@@ -51,7 +51,7 @@ python3 server/manage.py start
 
 也可双击 Windows 的 `server/start-server.cmd` 或 macOS 的 `server/start-server.command`；无参数时均执行 `start`。它自动检测本机活动 IPv4 地址，多个候选时在终端选择序号；先占用默认 `8080` 端口，再校验资源、补缺下载、带资源打包并显示真实 HTTP 下载链接。服务监听 `0.0.0.0`，窗口需要保持运行。自动检测不保证成员网段、防火墙或 VPN 已允许访问，分发前仍须从成员电脑验证。
 
-资源下载默认保存到仓库 `resources/`，清单包含 JDK 8、Gradle 4.5.1、IDEA 社区版、DBeaver 和五个免费 IDEA 插件；全部约 2.53 GB。重复执行时，已有且校验通过的资源会复用；损坏文件保留并报错，不自动覆盖。来源、版本、分组筛选和校验方式见[资源准备指南](resources/README.md)。
+资源下载默认保存到仓库 `resources/`，清单包含 JDK 8、Gradle 4.5.1、IDEA 社区版、DBeaver 和六个免费 IDEA 插件；全部约 2.53 GB。重复执行时，已有且校验通过的资源会复用；损坏文件保留并报错，不自动覆盖。来源、版本、分组筛选和校验方式见[资源准备指南](resources/README.md)。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -134,7 +134,7 @@ python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 808
     ├── software/
     │   ├── idea/                    # 两种架构的 IDEA DMG
     │   └── dbeaver/                 # 两种架构的 DBeaver DMG
-    └── plugins/idea/                # 五个原始插件 ZIP
+    └── plugins/idea/                # 六个原始插件 ZIP
 ```
 
 每个安装包的同名 `.sha256` 随资源保留。JDK URL 以 `/resources/runtime/jdk/` 开头，Gradle URL 为 `/resources/runtime/gradle/gradle-4.5.1-bin.zip`。从旧目录升级时应重新发布工具和资源，使配置与这些路径一致；具体约定见[运行环境指南](environment/runtime.md)。以后只更新工具时保留服务器上的 `resources/`，不必重复上传大包。

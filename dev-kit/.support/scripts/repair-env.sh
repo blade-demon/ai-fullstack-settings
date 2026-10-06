@@ -31,7 +31,7 @@ if "$dry_run"; then
     log "[预演] Gradle 安装包：$(package_url "$GRADLE_PACKAGE_PATH")"
     log "[预演] 扫描 JDK 8、Gradle ${GRADLE_VERSION}、IDEA 和完整环境变量；修复范围：$scope"
     log '[预演] 缺失项才下载安装；校验受管环境、IDEA、插件并记录前后差异。'
-    [ -z "$project" ] || log "[预演] 项目：${project}；执行目标 Gradle --no-daemon --console=plain build，失败则整体失败。"
+    [ -z "$project" ] || log "[预演] 项目：${project}；检查 IDEA 的项目 SDK、Gradle JVM 和分发，再执行对应 Gradle --no-daemon --console=plain build，失败则整体失败。"
     log '[预演] 本次不安装、不构建、不创建历史目录。'
     exit 0
 fi
@@ -40,6 +40,7 @@ REPAIR_RUN_DIR=''
 final_status=FAILED
 failure=0
 finished=false
+idea_project_pending=false
 finish() {
     local code=$?
     trap - EXIT
@@ -115,6 +116,24 @@ esac
 run_step '修复后完整验证' "$REPO_ROOT/scripts/verify-environment.sh" --scope "$scope" || true
 if [ -n "$project" ]; then
     if "$sdk_ready"; then
+        step_number=$((step_number + 1))
+        logfile="$REPAIR_RUN_DIR/logs/$(printf '%02d' "$step_number").log"
+        log '正在检查：IDEA 项目配置（静态预检，实际同步需在 IDEA 中确认）'
+        set +e
+        /bin/bash "$REPO_ROOT/scripts/check-idea-project.sh" --project "$project" 2>&1 | tee "$logfile"
+        results=("${PIPESTATUS[@]}")
+        set -e
+        code="${results[0]}"
+        if [ "${results[1]}" -ne 0 ]; then code="${results[1]}"; fi
+        if [ "$code" -eq 0 ]; then
+            audit_step 'IDEA 项目配置预检' static_verified 0 "logs/${logfile##*/}" || failure=1
+        elif [ "$code" -eq 2 ] && [ "${results[1]}" -eq 0 ]; then
+            idea_project_pending=true
+            audit_step 'IDEA 项目配置预检' pending 2 "logs/${logfile##*/}" || failure=1
+        else
+            audit_step 'IDEA 项目配置预检' failed "$code" "logs/${logfile##*/}" || failure=1
+            [ "$failure" -ne 0 ] || failure="$code"
+        fi
         run_step '项目构建验证' "$REPO_ROOT/scripts/runtime/verify-gradle.sh" --project "$project" || true
     else
         audit_step '项目构建验证' skipped - 'JDK或Gradle未就绪'
@@ -122,7 +141,9 @@ if [ -n "$project" ]; then
 fi
 /bin/bash "$REPO_ROOT/scripts/check-env.sh" ${scan_args[@]+"${scan_args[@]}"} > "$REPAIR_RUN_DIR/after-scan.txt" 2>&1 || true
 if [ "$failure" -eq 0 ]; then
-    if [ -n "$project" ]; then final_status=SUCCEEDED
+    if [ -n "$project" ]; then
+        if "$idea_project_pending"; then final_status=PROJECT_BUILD_VERIFIED_IDEA_PENDING
+        else final_status=SUCCEEDED; fi
     elif [ "$scope" = all ]; then final_status=ENVIRONMENT_VERIFIED_NO_PROJECT
     else final_status=COMPONENT_VERIFIED; fi
 fi
@@ -133,7 +154,8 @@ audit_finish "$final_status" "$failure" || {
 }
 finished=true
 case "$final_status" in
-    SUCCEEDED) log '最终结果：修复及项目构建全部通过。' ;;
+    SUCCEEDED) log '最终结果：SDK 和终端项目构建验证通过；IDEA 项目静态配置可解析，请启动 IDEA 后重新同步确认。' ;;
+    PROJECT_BUILD_VERIFIED_IDEA_PENDING) log '最终结果：SDK 和终端项目构建验证通过；IDEA 项目配置待确认，请按预检中的实际路径设置 JDK、Gradle JVM 和分发，再重新同步。' ;;
     ENVIRONMENT_VERIFIED_NO_PROJECT) log '最终结果：环境验证通过；未选择项目，未执行项目构建。' ;;
     COMPONENT_VERIFIED) log '最终结果：所选组件验证通过；未选择项目，未执行项目构建。' ;;
     *) log '最终结果：失败。安装步骤完成不代表任务成功，请查看失败阶段和修复历史。' ;;

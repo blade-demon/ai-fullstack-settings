@@ -9,11 +9,11 @@
 | [系统运行环境](runtime.md) | JDK 8、独立 Gradle 4.5.1、完整环境变量 | 菜单 `1` 一键修复，或 `2` 单独修复 JDK |
 | [Gradle 安装与验证](gradle.md) | 从内网安装独立 Gradle，所选项目必须通过实际构建 | 菜单 `7`，可选择项目 |
 | [本地服务与数据](services.md) | 可选 MySQL 容器、数据库客户端 | 菜单 `4` 启动、`5` 停止 MySQL |
-| [IDE 与插件](ide.md) | IDEA 个人目录安装、五个团队插件、项目 SDK 与 Gradle JVM | 菜单 `8` 安装 IDEA，`9` 安装全部插件 |
+| [IDE 与插件](ide.md) | IDEA 个人目录安装、六个团队插件、项目 SDK 与 Gradle JVM | 菜单 `8` 安装 IDEA，`9` 安装全部插件 |
 | [项目依赖](dependencies.md) | Lombok、Spring、MyBatis 和数据库驱动 | 遵循项目现有构建文件 |
 
 启动时先扫描安装状态和持久环境配置。菜单 `3` 用于选择项目并只读检查；选择后，菜单 `1` 一键修复会默认使用 Gradle 4.5.1 执行 `build`。菜单 `7` 单独安装配置 Gradle，选择项目后同样执行构建。必须退出码为 0 且出现 `BUILD SUCCESSFUL` 才确认构建通过；未选项目只报告环境验证结果。
 
-菜单 `8` 将 IDEA 安装到个人 `~/Applications`；菜单 `9` 一键安装全部五个团队插件，安装前退出 IDEA。菜单 `10` 查看历次修复结果，包含配置差异、备份路径、验证及构建日志，详见[修复历史](../repair-history.md)。Docker 仅在使用本地 MySQL 时需要。
+菜单 `8` 将 IDEA 安装到个人 `~/Applications`；菜单 `9` 一键安装全部六个团队插件，安装前退出 IDEA。菜单 `10` 查看历次修复结果，包含配置差异、备份路径、验证及构建日志，详见[修复历史](../repair-history.md)。Docker 仅在使用本地 MySQL 时需要。
 
 本目录命令示例供维护者使用；除明确要求进入业务项目的步骤外，从仓库根目录执行。内部脚本位于 `dev-kit/.support/`，成员不必浏览或修改；Java 业务项目由 `--project` 显式指定，`--dry-run` 可预览操作。

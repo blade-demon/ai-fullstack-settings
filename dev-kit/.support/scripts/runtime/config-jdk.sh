@@ -76,6 +76,9 @@ else
     relative_home="${java_home#"$temp_dir/payload"}"
     # 同一文件系统内移动已验证的完整目录，失败时不留下半成品。
     [ ! -e "$JDK_INSTALL_DIR" ] || die '安装期间目标目录已被创建，请重试'
+    ownership_marker="$temp_dir/payload/.team-java-env-install.json"
+    [ ! -e "$ownership_marker" ] && [ ! -L "$ownership_marker" ] || die 'JDK 安装包包含保留的来源标记路径，未发布安装'
+    printf '%s\n' '{"schema":1,"tool":"team-java-env","kind":"jdk"}' > "$ownership_marker" || die '无法写入 JDK 安装来源标记，未发布安装'
     mv "$temp_dir/payload" "$JDK_INSTALL_DIR"
     java_home="$JDK_INSTALL_DIR$relative_home"
 fi

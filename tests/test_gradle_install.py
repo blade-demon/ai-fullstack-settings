@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,6 +79,49 @@ class GradleInstallTests(unittest.TestCase):
         binary.write_text(GRADLE_FIXTURE)
         binary.chmod(0o755)
         (self.target / "lib/gradle-launcher-4.5.1.jar").write_bytes(b"fixture launcher")
+
+    def seed_environment(self):
+        self.env_file.parent.mkdir(parents=True, exist_ok=True)
+        values = {"JAVA_HOME": self.jdk, "JAVA_8_HOME": self.jdk, "JRE_HOME": self.jdk / "jre",
+                  "GRADLE_HOME": self.target, "GRADLE_4_5_1_HOME": self.target,
+                  "GRADLE_USER_HOME": self.home / ".gradle"}
+        self.env_file.write_text("".join("export " + key + "=" + shlex.quote(str(value)) + "\n"
+                                         for key, value in values.items()))
+
+    def configure_idea_gradle(self, distribution=None, gradle_home=None):
+        idea = self.project / ".idea"
+        idea.mkdir(exist_ok=True)
+        project = ET.Element("project", version="4")
+        component = ET.SubElement(project, "component", name="GradleSettings")
+        option = ET.SubElement(component, "option", name="linkedExternalProjectsSettings")
+        settings = ET.SubElement(option, "GradleProjectSettings")
+        ET.SubElement(settings, "option", name="externalProjectPath", value="$PROJECT_DIR$")
+        if distribution is not None:
+            ET.SubElement(settings, "option", name="distributionType", value=distribution)
+        if gradle_home is not None:
+            ET.SubElement(settings, "option", name="gradleHome", value=str(gradle_home))
+        ET.ElementTree(project).write(idea / "gradle.xml", encoding="unicode")
+
+    def seed_wrapper(self):
+        self.wrapper_calls = self.base / "wrapper-calls"
+        self.wrapper_record = self.base / "wrapper-build-record"
+        wrapper = self.project / "gradlew"
+        wrapper.write_text('#!/bin/sh\nexport GRADLE_CALLS="$WRAPPER_CALLS"\n'
+                           'export BUILD_RECORD="$WRAPPER_BUILD_RECORD"\n'
+                           'export FIXTURE_VERSION="${WRAPPER_VERSION:-4.5.1}"\n' + GRADLE_FIXTURE)
+        wrapper.chmod(0o755)
+        directory = self.project / "gradle/wrapper"
+        directory.mkdir(parents=True)
+        (directory / "gradle-wrapper.jar").write_bytes(b"fixture wrapper jar")
+        (directory / "gradle-wrapper.properties").write_text(
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-4.5.1-bin.zip\n")
+        self.env.update({"WRAPPER_CALLS": str(self.wrapper_calls),
+                         "WRAPPER_BUILD_RECORD": str(self.wrapper_record)})
+
+    def run_verify(self, *args, extra=None):
+        return subprocess.run(["/bin/bash", str(self.support / "scripts/runtime/verify-gradle.sh"),
+                               "--project", str(self.project), *args], cwd=self.base,
+                              env={**self.env, **(extra or {})}, text=True, capture_output=True, timeout=20)
 
     def server(self):
         handler = functools.partial(QuietHandler, directory=str(self.web))
@@ -160,6 +204,158 @@ class GradleInstallTests(unittest.TestCase):
                                      str(self.target), str(self.home / ".gradle")])
         self.assertEqual(record[7:], ["3", "--no-daemon", "--console=plain", "build"])
         self.assertFalse((self.project / "gradlew").exists())
+        self.assertIn("IDEA 项目未配置", result.stdout)
+
+    def test_idea_wrapper_modes_execute_the_project_wrapper_even_when_sdk_is_pending(self):
+        self.seed_install()
+        self.seed_environment()
+        self.seed_wrapper()
+        for distribution in (None, "DEFAULT_WRAPPED", "WRAPPED"):
+            with self.subTest(distribution=distribution):
+                self.configure_idea_gradle(distribution)
+                self.wrapper_calls.unlink(missing_ok=True)
+                result = self.run_verify()
+                self.assert_ok(result)
+                self.assertFalse(self.calls.exists(), "IDEA 选择 Wrapper 时不能执行独立 Gradle")
+                self.assertEqual(self.wrapper_calls.read_text().splitlines(),
+                                 ["--version", "--no-daemon", "--console=plain", "build"])
+                self.assertEqual(self.wrapper_record.read_text().splitlines()[7:],
+                                 ["3", "--no-daemon", "--console=plain", "build"])
+
+    def test_idea_wrapper_does_not_require_a_managed_gradle_distribution(self):
+        self.seed_environment()
+        self.seed_wrapper()
+        self.configure_idea_gradle("DEFAULT_WRAPPED")
+        self.assert_ok(self.run_verify())
+        self.assertTrue(self.wrapper_record.exists())
+        self.assertFalse(self.target.exists())
+
+    def test_idea_wrapper_actual_version_must_match_the_team_target_before_build(self):
+        self.seed_install()
+        self.seed_environment()
+        self.seed_wrapper()
+        self.configure_idea_gradle("DEFAULT_WRAPPED")
+        result = self.run_verify(extra={"WRAPPER_VERSION": "4.5.10"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("4.5.10", result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.wrapper_record.exists())
+
+    def test_idea_local_executes_its_configured_home_instead_of_managed_gradle(self):
+        self.seed_environment()
+        local_home = self.home / "IDEA local Gradle's home"
+        (local_home / "bin").mkdir(parents=True)
+        (local_home / "lib").mkdir()
+        (local_home / "lib/gradle-launcher-4.5.1.jar").write_bytes(b"fixture launcher")
+        local_calls = self.base / "idea-local-calls"
+        binary = local_home / "bin/gradle"
+        binary.write_text('#!/bin/sh\nexport GRADLE_CALLS="$IDEA_LOCAL_CALLS"\n' + GRADLE_FIXTURE)
+        binary.chmod(0o755)
+        self.configure_idea_gradle("LOCAL", "$USER_HOME$/" + local_home.name)
+        result = self.run_verify(extra={"IDEA_LOCAL_CALLS": str(local_calls)})
+        self.assert_ok(result)
+        self.assertFalse(self.calls.exists())
+        self.assertEqual(local_calls.read_text().splitlines(),
+                         ["--version", "--no-daemon", "--console=plain", "build"])
+        self.assertEqual(self.build_record.read_text().splitlines()[4], str(local_home))
+
+    def test_idea_local_without_home_is_pending_and_never_falls_back_to_managed_gradle(self):
+        self.seed_install()
+        self.seed_environment()
+        self.configure_idea_gradle("LOCAL")
+        result = self.run_verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("IDEA", result.stdout + result.stderr)
+        self.assertIn("gradleHome", result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.build_record.exists())
+
+    def test_unknown_or_malformed_idea_distribution_never_executes_a_gradle(self):
+        self.seed_install()
+        self.seed_environment()
+        for distribution in ("BUNDLED", "UNKNOWN"):
+            with self.subTest(distribution=distribution):
+                self.configure_idea_gradle(distribution)
+                result = self.run_verify()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("IDEA", result.stdout + result.stderr)
+                self.assertFalse(self.calls.exists())
+        (self.project / ".idea/gradle.xml").write_text("<project><broken>")
+        result = self.run_verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("IDEA", result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+
+    def test_idea_wrapper_requires_complete_executable_wrapper(self):
+        self.seed_install()
+        self.seed_environment()
+        self.seed_wrapper()
+        self.configure_idea_gradle("DEFAULT_WRAPPED")
+        wrapper = self.project / "gradlew"
+        wrapper.chmod(0o644)
+        result = self.run_verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.wrapper_calls.exists())
+        wrapper.chmod(0o755)
+        (self.project / "gradle/wrapper/gradle-wrapper.jar").unlink()
+        result = self.run_verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.wrapper_calls.exists())
+
+    def test_idea_wrapper_preserves_actual_exit_codes_and_requires_build_success_marker(self):
+        self.seed_install()
+        self.seed_environment()
+        self.seed_wrapper()
+        self.configure_idea_gradle("DEFAULT_WRAPPED")
+        for extra, expected in (({"VERSION_EXIT": "17"}, 17), ({"BUILD_EXIT": "23"}, 23),
+                                ({"BUILD_MARKER": "false"}, 1)):
+            with self.subTest(extra=extra):
+                result = self.run_verify(extra=extra)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertNotIn("项目构建验证通过", result.stdout)
+                self.assertFalse(self.calls.exists())
+
+    def test_idea_wrapper_dry_run_does_not_load_environment_or_execute_commands(self):
+        self.seed_wrapper()
+        self.configure_idea_gradle("DEFAULT_WRAPPED")
+        result = self.run_verify("--dry-run")
+        self.assert_ok(result)
+        self.assertIn("Wrapper", result.stdout)
+        self.assertIn("build", result.stdout)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.wrapper_calls.exists())
+        self.assertFalse(self.env_file.exists())
+
+        # 完整 IDEA SDK 关联也不得让预演执行 java/javac 或加载受管环境。
+        sdk_config = self.base / "IDEA config/options"
+        sdk_config.mkdir(parents=True)
+        table = ET.Element("application")
+        component = ET.SubElement(table, "component", name="ProjectJdkTable")
+        sdk = ET.SubElement(component, "jdk")
+        ET.SubElement(sdk, "name", value="Team JDK 8")
+        ET.SubElement(sdk, "type", value="JavaSDK")
+        ET.SubElement(sdk, "homePath", value=str(self.jdk))
+        ET.ElementTree(table).write(sdk_config / "jdk.table.xml", encoding="unicode")
+        (self.project / ".idea/misc.xml").write_text(
+            '<project version="4"><component name="ProjectRootManager" project-jdk-name="Team JDK 8" /></project>')
+        java_calls = self.base / "jdk-calls"
+        for name in ("java", "javac"):
+            binary = self.jdk / "bin" / name
+            binary.write_text('#!/bin/sh\nprintf "%s\\n" ' + shlex.quote(name) +
+                              ' >> "$JAVA_CALLS"\n' + binary.read_text().removeprefix("#!/bin/sh\n"))
+        self.seed_environment()
+        loaded = self.base / "environment-loaded"
+        self.env_file.write_text('printf loaded > "$ENVIRONMENT_LOADED"\n' + self.env_file.read_text())
+        before = self.env_file.read_bytes()
+        result = self.run_verify("--dry-run", extra={"IDEA_CONFIG_DIR": str(sdk_config.parent),
+                                 "JAVA_CALLS": str(java_calls), "ENVIRONMENT_LOADED": str(loaded)})
+        self.assert_ok(result)
+        self.assertFalse(java_calls.exists())
+        self.assertFalse(loaded.exists())
+        self.assertFalse(self.wrapper_calls.exists())
+        self.assertEqual(self.env_file.read_bytes(), before)
 
     def test_build_failure_and_zero_exit_without_success_marker_are_not_success(self):
         self.seed_install()

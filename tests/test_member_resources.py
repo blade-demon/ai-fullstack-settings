@@ -111,8 +111,18 @@ class MemberResourceTests(unittest.TestCase):
         properties.write_text("distributionUrl=https\\://old.example/gradle.zip\n")
         with self.catalog.open("a") as file:
             file.write(f"gradle\truntime\t4.5.1\tany\truntime/gradle/gradle-4.5.1-bin.zip\thttps://unused.example\t{self.digest}\n")
+        resource = self.base / "web/resources/runtime/gradle/gradle-4.5.1-bin.zip"
+        resource.parent.mkdir(parents=True)
+        resource.write_bytes(self.payload)
+        handler = functools.partial(QuietHandler, directory=str(self.base / "web"))
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
         result = subprocess.run(["/bin/bash", str(self.support / "scripts/runtime/config-gradle.sh"),
-                                 "--project", str(project)], env=self.env, text=True, capture_output=True)
+                                 "--project", str(project)],
+                                env={**self.env, "SERVER_ADDR": f"127.0.0.1:{server.server_port}"},
+                                text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("distributionSha256Sum=" + self.digest, properties.read_text())
 

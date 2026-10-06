@@ -21,6 +21,7 @@ GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 GRADLE_BUILD_TASK="${GRADLE_BUILD_TASK:-build}"
 IDEA_VERSION="${IDEA_VERSION:-2024.3.7.1}"
 IDEA_APP="${IDEA_APP:-$HOME/Applications/IntelliJ IDEA CE.app}"
+IDEA_CONFIG_DIR="${IDEA_CONFIG_DIR:-$HOME/Library/Application Support/JetBrains/IdeaIC2024.3}"
 IDEA_PLUGINS_DIR="${IDEA_PLUGINS_DIR:-$HOME/Library/Application Support/JetBrains/IdeaIC2024.3/plugins}"
 REPAIR_HISTORY_DIR="${REPAIR_HISTORY_DIR:-$HOME/Library/Logs/team-java-env/history}"
 

@@ -61,7 +61,7 @@ class RepairTests(unittest.TestCase):
         actions = self.record.read_text()
         self.assertIn('build:--project', actions)
         run = self.latest()
-        self.assertIn('SUCCEEDED', (run/'result.tsv').read_text())
+        self.assertIn('PROJECT_BUILD_VERIFIED_IDEA_PENDING', (run/'result.tsv').read_text())
         report = (run/'report.md').read_text()
         self.assertIn(str(self.profile), report)
         self.assertIn('env.sh', report)
@@ -69,6 +69,21 @@ class RepairTests(unittest.TestCase):
         self.assertNotIn('keep-secret', report)
         self.assertTrue((run/'config-changes.diff').is_file())
         self.assertNotIn('keep-secret', (run/'config-changes.diff').read_text())
+
+    def test_terminal_build_success_keeps_unresolved_idea_sdk_pending(self):
+        idea = self.project / '.idea'; idea.mkdir()
+        (idea / 'misc.xml').write_text('<project><component name="ProjectRootManager" project-jdk-name="missing-sdk" /></project>')
+        (idea / 'gradle.xml').write_text('<project><component name="GradleSettings"><option name="linkedExternalProjectsSettings"><GradleProjectSettings><option name="externalProjectPath" value="$PROJECT_DIR$" /><option name="gradleJvm" value="#PROJECT" /></GradleProjectSettings></option></component></project>')
+        before = {p.name: p.read_bytes() for p in idea.iterdir()}
+        result = self.run_script('--project', str(self.project))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        run = self.latest()
+        self.assertIn('PROJECT_BUILD_VERIFIED_IDEA_PENDING', (run / 'result.tsv').read_text())
+        self.assertIn('IDEA 项目配置预检\tpending', (run / 'steps.tsv').read_text())
+        self.assertIn('IDEA 项目待配置', result.stdout)
+        self.assertIn('Project Structure', result.stdout)
+        self.assertNotIn('最终结果：修复及项目构建全部通过', result.stdout)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in idea.iterdir()})
 
     def test_build_failure_is_final_failure_even_after_installations_succeed(self):
         result = self.run_script('--project', str(self.project), extra={'FAIL_STAGE': 'build'})

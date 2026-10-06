@@ -17,6 +17,26 @@ if "$DRY_RUN"; then
     exit 0
 fi
 
+# 只认可目标 URL 对应的完整解压缓存；其它 URL 的同版本缓存不能复用。
+source "$REPO_ROOT/scripts/lib/environment.sh"
+probe_gradle "$PROJECT_DIR" "$gradle_url"
+if [ "$PROBE_GRADLE_STATE" = project_cached ]; then
+    log "目标 URL 对应的 Gradle ${GRADLE_VERSION} 缓存完整，可离线复用：$PROBE_GRADLE_PATH"
+else
+    require_command curl
+    log "检查 Gradle 安装包地址：$gradle_url"
+    # HEAD 仅取响应头；禁止读取 curl 配置，限制连接、总时长与重定向协议。
+    if ! http_status="$(curl --disable --head --fail --location --silent --show-error \
+        --connect-timeout 5 --max-time 15 --proto '=http,https' --proto-redir '=http,https' \
+        --output /dev/null --write-out '%{http_code}' "$gradle_url")"; then
+        die "目标 Gradle 安装包不可达，未修改 Wrapper 配置、备份或权限：$gradle_url"
+    fi
+    case "$http_status" in
+        2[0-9][0-9]) log "目标 Gradle 安装包地址可达（HTTP ${http_status}）。" ;;
+        *) die "目标 Gradle 安装包未返回成功响应（HTTP ${http_status}），未修改 Wrapper 配置、备份或权限：$gradle_url" ;;
+    esac
+fi
+
 temp_file="$(mktemp "${WRAPPER_PROPERTIES}.tmp.XXXXXX")"
 trap 'rm -f "$temp_file"' EXIT
 trap 'exit 130' INT
@@ -45,7 +65,8 @@ GRADLE_CONFIG_URL="$gradle_url" GRADLE_CONFIG_SHA="$GRADLE_SHA256" awk '
 ' "$WRAPPER_PROPERTIES" > "$temp_file"
 if cmp -s "$WRAPPER_PROPERTIES" "$temp_file"; then
     chmod u+x "$PROJECT_DIR/gradlew"
-    log 'Gradle Wrapper 配置已是目标值，无需修改'
+    log 'Gradle Wrapper 配置文件已是目标值，无需修改。'
+    log '尚未运行实际 Wrapper；请在加载 JDK 环境后进入项目执行 ./gradlew -v 验证，并继续验证项目构建。'
     exit 0
 fi
 if [ ! -e "${WRAPPER_PROPERTIES}.bak" ]; then
@@ -53,6 +74,6 @@ if [ ! -e "${WRAPPER_PROPERTIES}.bak" ]; then
 fi
 mv "$temp_file" "$WRAPPER_PROPERTIES"
 chmod u+x "$PROJECT_DIR/gradlew"
-log "Gradle Wrapper 已配置：$gradle_url"
+log "Gradle Wrapper 配置文件已更新：$gradle_url"
 log "初始备份：${WRAPPER_PROPERTIES}.bak"
-log '已保留其他属性；请在加载 JDK 环境后进入项目执行 ./gradlew -v 验证。'
+log '已保留其他属性；尚未运行实际 Wrapper，请在加载 JDK 环境后进入项目执行 ./gradlew -v 验证，并继续验证项目构建。'

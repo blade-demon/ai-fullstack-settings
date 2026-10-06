@@ -2,7 +2,7 @@
 
 团队基线为 **IntelliJ IDEA Community 2024.3.7.1**，应用安装在 **`~/Applications/IntelliJ IDEA CE.app`**。这是当前用户的个人应用目录，与系统 `/Applications` 不同；工具使用当前 `HOME`，不要求填写用户名或运行 `sudo`。
 
-菜单 `1` 一键修复默认包含 IDEA 和全部五个插件；菜单 `8` 单独修复 IDEA，菜单 `9` 安装并验证全部插件。菜单 `6` 保留仅下载功能，下载 ZIP 不等于插件已经安装。
+菜单 `1` 一键修复默认包含 IDEA 和全部六个插件；菜单 `8` 单独修复 IDEA，菜单 `9` 安装并验证全部插件。菜单 `6` 保留仅下载功能，下载 ZIP 不等于插件已经安装。
 
 ## 操作前退出 IDEA
 
@@ -26,7 +26,7 @@
 
 需要手动安装时，也应把 DMG 中的应用复制到这个个人目录。DMG 内的 `Applications` 快捷方式通常指向系统 `/Applications`，不是本工具约定的安装位置。
 
-## 五个插件默认全部安装
+## 六个插件默认全部安装
 
 | 插件 | 固定版本 | 主要用途 |
 | --- | --- | --- |
@@ -35,6 +35,7 @@
 | GenerateAllSetter | 2.8.5 | 生成 setter 调用 |
 | GsonFormatPlus | 1.6.1 | 根据 JSON 生成 Java 对象代码 |
 | Key Promoter X | 2026.1.2 | 提示操作对应的快捷键 |
+| Lombok | 243.28141.18 | 让 IDEA 识别 Lombok 生成的构造器、getter 和 setter |
 
 这些版本与团队 IDEA 2024 基线配套。固定来源和兼容范围见[插件来源说明](../resources/plugin-sources.md)，不要直接替换为 Marketplace 最新版。
 
@@ -44,28 +45,54 @@
 ~/Library/Application Support/JetBrains/IdeaIC2024.3/plugins
 ```
 
-维护者可通过 `IDEA_PLUGINS_DIR` 指定其他受控目录；应用位置由 `IDEA_APP` 表示。修复流程会对全部目标插件逐项安装和验证，最终报告实际结果。需要替换原插件时，旧目录保存在**本次修复历史**的 `plugin-backups/`；用户其他插件不应当作这五个插件的安装结果。
+维护者可通过 `IDEA_PLUGINS_DIR` 指定其他受控目录；应用位置由 `IDEA_APP` 表示。修复流程会对全部目标插件逐项安装和验证，最终报告实际结果。需要替换原插件时，旧目录保存在**本次修复历史**的 `plugin-backups/`；用户其他插件不应当作这六个插件的安装结果。
 
 操作步骤：
 
 1. 保存工作并退出 IDEA。
 2. 使用菜单 `1` 一键修复，或在 IDEA 已就绪时使用菜单 `9`。
 3. 检查插件逐项结果和整体结果；失败时从菜单 `10` 打开本次历史，查看对应日志和备份。
-4. 手动启动 IDEA，在 Plugins 页面确认五个插件显示正常，再在真实项目中使用相关功能。
+4. 手动启动 IDEA，在 Plugins 页面确认六个插件显示正常，再在真实项目中使用相关功能。
 
 只想下载或手动安装时，使用菜单 `6`。原始 ZIP 默认保存在 `~/Downloads/team-java-env/plugins/idea/`，可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选择 ZIP，按提示重启；手动磁盘安装不需要先解压 ZIP。自动安装与手动安装应使用同一组固定版本。
 
+## Lombok 安装与启用步骤
+
+菜单 `1` 和 `9` 已包含 Lombok；自动安装完成后，从第 4 步开始检查。需要单独手动安装时，按以下步骤操作：
+
+1. 使用菜单 `6`，选择列表中 `[lombok]` 对应的数字序号，得到 `~/Downloads/team-java-env/plugins/idea/lombok-243.28141.18.zip`。
+2. 打开 IDEA，在 macOS 顶部菜单选择 `IntelliJ IDEA → Settings… → Plugins`（旧版本设置菜单可能叫 `Preferences…`）。
+3. 点击 Plugins 页的齿轮，选择 `Install Plugin from Disk…`，选中上述原始 ZIP，点击 `OK`，按提示重启 IDEA。无需先解压 ZIP。[IDEA 官方安装说明](https://www.jetbrains.com/help/idea/managing-plugins.html)
+4. 进入 `Settings → Plugins → Installed`，搜索 `Lombok`，确认已启用；若显示 `Enable`，点击启用并按提示重启。
+5. 进入 `Settings → Build, Execution, Deployment → Compiler → Annotation Processors`，勾选 `Enable annotation processing` 和 `Obtain processors from project classpath`，点击 `Apply → OK`。[IDEA 官方注解处理说明](https://www.jetbrains.com/help/idea/annotation-processors-support.html)
+6. 重新加载 Gradle 项目，检查使用 `@RequiredArgsConstructor` 的类是否仍提示 `final` 字段未初始化，并完成真实项目构建验证。
+
+IDEA Lombok 插件用于编辑器识别，业务项目仍需在 `build.gradle` 中声明 Lombok 依赖。IDE 插件版本 `243.28141.18` 与项目使用的 Lombok 库版本分别管理；团队 Gradle 4.5.1 的依赖处理见[项目依赖说明](dependencies.md#gradle-451-与-lombok)。
+
 ## 必要设置
 
-独立 SDK 配置完成后，在 IDEA 中检查：
+SDK 配置完成后，在 IDEA 中检查：
 
 1. **项目 JDK**：在 Project Structure 中添加并选择实际 `JAVA_HOME` 指向的 JDK 8。默认下载外层目录是 `~/.local/share/java-dev/jdk8`，真实 JDK Home 可能位于其内部 `Contents/Home`；复用已有 JDK 时路径也可能不同。
-2. **Gradle 分发**：在 Gradle 设置中选择本地 Gradle 安装，目录填实际 `GRADLE_HOME`，默认 `~/.local/share/java-dev/gradle-4.5.1`，与工具验证的版本一致。
+2. **Gradle 分发**：在 `Settings → Build Tools → Gradle` 中确认项目使用 Wrapper 还是本地安装。选本地安装时，目录填实际 `GRADLE_HOME`，默认 `~/.local/share/java-dev/gradle-4.5.1`；选 Wrapper 时，项目需有完整可执行的 Wrapper，并使用团队要求的 Gradle 版本。
 3. **Gradle JVM**：选择同一个 JDK 8。IDEA 自带运行时用于 IDE 本身，不等于项目或 Gradle 的 JDK。
-4. **注解处理**：项目使用 Lombok 且由 IDEA 编译时，按项目要求启用 annotation processing；Gradle 构建中的处理器依赖仍由业务项目维护。
-5. **项目导入与功能**：导入真实业务项目，核对依赖仓库、运行配置、数据库连接及插件实际功能。
+4. **注解处理**：项目使用 Lombok 时，按上面的安装与启用步骤检查 annotation processing；Gradle 构建中的处理器依赖仍由业务项目维护。
+5. **项目导入与功能**：导入真实业务项目，执行 `Reload All Gradle Projects`，再核对依赖仓库、运行配置、数据库连接及插件实际功能。
 
-默认修复和构建验证直接调用 `$GRADLE_HOME/bin/gradle`，不依赖项目 Wrapper。若团队明确要求使用 Wrapper，可由维护者保留并手动配置；不要把其缓存路径当作当前独立 Gradle 的 `GRADLE_HOME`。
+终端构建验证遵循 IDEA 中关联项目的分发选择：Wrapper 使用 `./gradlew`，LOCAL 使用配置中的实际 `gradleHome/bin/gradle`；未知配置会报错。尚无 IDEA 项目配置时，使用受管独立 `GRADLE_HOME` 并提示待导入。Wrapper 缓存不应当作受管独立安装的 `GRADLE_HOME`。
+
+## 只读项目预检
+
+扫描和修复会通过 macOS 的 `xmllint` 读取所选项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。成员无需安装 Python。
+
+预检检查 Project SDK、Gradle JVM 是否已登记且指向有效 JDK 8，以及 LOCAL 的 Gradle 目录等信息；待配置时打印实际 JDK/Gradle 路径和 IDEA 设置入口。它不会自动写入用户 IDEA 配置，也不会启动 GUI。自定义配置目录时，可由维护者设置 `IDEA_CONFIG_DIR` 后运行：
+
+```bash
+bash dev-kit/.support/scripts/check-idea-project.sh --project "/absolute/path/to/java-project"
+bash dev-kit/.support/scripts/check-idea-project.sh --project "/absolute/path/to/java-project" --dry-run
+```
+
+已选项目待配置时，`check-env.sh` 返回 `1`；修复中的项目预检以待配置状态、阶段退出码 `2` 记录，不替代后续 SDK 和终端构建验证。二者通过时总体退出 `0`，结果为 `PROJECT_BUILD_VERIFIED_IDEA_PENDING`，仍需手动设置 IDEA。静态设置可解析时，`SUCCEEDED` 也只表示修复及终端构建通过，不能确认 IDEA 已同步成功。
 
 终端环境和 IDEA 设置需要分别确认。查看已生成变量可在新终端运行：
 

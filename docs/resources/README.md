@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | `runtime` | Azul Zulu JDK 8u504+1、Gradle 4.5.1 | JDK 分 arm64/x64；Gradle 共用。菜单 `1` 一键修复，或 `2` / `7` 分别独立安装 SDK 并配置完整变量 |
 | `software` | IDEA Community 2024.3.7.1、DBeaver Community 26.2.2 | 各有 arm64/x64 DMG；IDEA 用菜单 `8` 安装到个人应用目录，DBeaver 用菜单 `6` 下载后手动安装 |
-| `plugins` | Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2 | 通用 ZIP；菜单 `9` 安装并验证全部插件，或 `6` 下载后从 IDEA 磁盘安装 |
+| `plugins` | Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 243.28141.18 | 通用 ZIP；菜单 `9` 安装并验证全部插件，或 `6` 下载后从 IDEA 磁盘安装 |
 
-以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。全部 12 项约 2.53 GB；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。Spring Boot Helper 为收费插件，原 Spring Assistant 不兼容目标 IDEA，均不纳入默认清单；研究中记录的 Spring Boot Assistant 替代项也未加入本次下载。
+以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。全部 13 项约 2.53 GB；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。Spring Boot Helper 为收费插件，原 Spring Assistant 不兼容目标 IDEA，均不纳入默认清单；研究中记录的 Spring Boot Assistant 替代项也未加入本次下载。
 
 版本、官方直链、系统支持范围及校验依据见[运行环境与桌面工具来源](runtime-sources.md)、[IDEA 与插件来源](plugin-sources.md)。来源核验、文件下载、目标电脑安装和业务构建验收是不同步骤，不应互相替代。
 
@@ -58,7 +58,7 @@ cp resources/catalog.tsv /absolute/path/team-resources/catalog.tsv
 
 `--group` 支持 `runtime`、`software`、`plugins`、`all`；`--arch` 支持 `arm64`、`x64`、`any`、`all`。筛选条件同时生效。`--dry-run` 不联网、不写文件；`--verify` 只校验已存在文件，不下载、不补写校验记录。
 
-已有且校验通过的资源会复用。校验不符时保留原文件并停止，由维护者检查后移走异常文件再重试；不要仅为了让校验通过而修改摘要。有官方 SHA-256 的 JDK、Gradle、IDEA、DBeaver 使用清单中的固定值。五个插件的官方元数据未提供独立 SHA-256，清单记为 `-`，首次下载时生成同名 `.sha256` 本地记录，后续用它检查文件是否变化；这不等于官方发布了该摘要。保留原始 ZIP、DMG、许可证及校验文件。
+已有且校验通过的资源会复用。校验不符时保留原文件并停止，由维护者检查后移走异常文件再重试；不要仅为了让校验通过而修改摘要。有官方 SHA-256 的 JDK、Gradle、IDEA、DBeaver 使用清单中的固定值。六个插件的官方元数据未提供独立 SHA-256，清单记为 `-`，首次下载时生成同名 `.sha256` 本地记录，后续用它检查文件是否变化；这不等于官方发布了该摘要。保留原始 ZIP、DMG、许可证及校验文件。
 
 ## 高级：单独打包与托管
 

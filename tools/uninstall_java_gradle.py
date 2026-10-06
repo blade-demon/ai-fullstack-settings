@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""维护者用 macOS JDK/Gradle 清理；静态预检后才执行明确的删除计划。"""
+"""维护者用 macOS 环境清理；预检后直接删除，不生成软件或配置备份。"""
 import argparse
 from dataclasses import dataclass, field
 import datetime
+import errno
+import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from xml.parsers.expat import ExpatError
 
 
 START = "# >>> team-java-env managed >>>"
@@ -19,9 +23,26 @@ VARIABLE = r"(?:JAVA_HOME|JAVA_[A-Za-z0-9_]+_HOME|JDK_HOME|JDK_[A-Za-z0-9_]+_HOM
 REFERENCE = re.compile(r"\b" + VARIABLE + r"\b")
 ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?(" + VARIABLE + r")=(.*)$")
 PATH_ASSIGNMENT = re.compile(r"^(\s*(?:export\s+)?PATH=)(.*)$")
-FORMULA = re.compile(r"(?:openjdk|gradle|graalvm)(?:@[^/\s]+)?$")
-CASK = re.compile(r"(?:temurin|adoptopenjdk|zulu|corretto|liberica-jdk|liberica-jdk-full|liberica-jdk-lite|microsoft-openjdk|oracle-jdk|sapmachine-jdk|graalvm-jdk|graalvm-community-jdk|graalvm-ce-java|semeru-jdk|semeru-jdk-open|dragonwell|openjdk)(?:[0-9][A-Za-z0-9.-]*|[@-][^/\s]+)?$")
-CACHE_ENTRIES = {"caches", "daemon", "native", "notifications", "jdks", "wrapper", "workers", ".tmp", "build-scan-data", "develocity", "enterprise", "kotlin", "init.d", "init.gradle", "init.gradle.kts", "gradle.properties", ".DS_Store"}
+OWNERSHIP_FILE = ".team-java-env-install.json"
+IDEA_PRODUCT = re.compile(r"(?:IdeaIC|IntelliJIdea|IntelliJ)[0-9]{1,4}(?:\.[0-9]+)*(?:[-.]?(?:EAP|Beta|RC)[0-9]*)?$")
+IDEA_IDS = {"com.jetbrains.intellij", "com.jetbrains.intellij.ce"}
+LEGACY_JDK_PATH = '''_java_dev_prefer_jdk() {
+    local remaining="${PATH-}" entry cleaned='' separator='' more
+    while :; do
+        case "$remaining" in
+            *:*) entry="${remaining%%:*}"; remaining="${remaining#*:}"; more=1 ;;
+            *) entry="$remaining"; more=0 ;;
+        esac
+        if [ "$entry" != "$JAVA_HOME/bin" ]; then
+            cleaned="${cleaned}${separator}${entry}"
+            separator=':'
+        fi
+        [ "$more" -eq 1 ] || break
+    done
+    export PATH="$JAVA_HOME/bin${separator}${cleaned}"
+}
+_java_dev_prefer_jdk
+unset -f _java_dev_prefer_jdk'''
 
 
 class CleanupError(Exception):
@@ -66,10 +87,10 @@ def dedicated_jdk(root, home):
     directory = root
     while directory != home:
         if home == directory / "Contents/Home":
-            return directory.name.endswith(".jdk") or {child.name for child in directory.iterdir()} <= {"Contents", ".DS_Store"}
+            return directory.name.endswith(".jdk") or {child.name for child in directory.iterdir()} <= {"Contents", ".DS_Store", OWNERSHIP_FILE}
         relative = home.relative_to(directory)
         next_directory = directory / relative.parts[0]
-        if {child.name for child in directory.iterdir()} - {next_directory.name, ".DS_Store"}:
+        if {child.name for child in directory.iterdir()} - {next_directory.name, ".DS_Store", OWNERSHIP_FILE}:
             return False
         directory = next_directory
     return True
@@ -81,6 +102,14 @@ class Removal:
     kind: str
     stamp: tuple
     system: bool = False
+    ownership: tuple = ()
+    content: bytes = None
+
+
+@dataclass
+class EmptyDirectory:
+    path: Path
+    node: tuple
 
 
 @dataclass
@@ -94,32 +123,52 @@ class Edit:
 @dataclass
 class Plan:
     home: Path
-    environ: dict
     include_system: bool
     removals: list = field(default_factory=list)
-    commands: list = field(default_factory=list)
     edits: list = field(default_factory=list)
     blockers: list = field(default_factory=list)
     notes: list = field(default_factory=list)
-    cache_configs: list = field(default_factory=list)
+    checks: list = field(default_factory=list)
+    empty_dirs: list = field(default_factory=list)
+
+    @staticmethod
+    def verify_removal(item):
+        if item.content is not None:
+            if item.path.is_symlink() or not item.path.is_file() or item.path.read_bytes() != item.content:
+                raise CleanupError("待清理的旧配置备份已变化，停止清理：{}".format(item.path))
+        if not item.ownership:
+            return
+        marker, stamp, content = item.ownership
+        if marker.is_symlink() or not marker.is_file() or identity(marker) != stamp or marker.read_bytes() != content:
+            raise CleanupError("安装来源标记在预览后发生变化，停止清理：{}".format(item.path))
+
+    @staticmethod
+    def verify_empty_directory(item):
+        check_parents(item.path)
+        if not present(item.path):
+            return False
+        if item.path.is_symlink() or not item.path.is_dir() or identity(item.path)[:2] != item.node:
+            raise CleanupError("工具目录在预览后发生变化，已保留：{}".format(item.path))
+        return True
 
     def describe(self):
-        lines = ["JDK / Gradle 所有版本清理计划（macOS）"]
-        for command, system in self.commands:
-            lines.append("[卸载{}] {}".format("，需 --include-system" if system and not self.include_system else "", shlex.join(command)))
+        lines = ["本工具安装的 JDK / Gradle 及所选 IDEA 清理计划（macOS，无备份）"]
         for item in self.removals:
             action = "删除链接" if item.path.is_symlink() else "删除 " + item.kind
             lines.append("[{}{}] {}".format(action, "，需 --include-system" if item.system and not self.include_system else "", item.path))
-        lines.extend("[备份并清理配置] {}".format(edit.path) for edit in self.edits)
+        lines.extend("[直接清理配置，无备份] {}".format(edit.path) for edit in self.edits)
+        lines.extend("[清理后为空才删除目录] {}".format(item.path) for item in self.empty_dirs)
         lines.extend("[说明] " + note for note in self.notes)
         lines.extend("[需先处理] " + blocker for blocker in self.blockers)
-        lines.append("安装目录删除后无法通过配置备份恢复；请保存工作并退出 Java/Gradle/IDE 进程。")
+        lines.append("安装、插件及配置直接删除，不生成备份，不自动回滚；请保存工作并退出相关程序。")
         return "\n".join(lines)
 
     def preflight(self):
+        for check in self.checks:
+            check()
         if self.blockers:
             raise CleanupError("存在无法安全处理的项目，尚未执行任何修改：\n" + "\n".join(self.blockers))
-        if not self.include_system and (any(item.system for item in self.removals) or any(system for _, system in self.commands)):
+        if not self.include_system and any(item.system for item in self.removals):
             raise CleanupError("发现系统安装；重新预览并加 --include-system 才能执行，尚未修改。")
         for edit in self.edits:
             check_parents(edit.path)
@@ -129,68 +178,44 @@ class Plan:
                 raise CleanupError("配置目录不可写，已保留：{}".format(edit.path))
         for item in self.removals:
             check_parents(item.path)
+            self.verify_removal(item)
             if not present(item.path) or identity(item.path) != item.stamp:
                 raise CleanupError("删除目标在预览后发生变化，请重新预览：{}".format(item.path))
             if not item.system and not os.access(str(item.path.parent), os.W_OK):
                 raise CleanupError("安装目录不可写，已保留：{}".format(item.path))
+        for item in self.empty_dirs:
+            self.verify_empty_directory(item)
 
     def apply(self):
         self.preflight()
-        if not (self.commands or self.removals or self.edits):
+        if not (self.removals or self.edits or self.empty_dirs):
             print("扫描范围内没有需要清理的内容。")
             return
         log_root = self.home / "Library/Logs/team-java-env/cleanup"
         check_parents(log_root / "placeholder")
         log_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        backup = Path(tempfile.mkdtemp(prefix=datetime.datetime.now().strftime("%Y%m%d-%H%M%S-"), dir=str(log_root)))
-        report = backup / "report.txt"
+        record = Path(tempfile.mkdtemp(prefix=datetime.datetime.now().strftime("%Y%m%d-%H%M%S-"), dir=str(log_root)))
+        report = record / "report.txt"
         report.write_text(self.describe() + "\n", encoding="utf-8")
         report.chmod(0o600)
-        print("配置备份和记录：{}".format(backup))
-
-        def save(path):
-            check_parents(path)
-            if path.is_symlink():
-                raise CleanupError("配置备份遇到符号链接，已保留：{}".format(path))
-            target = backup / "files" / str(path).lstrip("/")
-            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            if path.is_dir():
-                shutil.copytree(str(path), str(target), symlinks=True)
-            else:
-                shutil.copy2(str(path), str(target))
+        print("清理记录（不含配置副本）：{}".format(report))
 
         try:
-            # 所有配置先备份；备份失败不会开始卸载或修改配置。
-            for edit in self.edits:
-                save(edit.path)
-            for path in self.cache_configs:
-                if not (backup / "files" / str(path).lstrip("/")).exists() or path.is_dir():
-                    target = backup / "files" / str(path).lstrip("/")
-                    if path.is_dir() and target.exists():
-                        # 上面已备份其中的单个配置时，补齐同一目录的其他配置。
-                        check_parents(path)
-                        if path.is_symlink():
-                            raise CleanupError("缓存配置是符号链接，已保留：{}".format(path))
-                        shutil.copytree(str(path), str(target), symlinks=True, dirs_exist_ok=True)
-                    else:
-                        save(path)
             self.preflight()
-            for command, _ in self.commands:
-                print("执行：{}".format(shlex.join(command)))
-                result = subprocess.run(command, env=self.environ)
-                if result.returncode:
-                    raise CleanupError("卸载失败（退出码 {}）：{}".format(result.returncode, shlex.join(command)))
             for item in self.removals:
+                for check in self.checks:
+                    check()
                 if not present(item.path):
-                    continue  # Homebrew 可能已删除同一个目录或登记链接。
+                    continue  # 目标可能随同一批计划中的父目录一起删除。
                 check_parents(item.path)
+                self.verify_removal(item)
                 if identity(item.path) != item.stamp:
                     raise CleanupError("删除目标发生变化，停止：{}".format(item.path))
                 if item.system and not os.access(str(item.path.parent), os.W_OK):
                     result = subprocess.run(["/usr/bin/sudo", "/bin/rm", "-rf", "--", str(item.path)])
                     if result.returncode:
                         raise CleanupError("系统目录删除失败：{}".format(item.path))
-                elif item.path.is_symlink():
+                elif item.path.is_symlink() or item.path.is_file():
                     item.path.unlink()
                 else:
                     shutil.rmtree(str(item.path))
@@ -199,7 +224,7 @@ class Plan:
                 print("已删除：{}".format(item.path))
             for edit in self.edits:
                 if any(item.path in edit.path.parents for item in self.removals):
-                    continue  # 配置已备份，随已明确选择的用户缓存一起删除。
+                    continue  # 随已明确选择的安装或用户缓存一起直接删除。
                 check_parents(edit.path)
                 if edit.path.is_symlink() or identity(edit.path) != edit.stamp or edit.path.read_bytes() != edit.before:
                     raise CleanupError("配置在卸载期间发生变化，停止：{}".format(edit.path))
@@ -213,6 +238,16 @@ class Plan:
                     if os.path.exists(temporary):
                         os.unlink(temporary)
                 print("已清理配置：{}".format(edit.path))
+            for item in self.empty_dirs:
+                if not self.verify_empty_directory(item):
+                    continue
+                try:
+                    item.path.rmdir()
+                    print("已删除空工具目录：{}".format(item.path))
+                except OSError as error:
+                    if error.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                        raise
+                    print("目录仍有内容，已保留：{}".format(item.path))
         except (OSError, CleanupError) as error:
             with report.open("a", encoding="utf-8") as output:
                 output.write("\n失败，可能已有部分变更：{}\n".format(error))
@@ -223,24 +258,29 @@ class Plan:
 
 
 class Cleaner:
-    def __init__(self, home, system_jvms=Path("/Library/Java/JavaVirtualMachines"), brews=(),
+    def __init__(self, home, system_jvms=Path("/Library/Java/JavaVirtualMachines"),
                  environ=None, include_system=False, remove_caches=False,
-                 extra_jdks=(), extra_gradles=(), extra_profiles=()):
+                 extra_jdks=(), extra_gradles=(), extra_profiles=(), include_idea=False,
+                 extra_idea_apps=(), extra_idea_plugins=(), system_apps=Path("/Applications"),
+                 process_reader=None):
         self.home = Path(home).resolve()
         if self.home == Path("/"):
             raise CleanupError("HOME 不能是根目录。")
         self.system_jvms = Path(system_jvms)
         self.environ = dict(os.environ if environ is None else environ)
-        self.environ.update({"HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1", "HOMEBREW_NO_AUTOREMOVE": "1"})
-        self.brews = tuple(brews)
         self.remove_caches = remove_caches
         self.extra_jdks = extra_jdks
         self.extra_gradles = extra_gradles
         self.extra_profiles = extra_profiles
-        self.plan = Plan(self.home, self.environ, include_system)
+        self.plan = Plan(self.home, include_system)
         self.bin_paths = set()
-        self.cache_paths = {self.home / ".gradle"}
-        self.brew_roots = set()
+        self.include_idea = include_idea
+        self.extra_idea_apps = extra_idea_apps
+        self.extra_idea_plugins = extra_idea_plugins
+        self.system_apps = Path(system_apps)
+        self.process_reader = process_reader or self.read_processes
+        if (extra_idea_apps or extra_idea_plugins) and not include_idea:
+            raise CleanupError("自定义 IDEA 应用或插件目录须同时使用 --include-idea。")
 
     def path(self, value):
         value = str(value).replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))
@@ -252,7 +292,7 @@ class Cleaner:
 
     def safe_root(self, path):
         protected = {self.home, *self.home.parents, Path("/Library"), Path("/Library/Java"),
-                     self.system_jvms, Path("/opt"), Path("/opt/homebrew"), Path("/usr"), Path("/usr/local")}
+                     self.system_jvms, Path("/opt"), Path("/usr"), Path("/usr/local")}
         protected.update(self.home / name for name in (".local", ".local/share", ".local/share/java-dev", ".sdkman", ".sdkman/candidates", ".asdf", ".asdf/installs", ".local/share/mise", ".local/share/mise/installs", ".gradle", ".jdks", ".config", "Library", "Library/Java", "Library/Java/JavaVirtualMachines", "Library/Caches", "Library/Logs", "Applications", "Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public"))
         if path in protected or any(part.endswith(".app") for part in path.parts) or str(path).startswith(("/System/", "/usr/bin/")):
             raise CleanupError("拒绝删除宽泛目录、系统组件或应用内置运行时：{}".format(path))
@@ -262,19 +302,16 @@ class Cleaner:
 
     def add_sdk(self, path, kind, system=False, explicit=False):
         path = self.path(path)
-        if not present(path):
-            return
-        resolved = path.resolve()
-        brew_managed = any(part in ("Cellar", "Caskroom") for part in resolved.parts + path.parts) or str(path).startswith(("/opt/homebrew/opt/", "/usr/local/opt/"))
-        if brew_managed:
-            if not any(root == resolved or root in resolved.parents or root == path or root in path.parents for root in self.brew_roots):
-                self.plan.blockers.append("Homebrew 安装未匹配到卸载登记，需先核对包名：{}".format(path))
-            elif path.is_symlink() and self.system_jvms in path.parents:
-                # 手工登记的系统链接不一定由 formula 卸载步骤删除。
-                self.plan.removals.append(Removal(path, kind, identity(path), True))
-                self.bin_paths.add(str(path / "Contents/Home/bin"))
-            self.bin_paths.update(str(path / name) for name in ("bin", "Contents/Home/bin", "jre/bin"))
-            return
+        if any(item.kind == "IDEA 应用" and item.path in path.parents for item in self.plan.removals):
+            self.bin_paths.add(str(path / "bin"))
+            return True  # IDEA 自带 JBR 随确认过的应用一起删除。
+        root = self.owned_sdk_root(path, kind)
+        if root is None:
+            if present(path):
+                self.plan.notes.append("保留非本工具安装或来源未确认的 {}：{}".format(kind, path))
+            return False
+        path = root
+        system = self.system_jvms in path.parents
         try:
             self.safe_root(path)
             if path.is_symlink():
@@ -291,13 +328,49 @@ class Cleaner:
                 if not is_gradle(path):
                     raise CleanupError("无法确认 Gradle 安装的目录，已保留：{}".format(path))
             if not any(item.path == path for item in self.plan.removals):
-                self.plan.removals.append(Removal(path, kind, identity(path), system))
+                marker = path / OWNERSHIP_FILE
+                self.plan.removals.append(Removal(path, kind, identity(path), system,
+                                                  (marker, identity(marker), marker.read_bytes())))
             self.bin_paths.add(str(path / "bin"))
             self.bin_paths.update(str(home / name) for home in homes for name in ("bin", "jre/bin"))
+            return True
         except CleanupError as error:
             if explicit:
                 raise
             self.plan.blockers.append(str(error))
+        return False
+
+    def owned_sdk_root(self, path, kind):
+        """只有有效来源标记才能认领；不沿目录链接认领其外部目标。"""
+        if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+            return None
+        for root in (path, *path.parents):
+            marker = root / OWNERSHIP_FILE
+            if not marker.is_file() or marker.is_symlink():
+                continue
+            try:
+                if marker.stat().st_size > 4096:
+                    continue
+                data = json.loads(marker.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and type(data.get("schema")) is int and data["schema"] == 1 and data.get("tool") == "team-java-env" and data.get("kind") == kind.lower():
+                    return root
+            except (OSError, ValueError, UnicodeError):
+                continue
+        return None
+
+    @staticmethod
+    def idea_jdk_metadata(path):
+        if not (path.name.startswith(".") and path.name.endswith(".intellij") and path.is_file() and not path.is_symlink()):
+            return False
+        try:
+            if path.stat().st_size > 65536:
+                return False
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return (isinstance(data, dict) and isinstance(data.get("jdk_version"), str)
+                    and str(data.get("jdk_version_major", "")).isdigit()
+                    and isinstance(data.get("packages"), list) and "product" in data and "vendor" in data)
+        except (OSError, ValueError, UnicodeError):
+            return False
 
     def container(self, path, kind, pattern="*", system=False):
         if not present(path):
@@ -307,37 +380,12 @@ class Cleaner:
             for child in sorted(path.glob(pattern)):
                 if child.name == ".DS_Store":
                     continue
+                if kind == "JDK" and self.idea_jdk_metadata(child):
+                    self.plan.notes.append("保留 IDEA JDK 辅助 JSON 文件：{}".format(child))
+                    continue
                 self.add_sdk(child, kind, system)
         except (OSError, CleanupError) as error:
             self.plan.blockers.append(str(error))
-
-    def brew_inventory(self):
-        for brew in self.brews:
-            prefix_result = subprocess.run([str(brew), "--prefix"], env=self.environ, text=True,
-                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
-            if prefix_result.returncode:
-                raise CleanupError("无法读取 Homebrew 安装前缀：{}\n{}".format(brew, prefix_result.stderr.strip()))
-            prefix = self.path(prefix_result.stdout.strip()).resolve()
-            for kind, matcher in (("formula", FORMULA), ("cask", CASK)):
-                result = subprocess.run([str(brew), "list", "--" + kind, "-1"], env=self.environ,
-                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
-                if result.returncode:
-                    raise CleanupError("Homebrew 清单读取失败：{}\n{}".format(brew, result.stderr.strip()))
-                packages = [name.strip() for name in result.stdout.splitlines() if matcher.fullmatch(name.strip().rsplit("/", 1)[-1])]
-                for name in result.stdout.splitlines():
-                    short_name = name.strip().rsplit("/", 1)[-1]
-                    if re.search(r"(?:jdk|graalvm)", short_name) and name.strip() not in packages:
-                        self.plan.blockers.append("未识别的 Homebrew Java 包，需按其卸载说明处理：{}".format(name.strip()))
-                packages.sort(key=lambda name: not name.rsplit("/", 1)[-1].startswith("gradle"))
-                for package in packages:
-                    command = [str(brew), "uninstall", "--" + kind]
-                    if kind == "formula":
-                        command.append("--force")
-                    command.append(package)
-                    self.plan.commands.append((command, kind == "cask"))
-                    token = package.rsplit("/", 1)[-1]
-                    self.bin_paths.add(str(prefix / "opt" / token / "bin"))
-                    self.brew_roots.update(prefix / folder / token for folder in ("Cellar", "Caskroom", "opt"))
 
     def discover_assignment(self, name, value, path):
         # 不求值命令替换，只解析独立赋值中的绝对路径或 HOME 引用。
@@ -349,17 +397,47 @@ class Cleaner:
         if len(values) != 1 and not command_substitution:
             raise CleanupError("Java/Gradle 赋值与其他命令或变量在同一行，请先拆分：{}".format(path))
         if len(values) != 1 or not values[0] or command_substitution:
-            return
+            return False
         expanded = values[0].replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))
         if "$" in expanded or "`" in expanded:
-            return
+            return False
         candidate = self.path(expanded)
         if name == "GRADLE_USER_HOME":
-            self.cache_paths.add(candidate)
-        elif name != "JRE_HOME":
-            if candidate.parts[-2:] == ("Contents", "Home"):
-                candidate = candidate.parent.parent
-            self.add_sdk(candidate, "Gradle" if name.startswith("GRADLE") else "JDK", system=self.system_jvms in candidate.parents)
+            return False  # 用户缓存可能被其他 Gradle 版本共用。
+        return self.add_sdk(candidate, "Gradle" if name.startswith("GRADLE") else "JDK")
+
+    def strip_legacy_jdk_path(self, text, path, discover=True):
+        lines = text.splitlines(keepends=True)
+        expected = [line.strip() for line in LEGACY_JDK_PATH.splitlines()]
+        index = 1
+        while index + len(expected) <= len(lines):
+            if [line.strip() for line in lines[index:index + len(expected)]] == expected:
+                assignment = ASSIGNMENT.fullmatch(lines[index - 1].rstrip("\r\n"))
+                if assignment and assignment.group(1) == "JAVA_HOME":
+                    try:
+                        lexer = shlex.shlex(assignment.group(2), posix=True, punctuation_chars=";&|<>()")
+                        lexer.whitespace_split = True
+                        lexer.commenters = ""
+                        values = list(lexer)
+                    except ValueError:
+                        values = []
+                    if (len(values) != 1
+                            or not values[0].startswith(("/", "$HOME/", "${HOME}/", "~/"))
+                            or "$" in values[0].replace("${HOME}", "").replace("$HOME", "") or "`" in values[0]):
+                        index += 1
+                        continue
+                    if discover:
+                        self.discover_assignment(*assignment.groups(), path)
+                    start = index - 1
+                    if start > 0 and lines[start - 1].strip() == "# 由 config-jdk.sh 管理；可重复 source。":
+                        start -= 1
+                    del lines[start:index + len(expected)]
+                    if discover:
+                        self.plan.notes.append("识别并清理旧版 JDK PATH 配置：{}".format(path))
+                    index = max(1, start)
+                    continue
+            index += 1
+        return "".join(lines)
 
     def clean_config(self, path):
         check_parents(path)
@@ -371,7 +449,21 @@ class Cleaner:
         managed = False
         complex_context = False
         env_files = {self.home / ".config/java-dev" / name for name in ("env.sh", "jdk.sh", "gradle.sh")}
+        env_root = self.path(self.environ.get("ENV_FILE", str(self.home / ".config/java-dev/env.sh"))).parent
+        env_files.update(env_root / name for name in ("env.sh", "jdk.sh", "gradle.sh"))
         env_files.update(self.path(self.environ[key]) for key in ("ENV_FILE", "JDK_ENV_FILE", "GRADLE_ENV_FILE") if self.environ.get(key))
+        env_files.update(item.path for item in self.plan.removals if item.kind == "旧版工具配置备份")
+        shared_profile = path.name in (".zshenv", ".zprofile", ".zshrc", ".zlogin", ".bash_profile", ".bash_login", ".bashrc", ".profile")
+        shared_profile = shared_profile or path in {self.path(value) for value in self.extra_profiles}
+        if self.environ.get("SHELL_PROFILE"):
+            shared_profile = shared_profile or path == self.path(self.environ["SHELL_PROFILE"])
+        dedicated_environment = path in env_files and not shared_profile
+        if dedicated_environment:
+            text = self.strip_legacy_jdk_path(text, path)
+            if re.search(r"(?m)^\s*_java_dev_prefer_jdk\(\)\s*\{", text):
+                raise CleanupError("旧版 PATH 函数已改写或结构不完整，原文件保留：{}".format(path))
+        removed_variables = set()
+        preserved_variables = set()
         for line in text.splitlines(keepends=True):
             stripped = line.strip()
             if stripped == START:
@@ -384,7 +476,7 @@ class Cleaner:
                     raise CleanupError("受管区块标记不完整：{}".format(path))
                 managed = False
                 continue
-            if managed:
+            if managed and dedicated_environment:
                 assignment = ASSIGNMENT.match(line.rstrip("\r\n"))
                 if assignment:
                     self.discover_assignment(*assignment.groups(), path)
@@ -392,28 +484,41 @@ class Cleaner:
             if not stripped or stripped.startswith("#"):
                 result.append(line)
                 continue
-            related = bool(REFERENCE.search(line)) or any(str(env_file) in line for env_file in env_files)
-            if re.search(r"(^|\s)(if|for|while|case|function|select)\b|\(\)\s*\{|<<|\\\s*$", line):
-                complex_context = True
-            if related and (complex_context or re.search(r"[;&|]", line)):
-                raise CleanupError("Java/Gradle 配置包含复杂 Shell 逻辑，请先手工整理：{}".format(path))
+            cleanup_context = managed
+            references = set(REFERENCE.findall(line))
+            related = bool(references) or any(str(env_file) in line for env_file in env_files)
             assignment = ASSIGNMENT.match(line.rstrip("\r\n"))
             if assignment:
-                self.discover_assignment(*assignment.groups(), path)
+                try:
+                    owned = self.discover_assignment(*assignment.groups(), path)
+                except CleanupError:
+                    if cleanup_context or any(str(item.path) in line for item in self.plan.removals):
+                        raise
+                    owned = False
+                if not cleanup_context and not owned:
+                    removed_variables.discard(assignment.group(1))
+                    preserved_variables.add(assignment.group(1))
+                    result.append(line)
+                    continue
+                if complex_context or re.search(r"[;&|]", line):
+                    raise CleanupError("Java/Gradle 配置包含复杂 Shell 逻辑，请先手工整理：{}".format(path))
+                if assignment.group(1) not in preserved_variables:
+                    removed_variables.add(assignment.group(1))
                 continue
             path_line = PATH_ASSIGNMENT.match(line.rstrip("\r\n"))
             if path_line:
                 prefix, value = path_line.groups()
+                path_related = bool(references if cleanup_context else references & removed_variables) or any(binary in line for binary in self.bin_paths)
                 quote = value[0] if value and value[0] in "\"'" else ""
                 if quote and value.endswith(quote):
                     value = value[1:-1]
                 elif quote or re.search(r"\s|[;`()]|\\|[&|]", value):
-                    if related or any(binary in line for binary in self.bin_paths):
+                    if path_related:
                         raise CleanupError("PATH 配置无法安全拆分，请先手工整理：{}".format(path))
                     result.append(line)
                     continue
                 if re.search(r"[`()\\]|\$\(|[;&|]", value) or (quote and quote in value):
-                    if related or any(binary in line for binary in self.bin_paths):
+                    if path_related:
                         raise CleanupError("PATH 包含命令替换或复杂引号，请先手工整理：{}".format(path))
                     result.append(line)
                     continue
@@ -421,7 +526,8 @@ class Cleaner:
                 kept = []
                 for entry in entries:
                     expanded = entry.replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))
-                    if REFERENCE.search(entry) or expanded in self.bin_paths:
+                    entry_references = set(REFERENCE.findall(entry))
+                    if (entry_references if cleanup_context else entry_references & removed_variables) or expanded in self.bin_paths:
                         continue
                     kept.append(entry)
                 if kept != entries:
@@ -430,31 +536,58 @@ class Cleaner:
                     if kept:
                         result.append(prefix + quote + ":".join(kept) + quote + ("\n" if line.endswith("\n") else ""))
                     continue
+                result.append(line)
+                continue
+            if re.search(r"(^|\s)(if|for|while|case|function|select)\b|\(\)\s*\{|<<|\\\s*$", line):
+                complex_context = True
             if stripped.startswith((". ", "source ")):
                 source_is_environment = False
+                source_path = None
                 try:
                     tokens = shlex.split(stripped, comments=True)
-                    source_is_environment = len(tokens) == 2 and self.path(tokens[1]) in env_files
+                    if len(tokens) == 2:
+                        source_path = self.path(tokens[1])
+                        source_is_environment = source_path in env_files
                 except ValueError:
                     pass
                 except CleanupError:
                     if related:
                         raise
                 if source_is_environment:
+                    target_removed = any(item.path == source_path or item.path in source_path.parents for item in self.plan.removals)
+                    if present(source_path) and not target_removed:
+                        # 留存用户设置的环境/共享文件仍需通过原入口加载。
+                        result.append(line)
+                        continue
                     if complex_context:
                         raise CleanupError("加载环境文件位于复杂逻辑中：{}".format(path))
                     continue
-            if related:
+            if related and (cleanup_context or references & removed_variables or any(str(item.path) in line for item in self.plan.removals)):
                 raise CleanupError("存在无法自动清理的 Java/Gradle 配置，请先手工整理：{}".format(path))
             result.append(line)
         if managed:
             raise CleanupError("受管区块没有结束标记：{}".format(path))
+        # 旧入口标题在配置清空后可能单独留在文件尾；有后续内容时原样保留。
+        index = len(result) - 1
+        while index >= 0:
+            if not result[index].strip():
+                index -= 1
+                continue
+            if result[index].strip() != "# Java 开发环境":
+                break
+            del result[index]
+            index -= 1
         after = "".join(result).encode("utf-8")
         if after != before:
-            self.plan.edits.append(Edit(path, before, after, identity(path)))
+            if dedicated_environment and not after.strip():
+                self.plan.removals.append(Removal(path, "Java/Gradle 专属环境配置", identity(path)))
+            else:
+                self.plan.edits.append(Edit(path, before, after, identity(path)))
 
     def scan(self):
-        self.brew_inventory()
+        self.scan_legacy_backup()
+        if self.include_idea:
+            self.scan_idea()
         team = self.home / ".local/share/java-dev"
         self.container(team, "JDK", "jdk*")
         self.container(team, "Gradle", "gradle*")
@@ -485,8 +618,9 @@ class Cleaner:
             profiles.update(self.path(self.environ["ZDOTDIR"]) / name for name in (".zshenv", ".zprofile", ".zshrc", ".zlogin"))
         profiles.update(self.path(self.environ[key]) for key in ("ENV_FILE", "JDK_ENV_FILE", "GRADLE_ENV_FILE", "SHELL_PROFILE") if self.environ.get(key))
         profiles.update(self.path(path) for path in self.extra_profiles)
-        # 第一遍静态发现自定义 SDK；第二遍才能清理排在赋值之前的具体 PATH。
-        for _ in range(2):
+        # 静态收敛 SDK 路径与加载关系，避免排序靠前的入口引用稍后被删的模块。
+        previous_state = None
+        for _ in range(len(profiles) + 2):
             self.plan.edits = []
             for path in sorted(profiles):
                 if present(path):
@@ -494,92 +628,210 @@ class Cleaner:
                         self.clean_config(path)
                     except (OSError, UnicodeError, CleanupError) as error:
                         self.plan.blockers.append(str(error))
-        self.manager_configs()
-        if self.environ.get("GRADLE_USER_HOME"):
-            self.cache_paths.add(self.path(self.environ["GRADLE_USER_HOME"]))
-        if self.remove_caches:
-            for path in sorted(self.cache_paths):
-                if not present(path):
-                    continue
-                try:
-                    if path != self.home / ".gradle":
-                        self.safe_root(path)
-                        if not any((path / name).exists() for name in ("caches", "wrapper/dists", "gradle.properties", "daemon", "init.d")):
-                            raise CleanupError("无法确认 Gradle 用户缓存目录：{}".format(path))
-                    check_parents(path)
-                    if path.is_symlink():
-                        raise CleanupError("Gradle 用户缓存是链接，需明确实际目录：{}".format(path))
-                    if not path.is_dir():
-                        raise CleanupError("Gradle 用户缓存不是目录：{}".format(path))
-                    unknown = {entry.name for entry in path.iterdir()} - CACHE_ENTRIES
-                    if unknown:
-                        raise CleanupError("Gradle 缓存目录含未识别资料，拒绝整体删除：{}（{}）".format(path, ", ".join(sorted(unknown))))
-                    self.plan.removals.append(Removal(path, "Gradle 用户配置与缓存", identity(path)))
-                    for name in ("gradle.properties", "init.gradle", "init.gradle.kts", "init.d"):
-                        if present(path / name):
-                            self.plan.cache_configs.append(path / name)
-                except CleanupError as error:
-                    self.plan.blockers.append(str(error))
-        else:
-            self.plan.notes.append("保留 Gradle 用户配置与缓存（含 Wrapper 分发）；完整重装测试加 --remove-caches。")
+            state = (frozenset(item.path for item in self.plan.removals),
+                     tuple((edit.path, edit.after) for edit in self.plan.edits),
+                     frozenset(self.bin_paths))
+            if state == previous_state:
+                break
+            previous_state = state
+        self.plan.notes.append("保留 Gradle 共享用户配置、缓存和 Wrapper 分发，以及版本管理器的原有选择配置。")
         # 父目录一旦在计划中，内部子目录不再单独删除。
         unique = []
         for item in sorted(self.plan.removals, key=lambda item: (len(item.path.parts), str(item.path))):
             if not any(parent.path == item.path or parent.path in item.path.parents for parent in unique):
                 unique.append(item)
         self.plan.removals = unique
+        self.plan_empty_tool_directories()
         self.plan.blockers = list(dict.fromkeys(self.plan.blockers))
         self.plan.notes = list(dict.fromkeys(self.plan.notes))
-        self.plan.notes.append("保留业务项目、IDEA 内置 JBR、系统 Java 占位程序、其他 SDKMAN 工具及 SDK 下载压缩包。")
+        self.plan.notes.append("保留业务项目、系统 Java 占位程序、其他 SDKMAN 工具及 SDK 下载压缩包。")
+        if not self.include_idea:
+            self.plan.notes.append("保留 IDEA 与其内置 JBR；清理 IDEA 应用、配置和插件须加 --include-idea。")
         self.plan.notes.append("/etc 全局配置、launchctl 环境、安装器收据及未列出的自定义位置需另行核对。")
         return self.plan
 
-    def manager_configs(self):
-        asdf = self.home / ".tool-versions"
-        mise = self.path(self.environ.get("MISE_CONFIG_DIR", str(self.home / ".config/mise"))) / "config.toml"
-        for path in (asdf, mise):
+    def scan_legacy_backup(self):
+        path = self.home / ".config/java-dev/env.sh.bak"
+        if not path.is_file() or path.is_symlink():
+            return
+        try:
+            check_parents(path)
+            if path.stat().st_size > 65536:
+                return
+            before = path.read_bytes()
+            text = before.decode("utf-8")
+            if not text.lstrip().startswith("# 由 config-jdk.sh 管理；可重复 source。"):
+                return
+            if self.strip_legacy_jdk_path(text, path, discover=False).strip():
+                return
+            self.plan.removals.append(Removal(path, "旧版工具配置备份", identity(path), content=before))
+        except (OSError, UnicodeError, CleanupError):
+            self.plan.notes.append("旧配置备份无法完整确认，已保留：{}".format(path))
+
+    def plan_empty_tool_directories(self):
+        removals = {item.path for item in self.plan.removals}
+        for path in (self.home / ".config/java-dev", self.home / ".local/share/java-dev"):
             if not present(path):
                 continue
             try:
                 check_parents(path)
-                if path.is_symlink() or not path.is_file():
-                    raise CleanupError("版本管理配置不是普通文件，已保留：{}".format(path))
-                before = path.read_bytes()
-                result = []
-                section = ""
-                for line in before.decode("utf-8").splitlines(keepends=True):
-                    stripped = line.strip()
-                    if path == asdf:
-                        if re.match(r"^(?:java|gradle)\s+", stripped):
-                            continue
-                    else:
-                        if stripped.startswith("["):
-                            section = stripped.split("#", 1)[0].strip()
-                        if section == "[tools]" and re.match(r"^(?:java|gradle)\s*=", stripped):
-                            if not re.fullmatch(r'(?:java|gradle)\s*=\s*(?:"[^"\n]*"|\'[^\'\n]*\')\s*(?:#.*)?', stripped):
-                                raise CleanupError("mise Java/Gradle 配置复杂，请先手工整理：{}".format(path))
-                            continue
-                        if re.search(r"\b(?:java|gradle)\b", stripped) and not stripped.startswith("#"):
-                            raise CleanupError("mise Java/Gradle 配置无法安全拆分：{}".format(path))
-                    result.append(line)
-                after = "".join(result).encode("utf-8")
-                if before != after:
-                    self.plan.edits.append(Edit(path, before, after, identity(path)))
-            except (OSError, UnicodeError, CleanupError) as error:
+                if path.is_symlink() or not path.is_dir():
+                    self.plan.notes.append("工具目录不是普通目录，已保留：{}".format(path))
+                    continue
+                if any(child not in removals for child in path.iterdir()):
+                    self.plan.notes.append("工具目录内仍有保留内容，目录将保留：{}".format(path))
+                    continue
+                self.plan.empty_dirs.append(EmptyDirectory(path, identity(path)[:2]))
+            except (OSError, CleanupError):
+                self.plan.notes.append("工具目录无法安全检查，已保留：{}".format(path))
+
+    @staticmethod
+    def read_processes():
+        result = subprocess.run(["/bin/ps", "-ax", "-o", "command="], text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        if result.returncode:
+            raise CleanupError("无法检查 IDEA 进程，停止清理：" + result.stderr.strip())
+        return result.stdout.splitlines()
+
+    def ensure_idea_stopped(self):
+        for command in self.process_reader():
+            if re.search(r"\.app/Contents/MacOS/idea(?:\s|$)", command) or re.search(r"-Didea\.paths\.selector=(?:IdeaIC|IntelliJIdea|IntelliJ)[0-9]", command):
+                raise CleanupError("IDEA 仍在运行，请保存工作并正常退出后重新执行；工具不会结束进程。")
+
+    def idea_path_guard(self, path):
+        protected = {self.home, *self.home.parents, self.system_apps, Path("/Library"),
+                     self.home / "Applications"}
+        protected.update(self.home / name for name in ("Desktop", "Documents", "Downloads", ".config", ".config/JetBrains", ".local", ".local/share", ".gradle", ".sdkman", ".asdf", ".jdks", "Library", "Library/Application Support", "Library/Application Support/JetBrains", "Library/Application Support/JetBrains/Toolbox", "Library/Preferences", "Library/Caches", "Library/Caches/JetBrains", "Library/Logs", "Library/Logs/JetBrains", "Library/Saved Application State", "Library/Containers", "Library/Group Containers"))
+        if path in protected or any(parent.suffix == ".app" for parent in path.parents) or str(path).startswith(("/System/", "/usr/")):
+            raise CleanupError("拒绝把宽泛目录、系统组件或应用内部目录作为 IDEA 清理目标：{}".format(path))
+        check_parents(path)
+        if any((path / name).exists() for name in (".git", ".idea", "build.gradle", "pom.xml")):
+            raise CleanupError("IDEA 清理目录含业务项目文件，已保留：{}".format(path))
+
+    def add_idea_data(self, path, kind, explicit=False):
+        path = self.path(path)
+        self.idea_path_guard(path)
+        if not present(path):
+            return
+        if path.is_symlink():
+            raise CleanupError("IDEA 配置或插件路径是符号链接，需核对实际专属目录：{}".format(path))
+        if explicit:
+            if not path.is_dir():
+                raise CleanupError("IDEA 插件位置不是目录：{}".format(path))
+            for child in path.iterdir():
+                if child.name == ".DS_Store" or child.is_symlink():
+                    continue
+                if child.is_file() and child.suffix == ".jar":
+                    continue
+                if child.is_dir() and (any((child / "lib").glob("*.jar")) or (child / "META-INF/plugin.xml").is_file()):
+                    continue
+                raise CleanupError("自定义 IDEA 插件目录含未识别资料，拒绝整体删除：{}".format(child))
+        self.plan.removals.append(Removal(path, kind, identity(path), self.system_apps in path.parents or str(path).startswith("/Library/")))
+
+    def add_idea_app(self, path, explicit=False):
+        path = self.path(path)
+        self.idea_path_guard(path)
+        if not present(path):
+            return
+        if path.suffix != ".app" or not path.is_dir():
+            raise CleanupError("不是可识别的 IDEA 应用包：{}".format(path))
+        plist = path / "Contents/Info.plist"
+        if plist.is_symlink():
+            raise CleanupError("IDEA 应用标识是符号链接，已保留：{}".format(plist))
+        try:
+            with plist.open("rb") as source:
+                metadata = plistlib.load(source)
+        except (OSError, ValueError, plistlib.InvalidFileException, ExpatError) as error:
+            raise CleanupError("无法识别 IDEA 应用标识：{}".format(path)) from error
+        if not isinstance(metadata, dict) or metadata.get("CFBundleIdentifier") not in IDEA_IDS:
+            if explicit:
+                raise CleanupError("应用标识不属于 IntelliJ IDEA，已保留：{}".format(path))
+            return
+        if metadata.get("CFBundleExecutable") != "idea" or not (path / "Contents/MacOS/idea").is_file():
+            raise CleanupError("IDEA 应用包不完整，已保留：{}".format(path))
+        resolved = path.resolve()
+        if path.is_symlink():
+            self.plan.notes.append("IDEA 应用只删除链接，不跟随外部目标：{} -> {}".format(path, resolved))
+        self.plan.removals.append(Removal(path, "IDEA 应用", identity(path), self.system_apps in path.parents))
+
+    def scan_idea(self):
+        self.plan.checks.append(self.ensure_idea_stopped)
+        for root in (self.home / "Applications", self.system_apps):
+            if not present(root):
+                continue
+            try:
+                check_parents(root / "placeholder")
+                for path in sorted(root.glob("*.app")):
+                    try:
+                        self.add_idea_app(path)
+                    except CleanupError as error:
+                        if "intellij" in path.name.lower() or "idea" in path.name.lower():
+                            self.plan.blockers.append(str(error))
+            except (OSError, CleanupError) as error:
                 self.plan.blockers.append(str(error))
+        apps = list(self.extra_idea_apps)
+        if self.environ.get("IDEA_APP"):
+            apps.append(self.environ["IDEA_APP"])
+        for path in apps:
+            self.add_idea_app(path, explicit=True)
+        roots = [(self.home / "Library/Application Support/JetBrains", "IDEA 用户配置与插件"),
+                 (self.home / "Library/Application Support", "IDEA 旧版插件"),
+                 (self.home / "Library/Preferences", "IDEA 旧版用户配置")]
+        if self.remove_caches:
+            roots.extend((self.home / folder / suffix, "IDEA 缓存、日志与本地历史")
+                         for folder in ("Library/Caches", "Library/Logs") for suffix in ("JetBrains", ""))
+        else:
+            self.plan.notes.append("保留 IDEA 缓存、日志及 Local History；需要直接删除时加 --remove-caches。")
+        for root, kind in roots:
+            if not present(root):
+                continue
+            try:
+                check_parents(root / "placeholder")
+                for path in sorted(root.iterdir()):
+                    if IDEA_PRODUCT.fullmatch(path.name):
+                        self.add_idea_data(path, kind)
+            except (OSError, CleanupError) as error:
+                self.plan.blockers.append(str(error))
+        for identifier in IDEA_IDS:
+            path = self.home / "Library/Preferences" / (identifier + ".plist")
+            if present(path):
+                try:
+                    self.add_idea_data(path, "IDEA 专属偏好配置")
+                except CleanupError as error:
+                    self.plan.blockers.append(str(error))
+        for root in self.home.iterdir():
+            if root.name.startswith(".") and IDEA_PRODUCT.fullmatch(root.name[1:]):
+                for name, kind in (("config", "IDEA 旧版用户配置与插件"), ("plugins", "IDEA 旧版插件")):
+                    try:
+                        self.add_idea_data(root / name, kind)
+                    except CleanupError as error:
+                        self.plan.blockers.append(str(error))
+                if self.remove_caches:
+                    try:
+                        self.add_idea_data(root / "system", "IDEA 旧版缓存与本地历史")
+                    except CleanupError as error:
+                        self.plan.blockers.append(str(error))
+        plugins = list(self.extra_idea_plugins)
+        if self.environ.get("IDEA_PLUGINS_DIR"):
+            plugins.append(self.environ["IDEA_PLUGINS_DIR"])
+        for path in plugins:
+            self.add_idea_data(path, "IDEA 自定义插件", explicit=True)
+
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="macOS 维护者测试工具：清理扫描范围内全部版本 JDK/Gradle；默认只预览。")
+    parser = argparse.ArgumentParser(description="macOS 维护者测试工具：只清理有本工具来源标记的 JDK/Gradle，可包含 IDEA 与插件；无备份，默认只预览。")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="执行计划，需输入 DELETE")
     mode.add_argument("--dry-run", action="store_true", help="只预览（默认）")
     parser.add_argument("--yes", action="store_true", help="仅配合 --apply 跳过输入确认")
-    parser.add_argument("--include-system", action="store_true", help="包含系统 JDK 目录及 Homebrew JDK cask，必要时逐项 sudo")
-    parser.add_argument("--remove-caches", action="store_true", help="额外删除 Gradle 用户配置、缓存及 Wrapper 分发，先备份配置")
-    parser.add_argument("--no-homebrew", action="store_true", help="明确跳过 Homebrew，保留其登记安装")
-    parser.add_argument("--jdk-dir", action="append", default=[], metavar="绝对路径", help="额外 JDK 安装目录，可重复")
-    parser.add_argument("--gradle-dir", action="append", default=[], metavar="绝对路径", help="额外 Gradle 安装目录，可重复")
+    parser.add_argument("--include-system", action="store_true", help="包含系统 JDK 与系统 Applications 中的 IDEA，必要时逐项 sudo")
+    parser.add_argument("--include-idea", action="store_true", help="直接删除 IDEA 全版本应用、配置及插件，不备份")
+    parser.add_argument("--idea-app", action="append", default=[], metavar="绝对路径", help="额外 IDEA .app，可重复，须 --include-idea")
+    parser.add_argument("--idea-plugins-dir", action="append", default=[], metavar="绝对路径", help="额外 IDEA 专属插件目录，可重复，须 --include-idea")
+    parser.add_argument("--remove-caches", action="store_true", help="包含 IDEA 时删除其缓存、日志和本地历史；Gradle 共享缓存始终保留")
+    parser.add_argument("--jdk-dir", action="append", default=[], metavar="绝对路径", help="额外 JDK 查找目录，仍须有本工具来源标记，可重复")
+    parser.add_argument("--gradle-dir", action="append", default=[], metavar="绝对路径", help="额外 Gradle 查找目录，仍须有本工具来源标记，可重复")
     parser.add_argument("--profile", action="append", default=[], metavar="绝对路径", help="额外 Shell 配置文件，可重复")
     args = parser.parse_args(argv)
     if args.yes and not args.apply:
@@ -589,26 +841,21 @@ def main(argv=None):
             raise CleanupError("本工具面向 macOS；不在 Windows/Linux 上执行清理。")
         if os.geteuid() == 0:
             raise CleanupError("请以目标用户运行，不要对整个脚本使用 sudo。")
-        brews = []
-        if not args.no_homebrew:
-            for value in (shutil.which("brew"), "/opt/homebrew/bin/brew", "/usr/local/bin/brew"):
-                if value and Path(value).is_file() and os.access(value, os.X_OK) and str(Path(value).resolve()) not in [str(path.resolve()) for path in brews]:
-                    brews.append(Path(value))
-        cleaner = Cleaner(Path.home(), brews=brews, include_system=args.include_system,
+        cleaner = Cleaner(Path.home(), include_system=args.include_system,
                           remove_caches=args.remove_caches, extra_jdks=args.jdk_dir,
-                          extra_gradles=args.gradle_dir, extra_profiles=args.profile)
+                          extra_gradles=args.gradle_dir, extra_profiles=args.profile,
+                          include_idea=args.include_idea, extra_idea_apps=args.idea_app,
+                          extra_idea_plugins=args.idea_plugins_dir)
         plan = cleaner.scan()
-        if args.no_homebrew:
-            plan.notes.append("已指定 --no-homebrew：Homebrew 安装未纳入本次清理。")
         print(plan.describe())
         if not args.apply:
-            print("仅预览，未修改文件。执行需加 --apply；完整重装测试加 --include-system --remove-caches。")
+            print("仅预览，未修改文件。执行需加 --apply；完整重装测试加 --include-idea --include-system --remove-caches。")
             return 0
         plan.preflight()
         if not args.yes:
             if not sys.stdin.isatty():
                 raise CleanupError("非交互输入不执行删除；自动测试须明确指定 --apply --yes。")
-            if input("确认按上述计划永久删除 SDK？输入 DELETE：").strip() != "DELETE":
+            if input("确认按上述计划永久清理软件、插件和配置（无备份）？输入 DELETE：").strip() != "DELETE":
                 raise CleanupError("已取消，未执行清理。")
         plan.apply()
         return 0

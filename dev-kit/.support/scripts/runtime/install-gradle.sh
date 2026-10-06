@@ -7,7 +7,7 @@ source "$REPO_ROOT/scripts/lib/managed-env.sh"
 parse_args "$@"
 if "$SHOW_HELP"; then
     log '用法：install-gradle.sh [--project 项目路径] [--dry-run]'
-    log '安装独立 Gradle 并配置完整环境变量；指定项目后执行真实 build（含测试），无需 Wrapper。'
+    log '安装独立 Gradle 并配置完整环境变量；指定项目后按 IDEA 的分发选择执行真实 build（含测试）。'
     exit 0
 fi
 VERSION_PATTERN='^[0-9][0-9A-Za-z.+_-]*$'
@@ -31,7 +31,7 @@ if "$DRY_RUN"; then
     log "[预演] 安装/验证独立 Gradle：$GRADLE_INSTALL_DIR"
     log '[预演] 配置 GRADLE_HOME、GRADLE_4_5_1_HOME、GRADLE_USER_HOME 与 Java/Gradle PATH。'
     if [ -n "$PROJECT_DIR" ]; then
-        log "[预演] 在 ${PROJECT_DIR} 执行目标 Gradle --no-daemon --console=plain ${GRADLE_BUILD_TASK}。"
+        log "[预演] 在 ${PROJECT_DIR} 按 IDEA 分发选择执行 Gradle --no-daemon --console=plain ${GRADLE_BUILD_TASK}。"
     else
         log '[预演] 未选择项目，不执行构建。'
     fi
@@ -107,6 +107,7 @@ else
     candidate="$temp_dir/payload/gradle-$GRADLE_VERSION"
     distribution_complete "$candidate" || die 'Gradle 分发目录不完整（缺少可执行启动脚本或版本 launcher JAR）'
     verify_version "$candidate"
+    printf '%s\n' '{"schema":1,"tool":"team-java-env","kind":"gradle"}' > "$candidate/.team-java-env-install.json" || die '无法写入 Gradle 安装来源标记，未发布安装'
     publish="$temp_dir/publish/${GRADLE_INSTALL_DIR##*/}"
     mv -- "$candidate" "$publish"
     [ ! -e "$GRADLE_INSTALL_DIR" ] && [ ! -L "$GRADLE_INSTALL_DIR" ] || die '安装期间目标目录已出现，原目录已保留'
@@ -127,7 +128,7 @@ expected_user_home="$GRADLE_USER_HOME"
 ) || die '写入后加载环境验证失败，请检查受管环境文件中的自定义设置'
 if [ -n "$PROJECT_DIR" ]; then
     /bin/bash "$REPO_ROOT/scripts/runtime/verify-gradle.sh" --project "$PROJECT_DIR"
-    log "Gradle ${GRADLE_VERSION} 安装与项目构建验证通过。"
+    log "Gradle ${GRADLE_VERSION} 安装与终端项目构建验证通过；IDEA 项目设置和同步仍需确认。"
 else
     log "Gradle ${GRADLE_VERSION} 已安装并验证；未选择项目，未执行构建。"
 fi

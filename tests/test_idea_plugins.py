@@ -18,6 +18,7 @@ PLUGINS = (
     ("generate-all-setter", "GenerateAllSetter", "com.bruce.intellijplugin.generatesetter", "2.8.5"),
     ("gsonformatplus", "GsonFormatPlus", "GsonFormatPlus", "1.6.1"),
     ("key-promoter-x", "Key Promoter X", "Key Promoter X", "2026.1.2"),
+    ("lombok", "lombok", "Lombook Plugin", "243.28141.18"),
 )
 
 
@@ -111,7 +112,7 @@ class IdeaPluginTests(unittest.TestCase):
         (old / "keep.txt").write_text("old user content")
         return old
 
-    def test_installs_all_five_and_verifies_without_downloading_or_replacing_again(self):
+    def test_installs_all_catalog_plugins_and_verifies_without_downloading_or_replacing_again(self):
         unknown = self.plugins / "Unrelated Plugin"
         unknown.mkdir(parents=True)
         (unknown / "private.txt").write_text("preserve")

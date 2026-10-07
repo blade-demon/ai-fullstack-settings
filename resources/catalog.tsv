@@ -13,3 +13,13 @@ generate-all-setter	plugins	2.8.5	any	plugins/idea/GenerateAllSetter-2.8.5.zip	h
 gsonformatplus	plugins	1.6.1	any	plugins/idea/GsonFormatPlus-1.6.1.zip	https://plugins.jetbrains.com/files/14949/115983/GsonFormatPlus.zip	-
 key-promoter-x	plugins	2026.1.2	any	plugins/idea/Key_Promoter_X-2026.1.2.zip	https://plugins.jetbrains.com/files/9792/1098878/Key_Promoter_X-2026.1.2.zip	-
 lombok	plugins	243.28141.18	any	plugins/idea/lombok-243.28141.18.zip	https://plugins.jetbrains.com/files/6317/854391/lombok-243.28141.18.zip	-
+nvm	runtime	0.40.8	any	frontend/nvm/nvm.tar.gz	https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.8.tar.gz	7c5b2c4c78e6447b518860ead1f365056e9a03b3562903439bb401607b05a2ef
+node14-macos-x64	runtime	14.21.3	x64	frontend/node/node-v14.21.3-darwin-x64.tar.gz	https://nodejs.org/dist/v14.21.3/node-v14.21.3-darwin-x64.tar.gz	a024f0dd5a4c1f951b79959c3e991b30a5919a734ab3e197ae0ef439e5a538b5
+node16-macos-arm64	runtime	16.20.2	arm64	frontend/node/node-v16.20.2-darwin-arm64.tar.gz	https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz	6a5c4108475871362d742b988566f3fe307f6a67ce14634eb3fbceb4f9eea88c
+node16-macos-x64	runtime	16.20.2	x64	frontend/node/node-v16.20.2-darwin-x64.tar.gz	https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-x64.tar.gz	d7a46eaf2b57ffddeda16ece0d887feb2e31a91ad33f8774da553da0249dc4a6
+node18-macos-arm64	runtime	18.20.8	arm64	frontend/node/node-v18.20.8-darwin-arm64.tar.gz	https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-arm64.tar.gz	bae4965d29d29bd32f96364eefbe3bca576a03e917ddbb70b9330d75f2cacd76
+node18-macos-x64	runtime	18.20.8	x64	frontend/node/node-v18.20.8-darwin-x64.tar.gz	https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-x64.tar.gz	ed2554677188f4afc0d050ecd8bd56effb2572d6518f8da6d40321ede6698509
+iterm2	software	3.7.3	any	frontend/iterm2/iTerm2.zip	https://iterm2.com/downloads/stable/iTerm2-3_7_3.zip	eb7a166061e58602e3d4bdf69d92f2c8cf6a63feed002f6adc07128a71c8dc39
+oh-my-zsh	plugins	60c9a7a839b790cd905d0fd4419435124fd1bdc0	any	frontend/zsh/oh-my-zsh.tar.gz	https://github.com/ohmyzsh/ohmyzsh/archive/60c9a7a839b790cd905d0fd4419435124fd1bdc0.tar.gz	b76ccbc18fd732d9d897dd2edbf16519cb48d20f31e509f925d1bf41a8df859f
+zsh-autosuggestions	plugins	0.7.1	any	frontend/zsh/zsh-autosuggestions.tar.gz	https://github.com/zsh-users/zsh-autosuggestions/archive/refs/tags/v0.7.1.tar.gz	0df7affff21cd87ed298e6a3970ed08a1dd66a6efa676454ee5b091ad503badf
+zsh-syntax-highlighting	plugins	0.8.0	any	frontend/zsh/zsh-syntax-highlighting.tar.gz	https://github.com/zsh-users/zsh-syntax-highlighting/archive/refs/tags/0.8.0.tar.gz	5981c19ebaab027e356fe1ee5284f7a021b89d4405cc53dc84b476c3aee9cc32

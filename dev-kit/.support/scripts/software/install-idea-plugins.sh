@@ -21,7 +21,7 @@ while [ "$#" -gt 0 ]; do
 done
 for tool in unzip xmllint plutil shasum find sort cmp mktemp ps ditto; do require_command "$tool"; done
 USER_HOME="$(CDPATH= cd -- "$HOME" && pwd -P)"
-IDEA_APP="${IDEA_APP:-$USER_HOME/Applications/IntelliJ IDEA CE.app}"
+IDEA_APP="${IDEA_APP:-${USER_APPLICATIONS_DIR}/IntelliJ IDEA CE.app}"
 require_absolute_path IDEA_APP "$IDEA_APP"
 while [ "${IDEA_APP%/}" != "$IDEA_APP" ]; do IDEA_APP="${IDEA_APP%/}"; done
 plugin_safe_directory "$IDEA_APP" || exit 1
@@ -49,6 +49,8 @@ COUNT=0
 while IFS=$'\t' read -r rid group version arch relative url hash extra || [ -n "${rid:-}" ]; do
     case "${rid:-}" in ''|'#'*) continue ;; esac
     [ "$group" = plugins ] || continue
+    # 前端 shell 插件有独立安装器，不属于 IDEA 的六个推荐插件。
+    case "$relative" in frontend/*) continue ;; esac
     [ -z "${extra:-}" ] && [ -n "$version" ] && [ -n "$relative" ] || die '插件清单字段不完整'
     case "$rid" in ''|*[!A-Za-z0-9._-]*) die '插件资源编号无效' ;; esac
     case "$version" in *[[:cntrl:]]*) die '插件版本含控制字符' ;; esac

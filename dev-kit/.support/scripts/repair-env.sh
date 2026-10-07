@@ -87,6 +87,7 @@ run_step() {
     shift
     step_number=$((step_number + 1))
     logfile="$REPAIR_RUN_DIR/logs/$(printf '%02d' "$step_number").log"
+    team_tui_stage "step-$step_number" running "$name"
     printf '\n正在验证/修复：%s\n' "$name"
     set +e
     /bin/bash "$@" 2>&1 | tee "$logfile"
@@ -95,14 +96,17 @@ run_step() {
     code="${results[0]}"
     [ "$code" -ne 0 ] || code="${results[1]}"
     if [ "$code" -eq 0 ]; then
+        team_tui_stage "step-$step_number" succeeded "$name"
         audit_step "$name" verified 0 "logs/${logfile##*/}" || { failure=1; return 1; }
         return 0
     fi
     if "$allow_pending" && [ "$code" -eq 2 ] && [ "${results[1]}" -eq 0 ]; then
+        team_tui_stage "step-$step_number" pending "$name"
         idea_project_pending=true
         audit_step "$name" pending 2 "logs/${logfile##*/}" || { failure=1; return 1; }
         return 0
     fi
+    team_tui_stage "step-$step_number" failed "$name"
     audit_step "$name" failed "$code" "logs/${logfile##*/}" || { failure=1; return 1; }
     [ "$failure" -ne 0 ] || failure="$code"
     return "$code"
@@ -111,8 +115,12 @@ run_step() {
 scan_args=()
 [ -z "$project" ] || scan_args+=(--project "$project")
 log '修复前扫描：'
-/bin/bash "$REPO_ROOT/scripts/check-env.sh" ${scan_args[@]+"${scan_args[@]}"} > "$REPAIR_RUN_DIR/before-scan.txt" 2>&1 || true
+team_tui_stage before-scan running '检查现有环境'
+scan_code=0
+/bin/bash "$REPO_ROOT/scripts/check-env.sh" ${scan_args[@]+"${scan_args[@]}"} > "$REPAIR_RUN_DIR/before-scan.txt" 2>&1 || scan_code=$?
 cat "$REPAIR_RUN_DIR/before-scan.txt"
+if [ "$scan_code" -eq 0 ]; then team_tui_stage before-scan succeeded '检查现有环境'
+else team_tui_stage before-scan pending '检查现有环境'; fi
 
 sdk_ready=true
 case "$scope" in
@@ -130,10 +138,15 @@ esac
 idea_ready=true
 case "$scope" in
     all|idea)
+        team_tui_stage idea-check running '检查 IDEA 是否可复用'
         if /bin/bash "$REPO_ROOT/scripts/verify-environment.sh" --scope idea > "$REPAIR_RUN_DIR/logs/idea-precheck.log" 2>&1; then
+            team_tui_stage idea-check succeeded '检查 IDEA 是否可复用'
             log 'IDEA 已通过验证，复用现有应用。'
             audit_step 'IDEA 已有应用验证' verified 0 'logs/idea-precheck.log'
-        elif ! run_step 'IDEA 安装与应用验证' "$REPO_ROOT/scripts/download-tools.sh" --install-idea; then idea_ready=false; fi ;;
+        else
+            team_tui_stage idea-check pending 'IDEA 需要安装或修复'
+            if ! run_step 'IDEA 安装与应用验证' "$REPO_ROOT/scripts/download-tools.sh" --install-idea; then idea_ready=false; fi
+        fi ;;
 esac
 case "$scope" in
     all|plugins)

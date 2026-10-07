@@ -5,6 +5,13 @@ REPO_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/config/env.sh"
 
 log() { printf '%s\n' "$*"; }
+team_tui_stage() {
+    [ "${TEAM_TUI_EVENTS:-0}" = 1 ] || return 0
+    local id="$1" status="$2" title="$3"
+    id="${id//$'\t'/ }"; id="${id//$'\n'/ }"; id="${id//$'\r'/ }"
+    title="${title//$'\t'/ }"; title="${title//$'\n'/ }"; title="${title//$'\r'/ }"
+    printf '@@TEAM_TUI\tstage\t%s\t%s\t%s\n' "$id" "$status" "$title"
+}
 die() { printf '错误：%s\n' "$*" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"; }
 

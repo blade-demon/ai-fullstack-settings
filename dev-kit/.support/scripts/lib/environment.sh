@@ -57,7 +57,7 @@ verify_profile_configuration() {
 }
 
 probe_idea() {
-    local app="${IDEA_APP:-$HOME/Applications/IntelliJ IDEA CE.app}" plist identifier version build
+    local app="${IDEA_APP:-${USER_APPLICATIONS_DIR}/IntelliJ IDEA CE.app}" plist identifier version build
     PROBE_IDEA_STATE=missing; PROBE_IDEA_PATH="$app"; PROBE_IDEA_VERSION=''; PROBE_IDEA_BUILD=''
     [ -d "$app" ] && [ ! -L "$app" ] || return 0
     PROBE_IDEA_STATE=invalid

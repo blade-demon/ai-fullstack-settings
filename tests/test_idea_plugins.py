@@ -138,6 +138,15 @@ class IdeaPluginTests(unittest.TestCase):
             self.assertIn(f"{rid}\t{version}\t", rows)
         self.assertEqual(list(self.tmp.iterdir()), [])
 
+    def test_frontend_shell_plugins_are_not_treated_as_idea_plugins(self):
+        self.rows.append(['oh-my-zsh', 'plugins', 'snapshot', 'any',
+                          'frontend/zsh/oh-my-zsh.tar.gz', 'https://official.invalid/zsh.tar.gz', '-'])
+        self.save_catalog()
+        result = self.run_script('--dry-run')
+        self.assert_ok(result)
+        self.assertIn('全部 6 个插件', result.stdout)
+        self.assertNotIn('oh-my-zsh', result.stdout)
+
     def test_dry_run_does_not_download_or_create_plugin_directory(self):
         self.assert_ok(self.run_script("--dry-run"))
         self.assertFalse(self.plugins.exists())

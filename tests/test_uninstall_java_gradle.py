@@ -241,6 +241,25 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.assertTrue(gradle.is_dir())
         self.assertTrue(gradle.parent.is_dir())
 
+    def test_member_gradle_versions_remove_owned_installs_and_aliases_but_keep_external_and_cache(self):
+        installs = []
+        for version in ('4.5.1', '6.8'):
+            target = self.gradle(self.home / '.local/share/java-dev' / ('gradle-' + version))
+            (target / 'lib/gradle-launcher-8.10.jar').rename(target / 'lib' / ('gradle-launcher-' + version + '.jar'))
+            installs.append(target)
+        external = self.gradle(self.home / 'external/gradle-6.8', owned=False)
+        cache = self.write(self.home / '.gradle/caches/keep.txt', 'shared cache')
+        environment = self.write(self.home / '.config/java-dev/gradle.sh',
+                                 'export GRADLE_HOME="{}"\nexport GRADLE_4_5_1_HOME="{}"\n'
+                                 'export GRADLE_6_8_HOME="{}"\n'.format(installs[1], *installs))
+        plan = self.cleaner(extra_gradles=[external]).scan()
+        self.assertEqual(plan.blockers, [])
+        plan.apply()
+        self.assertTrue(all(not path.exists() for path in installs))
+        self.assertFalse(environment.exists())
+        self.assertTrue(external.exists())
+        self.assertEqual(cache.read_text(), 'shared cache')
+
     def test_new_file_added_after_preview_prevents_empty_directory_removal(self):
         root = self.home / ".config/java-dev"
         root.mkdir(parents=True)

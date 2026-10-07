@@ -23,6 +23,13 @@ import zipfile
 
 from server import manage
 
+try:
+    from .cleanup_fixture import cleanup_fixture
+    from .tui_fixture import tui_fixture
+except ImportError:
+    from cleanup_fixture import cleanup_fixture
+    from tui_fixture import tui_fixture
+
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = "# id\tgroup\tversion\tarch\tpath\turl\tsha256"
@@ -68,6 +75,8 @@ class ServerTests(unittest.TestCase):
         self.env.pop("SERVER_SCHEME", None)
         self.httpd = None
         self.processes = []
+        self.cleanup = cleanup_fixture(self.repo)
+        self.tui = tui_fixture(self.repo)
 
     def tearDown(self):
         for process in self.processes:
@@ -304,7 +313,8 @@ class ServerTests(unittest.TestCase):
         with tarfile.open(archive_path) as archive:
             for member in archive.getmembers():
                 self.assertTrue(member.isfile() or member.isdir())
-                if member.isfile():
+                if (member.isfile() and member.name != "team-dev-env/.support/cleanup/cleanup-macos"
+                        and not member.name.startswith("team-dev-env/.support/tui/team-dev-env-")):
                     self.assertNotIn(b"\r", archive.extractfile(member).read())
             self.assertEqual(archive.getmember("team-dev-env/开始配置.command").mode, 0o755)
             self.assertEqual(archive.getmember("team-dev-env/.support/menu.sh").mode, 0o755)
@@ -314,6 +324,144 @@ class ServerTests(unittest.TestCase):
             self.assertEqual((entry.external_attr >> 16) & 0o777, 0o755)
             self.assertTrue(entry.flag_bits & 0x800)
             self.assertEqual(archive.read(entry), launcher)
+
+    def test_package_embeds_verified_universal_cleanup_without_running_it(self):
+        self.assert_ok(self.package())
+        prefix = "team-dev-env/.support/cleanup/"
+        payload = (self.cleanup / "cleanup-macos-universal2").read_bytes()
+        with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
+            self.assertIn(prefix + "cleanup-macos", archive.getnames())
+            self.assertEqual(archive.extractfile(prefix + "cleanup-macos").read(), payload)
+            self.assertEqual(archive.getmember(prefix + "cleanup-macos").mode, 0o755)
+            for name in ("manifest.json", "THIRD_PARTY_NOTICES.txt"):
+                self.assertEqual(archive.getmember(prefix + name).mode, 0o644)
+            self.assertFalse(any(name.endswith(".py") for name in archive.getnames()))
+        with zipfile.ZipFile(self.output / "team-dev-env.zip") as archive:
+            self.assertEqual(archive.read(prefix + "cleanup-macos"), payload)
+            self.assertEqual((archive.getinfo(prefix + "cleanup-macos").external_attr >> 16) & 0o777, 0o755)
+
+    def test_invalid_cleanup_preserves_every_published_file(self):
+        self.assert_ok(self.package())
+        before = {name: (self.output / name).read_bytes() for name in manage.PUBLISHED}
+        binary = self.cleanup / "cleanup-macos-universal2"
+        metadata = self.cleanup / "manifest.json"
+        source = self.repo / "tools/uninstall_java_gradle.py"
+        original_source = source.read_bytes()
+        for problem in ("missing-binary", "missing-manifest", "missing-license", "corrupt-binary",
+                        "old-source", "bad-json", "wrong-schema", "wrong-architectures", "thin-binary",
+                        "truncated-fat", "mismatched-slice", "symlink-binary"):
+            with self.subTest(problem=problem):
+                if binary.is_symlink():
+                    binary.unlink()
+                source.write_bytes(original_source)
+                cleanup_fixture(self.repo)
+                manifest = json.loads(metadata.read_text())
+                if problem == "missing-binary":
+                    binary.unlink()
+                elif problem == "missing-manifest":
+                    metadata.unlink()
+                elif problem == "missing-license":
+                    (self.cleanup / "THIRD_PARTY_NOTICES.txt").unlink()
+                elif problem == "corrupt-binary":
+                    binary.write_bytes(b"corrupted")
+                elif problem == "old-source":
+                    source.write_bytes(original_source + b"\n# changed\n")
+                elif problem == "bad-json":
+                    metadata.write_text("not JSON")
+                elif problem == "wrong-schema":
+                    manifest["schema"] = 2
+                elif problem == "wrong-architectures":
+                    manifest["architectures"] = ["arm64"]
+                elif problem == "thin-binary":
+                    binary.write_bytes(binary.read_bytes()[48:80])
+                elif problem == "truncated-fat":
+                    binary.write_bytes(binary.read_bytes()[:50])
+                elif problem == "mismatched-slice":
+                    content = bytearray(binary.read_bytes())
+                    content[52:56] = (0x01000007).to_bytes(4, "little")
+                    binary.write_bytes(content)
+                elif problem == "symlink-binary":
+                    outside = self.base / "outside-runtime"
+                    outside.write_bytes(binary.read_bytes())
+                    binary.unlink()
+                    binary.symlink_to(outside)
+                if problem in ("thin-binary", "truncated-fat", "mismatched-slice"):
+                    manifest["sha256"] = hashlib.sha256(binary.read_bytes()).hexdigest()
+                if problem in ("wrong-schema", "wrong-architectures", "thin-binary", "truncated-fat", "mismatched-slice"):
+                    metadata.write_text(json.dumps(manifest))
+                result = self.package("--server", "changed.example:90")
+                self.assertNotEqual(result.returncode, 0, problem)
+                self.assertIn("tools/build-cleanup.py", result.stdout)
+                self.assertEqual({name: (self.output / name).read_bytes() for name in manage.PUBLISHED}, before)
+
+    def test_cleanup_source_hash_allows_windows_line_endings_and_utf8_bom(self):
+        source = self.repo / "tools/uninstall_java_gradle.py"
+        source.write_bytes(b"\xef\xbb\xbf" + source.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+        self.assert_ok(self.package())
+
+    def test_package_embeds_both_tui_binaries_with_modes_without_executing_them(self):
+        self.assert_ok(self.package())
+        prefix = "team-dev-env/.support/tui/"
+        with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
+            with zipfile.ZipFile(self.output / "team-dev-env.zip") as zipped:
+                for name in ("team-dev-env-arm64", "team-dev-env-amd64", "manifest.json", "THIRD_PARTY_NOTICES.txt"):
+                    mode = 0o755 if name.startswith("team-dev-env-") else 0o644
+                    self.assertEqual(archive.extractfile(prefix + name).read(), (self.tui / name).read_bytes())
+                    self.assertEqual(archive.getmember(prefix + name).mode, mode)
+                    self.assertEqual(zipped.read(prefix + name), (self.tui / name).read_bytes())
+                    self.assertEqual((zipped.getinfo(prefix + name).external_attr >> 16) & 0o777, mode)
+
+    def test_invalid_tui_preserves_all_published_files(self):
+        self.assert_ok(self.package())
+        previous = {name: (self.output / name).read_bytes() for name in manage.PUBLISHED}
+        source = self.repo / "tui/main.go"
+        original_source = source.read_bytes()
+        for problem in ("missing-binary", "corrupt-binary", "old-source", "missing-license", "changed-license",
+                        "wrong-cpu", "not-executable", "bad-json", "wrong-file", "symlink-binary"):
+            with self.subTest(problem=problem):
+                binary = self.tui / "team-dev-env-arm64"
+                if binary.is_symlink():
+                    binary.unlink()
+                source.write_bytes(original_source)
+                tui_fixture(self.repo)
+                metadata = self.tui / "manifest.json"
+                manifest = json.loads(metadata.read_text())
+                if problem == "missing-binary":
+                    binary.unlink()
+                elif problem == "corrupt-binary":
+                    binary.write_bytes(binary.read_bytes() + b"changed")
+                elif problem == "old-source":
+                    source.write_bytes(original_source + b"// changed\n")
+                elif problem == "missing-license":
+                    (self.tui / "THIRD_PARTY_NOTICES.txt").unlink()
+                elif problem == "changed-license":
+                    (self.tui / "THIRD_PARTY_NOTICES.txt").write_text("removed notices")
+                elif problem in ("wrong-cpu", "not-executable"):
+                    payload = bytearray(binary.read_bytes())
+                    offset, value = (4, 0x01000007) if problem == "wrong-cpu" else (12, 6)
+                    payload[offset:offset + 4] = value.to_bytes(4, "little")
+                    binary.write_bytes(payload)
+                    manifest["binaries"]["arm64"]["sha256"] = hashlib.sha256(payload).hexdigest()
+                elif problem == "bad-json":
+                    metadata.write_text("not json")
+                elif problem == "wrong-file":
+                    manifest["binaries"]["arm64"]["file"] = "../../outside"
+                elif problem == "symlink-binary":
+                    outside = self.base / "outside-tui"
+                    outside.write_bytes(binary.read_bytes())
+                    binary.unlink()
+                    binary.symlink_to(outside)
+                if problem in ("wrong-cpu", "not-executable", "wrong-file"):
+                    metadata.write_text(json.dumps(manifest))
+                result = self.package("--server", "changed.example:91")
+                self.assertNotEqual(result.returncode, 0, problem)
+                self.assertIn("tools/build-tui.py", result.stdout)
+                self.assertEqual({name: (self.output / name).read_bytes() for name in manage.PUBLISHED}, previous)
+
+    def test_tui_source_hash_allows_windows_checkout_line_endings(self):
+        for path in (self.repo / "tui").iterdir():
+            path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes().replace(b"\n", b"\r\n"))
+        self.assert_ok(self.package())
 
     def test_package_resources_pins_receipts_preserves_binary_and_reuses_output(self):
         rows = self.resources()

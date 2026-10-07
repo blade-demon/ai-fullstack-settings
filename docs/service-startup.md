@@ -6,7 +6,7 @@
 
 ## 部署前安装 Python 3
 
-**在实际执行 `server/manage.py` 的维护者电脑或服务器上安装 Python**；如果资源准备、打包和托管分别在不同机器上进行，这些机器都需要安装。成员 Mac 只运行下载后的安装客户端，无需安装 Python。
+**在实际执行 `server/manage.py` 的维护者电脑或服务器上安装 Python**；如果资源准备、打包和托管分别在不同机器上进行，这些机器都需要安装。成员 Mac 运行下载后的安装、卸载客户端，无需安装 Python；卸载程序自带运行时。
 
 最低要求为 **Python 3.8+**；新安装时选择官网仍在维护、且兼容服务器系统的 Python 3 正式版。服务端仅使用标准库，**无需安装第三方 Python 包，也无需执行 `pip install` 或创建虚拟环境**。已有 Python 时，先按对应系统运行下方验证命令；满足要求即可继续准备资源。
 
@@ -54,6 +54,14 @@ python3 server/manage.py prepare --dry-run
 | macOS 下载资源时报 `CERTIFICATE_VERIFY_FAILED` | 确认已完成对应版本的 `Install Certificates.command`；企业代理证书由团队 IT 配置 |
 
 内网服务器无法访问官网时，可在可联网电脑下载对应的完整 `.exe` / `.pkg` 安装包，再传到服务器安装；Mac 的证书初始化还需可用网络或团队配置的证书环境。Python 安装包不包含在本项目的成员启动包或资源清单中。
+
+## 发布前准备界面与卸载工具
+
+先按[TUI 构建步骤](environment/tui.md#构建与分发)生成 `resources/tui/` 四个文件并带到服务器。它包含 arm64 / amd64 两个 Go 程序、清单和许可；成员无需 Go，服务器打包前会核对源码和产物摘要。
+
+在 Mac 上按[成员卸载构建步骤](environment/cleanup.md#维护者构建成员卸载工具)生成 `resources/cleanup/cleanup-macos-universal2`、`manifest.json`、`THIRD_PARTY_NOTICES.txt`，将整个目录随项目带到实际服务器。该步骤需要单独的 Mac 构建环境；服务端仍只依赖 Python 标准库。
+
+`package` / `start` 会核对可执行文件 SHA-256、卸载源码摘要与 arm64 / x86_64 架构，缺失或不一致时在替换发布文件前退出。修改 `tools/uninstall_java_gradle.py` 后必须重新构建。Windows 服务器仅使用 Mac 生成的成品，不能在 Windows 上重建 Mac 卸载程序。
 
 ## 一键启动：默认部署方式
 
@@ -140,7 +148,7 @@ bash tools/preview.sh --port 8081
 
 看到“本机预览已就绪”后，保持窗口运行，下载 [本机启动包](http://127.0.0.1:8081/start.zip)，重新解压后运行。预览只监听 `127.0.0.1`，不能供其他电脑访问。
 
-`preview` 默认端口是 **8081**，而 `start` / `serve` 默认是 **8080**。预览会把启动包的下载地址改成本机预览端口，退出时不会恢复旧的内网地址。因此正式分发前要重新运行 `start`，或在高级流程中用真实 `--server` 打包。运行成员的「开始配置.command」不会替维护者启动服务器。
+`preview` 默认端口是 **8081**，而 `start` / `serve` 默认是 **8080**。预览会把启动包的下载地址改成本机预览端口，退出时不会恢复旧的内网地址。因此正式分发前要重新运行 `start`，或在高级流程中用真实 `--server` 打包。运行成员的「开始配置.command」或「卸载环境.command」不会替维护者启动服务器。新 `start.zip` 同时包含两个入口；老用户需重新下载一次启动 ZIP，后续每次启动都会拉取服务器最新发布工具。
 
 ## 配置与优先级
 

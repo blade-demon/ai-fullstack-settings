@@ -26,16 +26,24 @@ import urllib.request
 import zipfile
 
 if __package__:
+    from .cleanup_artifact import validate_cleanup_artifact
+    from .tui_artifact import (BINARIES as TUI_BINARIES, FILES as TUI_FILES,
+                               source_sha256 as tui_source_sha256, validate_tui_artifact)
     from .lan import DiscoveryError, discover_ipv4_addresses
 else:
+    from cleanup_artifact import validate_cleanup_artifact
+    from tui_artifact import (BINARIES as TUI_BINARIES, FILES as TUI_FILES,
+                              source_sha256 as tui_source_sha256, validate_tui_artifact)
     from lan import DiscoveryError, discover_ipv4_addresses
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = "# id\tgroup\tversion\tarch\tpath\turl\tsha256"
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 SERVER = re.compile(r"(?:[A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?\Z")
-PUBLISHED = ("start.command", "start.zip", "team-dev-env.zip",
+PUBLISHED = ("start.command", "uninstall.command", "start.zip", "team-dev-env.zip",
              "dev-env/team-dev-env.tar.gz", "dev-env/team-dev-env.tar.gz.sha256")
+CLEANUP_FILES = (("cleanup-macos-universal2", "cleanup-macos"),
+                 ("manifest.json", "manifest.json"), ("THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt"))
 TEXT_SUFFIXES = {".sh", ".command", ".txt", ".yaml", ".yml", ".tsv", ".json", ".in", ".xsl"}
 DEVICES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
 DEVICES.update("%s%s" % (prefix, number) for prefix in ("COM", "LPT") for number in "123456789¹²³")
@@ -315,7 +323,40 @@ def member_bytes(path):
 
 
 def archive_mode(name):
-    return 0o755 if name.endswith((".sh", ".command")) else 0o644
+    executable = (name.endswith((".sh", ".command"))
+                  or name == "team-dev-env/.support/cleanup/cleanup-macos"
+                  or name in {"team-dev-env/.support/tui/" + filename for filename in TUI_BINARIES.values()})
+    return 0o755 if executable else 0o644
+
+
+def cleanup_members():
+    """Read and verify the fixed build output before staging any publication."""
+    try:
+        payloads = {target: member_bytes(ROOT / "resources/cleanup" / source)
+                    for source, target in CLEANUP_FILES}
+        source = check_path(ROOT / "tools/uninstall_java_gradle.py", required=True).read_bytes()
+        validate_cleanup_artifact(payloads["cleanup-macos"], payloads["manifest.json"], source)
+        if not payloads["THIRD_PARTY_NOTICES.txt"].strip():
+            raise ValueError("卸载运行时第三方许可文件为空。")
+    except (UserError, OSError, ValueError) as error:
+        raise UserError("卸载运行时不可发布：%s\n请在 Mac 上运行 python3 tools/build-cleanup.py，"
+                        "再将 resources/cleanup 构建产物复制到服务器重新打包。" % error) from error
+    return {"team-dev-env/.support/cleanup/" + name: payload for name, payload in payloads.items()}
+
+
+def tui_members():
+    """Validate bytes and Go sources without invoking macOS executables or Go."""
+    try:
+        payloads = {name: check_path(ROOT / "resources/tui" / name, required=True).read_bytes()
+                    for name in TUI_FILES}
+        source = check_path(ROOT / "tui", directory=True, required=True)
+        validate_tui_artifact({arch: payloads[name] for arch, name in TUI_BINARIES.items()},
+                              payloads["manifest.json"], tui_source_sha256(source),
+                              payloads["THIRD_PARTY_NOTICES.txt"])
+    except (UserError, OSError, ValueError) as error:
+        raise UserError("TUI 运行时不可发布：%s\n请运行 python3 tools/build-tui.py --go /path/to/go，"
+                        "再将 resources/tui 构建产物复制到服务器重新打包。" % error) from error
+    return {"team-dev-env/.support/tui/" + name: payload for name, payload in payloads.items()}
 
 
 def write_zip(path, files):
@@ -353,14 +394,18 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
     if not members or len(members) != len(set(members)):
         raise UserError("成员文件白名单为空或包含重复条目。")
     generated = {".support/config/team.sh", ".support/config/resources.tsv", ".support/scripts/prepare-resources.sh"}
+    generated.update(".support/cleanup/" + target for _, target in CLEANUP_FILES)
+    generated.update(".support/tui/" + name for name in TUI_FILES)
     files = {}
     for name in members:
         relative_path(name, "白名单")
         if name in generated:
             raise UserError("白名单不能包含打包时生成的文件：%s" % name)
         files["team-dev-env/" + name] = member_bytes(ROOT / "dev-kit" / name)
-    if "开始配置.command" not in members:
-        raise UserError("白名单缺少成员入口。")
+    if not {"开始配置.command", "卸载环境.command"}.issubset(members):
+        raise UserError("白名单缺少配置或卸载成员入口。")
+    files.update(cleanup_members())
+    files.update(tui_members())
     files["team-dev-env/.support/scripts/prepare-resources.sh"] = member_bytes(ROOT / "tools/prepare-resources.sh")
     files["team-dev-env/.support/config/team.sh"] = (
         '# 打包时的团队服务器默认值；成员可用环境变量覆盖。\n'
@@ -374,8 +419,13 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
         raise UserError("发布资源需要清单：%s" % catalog)
     files["team-dev-env/.support/config/resources.tsv"] = (
         HEADER + "\n" + "".join(item.line() + "\n" for item in resources)).encode("utf-8")
-    launcher = member_bytes(ROOT / "tools/start.command.in").replace(b"@SERVER_ADDR@", server.encode("ascii"))
-    launcher = launcher.replace(b"@SERVER_SCHEME@", scheme.encode("ascii"))
+    template = member_bytes(ROOT / "tools/start.command.in").replace(b"@SERVER_ADDR@", server.encode("ascii"))
+    template = template.replace(b"@SERVER_SCHEME@", scheme.encode("ascii"))
+    launchers = {}
+    for filename, entry_name, label in (("start.command", "开始配置.command", "配置"),
+                                        ("uninstall.command", "卸载环境.command", "卸载")):
+        content = template.replace(b"@ENTRY_NAME@", entry_name.encode("utf-8"))
+        launchers[filename] = (entry_name, content.replace(b"@ENTRY_LABEL@", label.encode("utf-8")))
     check_path(output, directory=True)
     for name in PUBLISHED:
         check_path(output / name)
@@ -393,9 +443,10 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
     with tempfile.TemporaryDirectory(prefix=".package.", dir=str(output)) as temporary:
         staging = Path(temporary)
         (staging / "dev-env").mkdir()
-        (staging / "start.command").write_bytes(launcher)
-        (staging / "start.command").chmod(0o755)
-        write_zip(staging / "start.zip", {"开始配置.command": launcher})
+        for filename, (_, content) in launchers.items():
+            (staging / filename).write_bytes(content)
+            (staging / filename).chmod(0o755)
+        write_zip(staging / "start.zip", dict(launchers.values()))
         write_zip(staging / "team-dev-env.zip", files)
         archive = staging / "dev-env/team-dev-env.tar.gz"
         write_tar(archive, files)

@@ -48,18 +48,40 @@ choose_gradle_version() {
     done
 }
 
-log 'Java 开发环境助手'
+choose_frontend_component() {
+    local frontend_choice
+    while :; do
+        printf '\n%s\n' '前端环境安装：' '1. 一键安装前端环境（全部 Node 版本、iTerm2、Oh My Zsh）' \
+            '2. 安装 nvm 和 Node 14' '3. 安装 nvm 和 Node 16' '4. 安装 nvm 和 Node 18' \
+            '5. 安装 nvm 和全部 Node 版本' '6. 安装 iTerm2' '7. 安装 Oh My Zsh 和推荐插件' '0. 返回主菜单'
+        printf '输入前端环境选项：'
+        if ! IFS= read -r frontend_choice; then printf '\n'; return 0; fi
+        case "$frontend_choice" in
+            1) run_logged '安装全部前端环境' "$REPO_ROOT/scripts/frontend-env.sh"; return $? ;;
+            2) run_logged '安装 nvm 和 Node 14' "$REPO_ROOT/scripts/frontend-env.sh" --component node --node-version 14; return $? ;;
+            3) run_logged '安装 nvm 和 Node 16' "$REPO_ROOT/scripts/frontend-env.sh" --component node --node-version 16; return $? ;;
+            4) run_logged '安装 nvm 和 Node 18' "$REPO_ROOT/scripts/frontend-env.sh" --component node --node-version 18; return $? ;;
+            5) run_logged '安装 nvm 和全部 Node 版本' "$REPO_ROOT/scripts/frontend-env.sh" --component node; return $? ;;
+            6) run_logged '安装 iTerm2' "$REPO_ROOT/scripts/frontend-env.sh" --component iterm2; return $? ;;
+            7) run_logged '安装 Oh My Zsh' "$REPO_ROOT/scripts/frontend-env.sh" --component zsh; return $? ;;
+            0) return 0 ;;
+            *) log '请输入 0 到 7 之间的前端选项；尚未开始安装。' ;;
+        esac
+    done
+}
+
+log '团队开发环境助手'
 log "安装包服务器：${SERVER_SCHEME}://${SERVER_ADDR}"
 case "$SERVER_ADDR" in
     127.0.0.1:*|localhost:*) log '当前为本机联调地址；若无法下载，请让维护者提供已配置内网地址的启动包。' ;;
 esac
-log '环境预检（只读，不下载或安装）：'
+log 'Java 环境预检（只读，不下载或安装）：'
 /bin/bash "$REPO_ROOT/scripts/check-env.sh" || log '[建议] 按上述待处理项选择菜单；检查不会自动开始安装。'
 while :; do
     printf '\n'
     printf '%s\n' '1. 一键安装 JDK、Gradle 并配置环境（包含 IDEA 和全部插件）' '2. 安装并配置 JDK 8' \
         '3. 安装并配置 Gradle' '  3.1 Gradle 4.5.1' '  3.2 Gradle 6.8' \
-        "4. 安装 IDEA 软件（安装目录：${IDEA_APP%/*}）" '5. 安装推荐 IDEA 插件' '0. 退出'
+        "4. 安装 IDEA 软件（安装目录：${USER_APPLICATIONS_DIR}）" '5. 安装推荐 IDEA 插件' '6. 安装前端环境（nvm / Node、iTerm2、Oh My Zsh）' '0. 退出'
     log '一键安装默认版本：JDK 8 + Gradle 4.5.1。'
     printf '输入编号，回车默认选择 1：'
     if ! IFS= read -r choice; then printf '\n'; break; fi
@@ -71,8 +93,9 @@ while :; do
         3.2) install_gradle_version 6.8 ;;
         4) run_logged '安装 IDEA 软件' "$REPO_ROOT/scripts/repair-env.sh" --scope idea ;;
         5) run_logged '安装推荐 IDEA 插件' "$REPO_ROOT/scripts/repair-env.sh" --scope plugins ;;
+        6) choose_frontend_component ;;
         0) break ;;
-        *) log '请输入 0 到 5 之间的编号。' ;;
+        *) log '请输入 0 到 6 之间的编号。' ;;
     esac
 done
 log '已退出，可以关闭此窗口。'

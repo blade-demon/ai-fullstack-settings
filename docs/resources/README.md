@@ -10,7 +10,7 @@
 | `software` | IDEA Community 2024.3.7.1、DBeaver Community 26.2.2 | 各有 arm64/x64 DMG；IDEA 用菜单 `4` 安装到个人应用目录，DBeaver 由维护者命令行下载后手动安装 |
 | `plugins` | Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 243.28141.18 | 通用 ZIP；菜单 `5` 安装并验证全部插件，或由维护者命令行下载后从 IDEA 磁盘安装 |
 
-以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。现共 14 项；新增 Gradle 6.8 本次仅登记来源和摘要，尚未下载完整安装包，分发前须准备并校验。完整资源大小以实际下载为准；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。Spring Boot Helper 为收费插件，原 Spring Assistant 不兼容目标 IDEA，均不纳入默认清单；研究中记录的 Spring Boot Assistant 替代项也未加入本次下载。
+以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。现共 24 项（原有 14 项、前端工具 10 项）；Gradle 6.8 已于 2026-10-07 下载并通过固定摘要校验，分发前仍须核对全部资源。完整资源大小以实际下载为准；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。Spring Boot Helper 为收费插件，原 Spring Assistant 不兼容目标 IDEA，均不纳入默认清单；研究中记录的 Spring Boot Assistant 替代项也未加入本次下载。
 
 版本、官方直链、系统支持范围及校验依据见[运行环境与桌面工具来源](runtime-sources.md)、[IDEA 与插件来源](plugin-sources.md)。来源核验、文件下载、目标电脑安装和业务构建验收是不同步骤，不应互相替代。
 
@@ -83,6 +83,10 @@ Windows 用 `py -3` 执行同样的 `package` / `serve`，原生入口也可显�
 4. 只需下载软件、DBeaver 或插件时，由维护者在完整工具目录运行 `bash .support/scripts/download-tools.sh` 并选择资源，文件保存到 `~/Downloads/team-java-env/` 下的对应子目录。DBeaver 打开 DMG 手动安装；插件也可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选原始 ZIP，**无需解压**。
 
 `download-tools.sh` 仅下载时只保存文件；安装和复验结果以对应安装菜单为准。IDEA 的个人目录 `~/Applications` 与系统 `/Applications` 不同，工具自动识别当前用户，无需填写用户名。手动安装时，在 Finder 按 `Command + Shift + G` 前往 `~/Applications`（没有则先创建），复制 DMG 中的 `IntelliJ IDEA CE.app`，不使用通常指向系统目录的 `Applications` 快捷方式。完整步骤见 [IDE 指南](../environment/ide.md)。独立 JDK / Gradle 及完整变量见[运行环境指南](../environment/runtime.md)；安装 IDEA 后另行设置项目 SDK 和 Gradle JVM。
+
+## 前端工具资源
+
+新增 nvm、Node14 x64、Node16/18 两种架构、iTerm2、Oh My Zsh 和两个外部 Zsh 插件，均已准备并固定 SHA-256，详见[前端资源来源](frontend-sources.md)。使用默认全量准备可同时提供 Apple Silicon 上需要的 Node14 x64 包；单独筛选 arm64 时须另外准备该 ID。前端 shell 插件由独立安装器处理，不属于 IDEA 推荐插件。
 
 ## 离线范围
 

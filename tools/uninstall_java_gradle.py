@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""维护者用 macOS 环境清理；预检后直接删除，不生成软件或配置备份。"""
+"""macOS 环境卸载；预检与确认后直接删除，不生成软件或配置备份。"""
 import argparse
 from dataclasses import dataclass, field
 import datetime
@@ -940,7 +940,7 @@ def verify_confirmed_scope(approved, refreshed):
 
 
 def main(argv=None, cleaner_factory=None, input_reader=None):
-    parser = argparse.ArgumentParser(description="macOS 维护者测试工具：交互终端引导选择并确认；非交互默认仅预览，无备份。")
+    parser = argparse.ArgumentParser(description="macOS 环境卸载工具：交互终端引导选择并确认；非交互默认仅预览，无备份。")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="执行计划，需输入 DELETE")
     mode.add_argument("--dry-run", action="store_true", help="只预览，不提问、不退出应用")

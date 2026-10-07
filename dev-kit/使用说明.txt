@@ -2,7 +2,9 @@ Java 开发环境修复与验证（macOS）
 
 一键安装基线：JDK 8、独立 Gradle 4.5.1、IDEA 2024.3.7.1 社区版和六个插件。
 Gradle 单独安装还可选择 6.8。
-成员不必安装 Python、Homebrew 或 Git，不必填写内网服务器地址。
+成员不必安装 Python 或 Homebrew，不必填写内网服务器地址。
+Java安装不需要Git；Oh My Zsh框架需要可用Git，工具不会自动安装Xcode开发工具。
+start.zip 内含「开始配置.command」与「卸载环境.command」两个双击入口。
 
 一、首次使用
 
@@ -11,7 +13,7 @@ Gradle 单独安装还可选择 6.8。
    使用完整工具备用 ZIP 时，解压后双击 team-dev-env 内的同名入口。
    请保留完整文件夹，隐藏的 .support 是工具的一部分。
 
-2. 保存工作并正常退出 IDEA，然后选菜单 1 一键安装并配置全部环境。
+2. 保存工作并正常退出 IDEA，然后用方向键选择“一键安装 Java 环境”，按 Enter 查看并确认操作。
    它固定处理 JDK 8、独立 Gradle 4.5.1、IDEA 和全部六个插件，复用已验证的同版安装，
    配置完整环境变量，再做最终环境验证。
    工具不自动杀掉 IDEA，也不自动打开它。
@@ -21,7 +23,15 @@ Gradle 单独安装还可选择 6.8。
    单独的版本命令通过、文件复制完成，都不能代替项目构建成功。
    新开终端加载环境，在 IDEA 中导入实际业务项目并配置 SDK、Gradle 后完成同步。
 
-二、菜单
+二、Go TUI 界面与普通菜单
+
+默认双击进入 Go + Bubble Tea 界面；方向键选择、Enter继续并确认、Esc返回、q退出。
+安装页显示阶段状态和可滚动日志，Esc取消后等待任务退出，Ctrl+C取消后退出。
+结果页按Enter或Esc返回。窗口过小时请放大，避免看不到完整确认内容。
+Go已编译进工具包，成员不需要安装Go。
+
+需要原数字菜单时，在终端运行 bash 开始配置.command --plain。
+下面编号对应普通模式；Go界面包含同名操作：
 
 1  一键安装 JDK、Gradle 并配置环境，包含 IDEA 和全部六个插件。
    固定使用 JDK 8 + Gradle 4.5.1。
@@ -29,9 +39,10 @@ Gradle 单独安装还可选择 6.8。
 3  安装并配置 Gradle：3.1 Gradle 4.5.1；3.2 Gradle 6.8。
 4  安装 IDEA 软件；菜单会显示当前用户 $HOME/Applications 的实际路径。
 5  安装推荐 IDEA 插件（全部六个）；执行前请退出 IDEA。
+6  安装前端环境：nvm / Node 14、16、18、iTerm2、Oh My Zsh 与常用插件。
 0  退出。
 
-可在主菜单直接输入 3.1 / 3.2，或输入 3 进入 Gradle 版本选择。
+普通模式可在主菜单直接输入 3.1 / 3.2，或输入 3 进入 Gradle 版本选择。
 子菜单可输入 1 / 2 或完整编号选择版本，输入 0 返回；空行不开始安装。
 两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
 
@@ -63,8 +74,9 @@ Wrapper 缓存通常在 ~/.gradle/wrapper/dists，不作为独立安装的 GRADL
 
 四、IDEA 与插件
 
-IDEA 安装到：~/Applications/IntelliJ IDEA CE.app
-这是当前用户的个人应用目录，不是系统 /Applications，无需填写用户名。
+IDEA 安装到：/Users/当前用户名/Applications/IntelliJ IDEA CE.app
+脚本自动从 HOME 确定当前用户目录，与 ~/Applications 指向同一位置。
+不会在主目录下再拼接 Users/用户名，也不写入系统 /Applications；无需填写用户名。
 工具校验安装包、版本与应用内容；相同版本和构建号且完整时复用。
 其他已有目标保留并报错，不直接覆盖，不使用 sudo。
 
@@ -133,7 +145,40 @@ IDE 插件版本与业务项目的 Lombok 库版本分别管理，项目仍需�
 失败时先看 report.md 与失败阶段日志；维护者指定项目时，SDK 已装好而构建失败仍是失败。
 历史含配置快照，发给维护者前先检查密码、令牌等私密内容，不发送数据库密码。
 
-六、其他说明
+六、卸载环境
+
+1. 保存工作，双击「卸载环境.command」。启动入口会下载并校验最新工具，打开安全卸载页面。
+   可先只读预览；进入实际卸载时会临时交出终端，保留下面的原确认流程。
+   使用完整工具 ZIP 时，直接双击 team-dev-env 内的同名入口，并保留 .support。
+2. 按提示选择是否删除检测到的 IDEA 软件。默认保留 IDEA 配置和用户插件。
+3. 核对实际删除路径和配置清理计划，输入 DELETE 后才执行；取消不会删除。
+   清理直接删除所选内容，不建立软件或配置备份；业务项目及 Gradle 用户缓存保留。
+4. 查看结果，按 Enter 返回菜单，按 q 退出。实际执行清理时，操作记录位于：
+   ~/Library/Logs/team-java-env/cleanup/<本次记录>/report.txt
+
+仅删除带有效来源标记且校验通过的本工具 JDK / Gradle；来源不明或旧版无标记
+安装会保留。Gradle 4.5.1 与 6.8 都可识别。IDEA 按用户选择及应用标识处理。
+卸载工具自带运行时，无需预装 Python；缺失、校验失败时请重新下载完整工具包。
+命令行预览（在完整工具目录）：bash 卸载环境.command --dry-run
+已有用户须重新下载一次 start.zip 才能看到新卸载入口。服务器地址不变时，
+两个启动入口每次运行都会获取最新发布工具；完整工具 ZIP 是下载时的快照。
+
+七、前端环境
+
+Go界面选择“安装前端环境”；普通菜单输入 6：1 一键前端；2/3/4 分别安装 nvm+Node14/16/18；
+5 安装 nvm+全部三版 Node；6 安装 iTerm2；7 安装 Oh My Zsh 和推荐插件；0 返回。
+Java 一键安装不会安装这些前端工具。Node14/16/18为旧项目兼容版本，已结束官方维护。
+Node14在Apple Silicon上需要已有Rosetta，工具不会自动安装Rosetta。
+iTerm2 3.7.3需要macOS13+，保存到 /Users/当前用户名/Applications/iTerm.app，与 IDEA 使用同一目录规则。
+Oh My Zsh推荐插件：git、z、zsh-autosuggestions、zsh-syntax-highlighting。
+已有主题和插件配置保留；修改.zshrc前保存.team-frontend.bak，新开终端生效。
+不修改登录Shell、不安装主题或字体。当前卸载入口不删除新增前端工具。
+前端操作记录：~/Library/Logs/team-java-env/frontend/<本次记录>/。
+
+已有Node/npm也可使用维护者提供的npm包通过npx启动同一工具；
+没有Node的电脑继续使用双击入口。临时包名team-dev-env-preview尚未公开发布。
+
+八、其他说明
 
 首次打开可能遇到 macOS 来源确认。确认来自可信团队服务器后，按系统提示
 允许打开这一个文件；受设备策略限制时联系维护者或 IT。

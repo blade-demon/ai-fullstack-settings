@@ -22,8 +22,8 @@ class IdeaInstallTests(unittest.TestCase):
         self.base = Path(self.temp.name).resolve()
         self.support = self.base / "工具's 目录/.support"
         shutil.copytree(ROOT / "dev-kit/.support", self.support)
-        self.home = self.base / "用户's home"
-        self.home.mkdir()
+        self.home = self.base / "Users/用户's home"
+        self.home.mkdir(parents=True)
         self.bin = self.base / "fake-bin"
         self.bin.mkdir()
         self.tmp = self.base / "临时 mount's"
@@ -62,7 +62,8 @@ class IdeaInstallTests(unittest.TestCase):
         self.env = {"HOME": str(self.home), "PATH": f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
                     "LC_ALL": "C.UTF-8", "TMPDIR": str(self.tmp), "FIXTURE_APP": str(self.app),
                     "MOUNT_RECORD": str(self.mount_record), "HDIUTIL_CALLS": str(self.calls),
-                    "IDEA_EXEC_RECORD": str(self.exec_record), "CDPATH": str(self.base)}
+                    "IDEA_EXEC_RECORD": str(self.exec_record), "CDPATH": str(self.base),
+                    "USER": "other-login", "LOGNAME": "other-login"}
         self.target = self.home / "Applications" / APP_NAME
 
     def write_metadata(self, metadata, app=None):
@@ -90,12 +91,17 @@ class IdeaInstallTests(unittest.TestCase):
         script.chmod(0o755)
 
     def test_install_to_user_applications_validates_and_cleans_mount(self):
-        result = self.run_script()
+        # HOME is authoritative, even if login variables or an inherited value differ.
+        unexpected = self.base / "external-applications"
+        result = self.run_script(extra={"USER_APPLICATIONS_DIR": str(unexpected)})
         self.assert_ok(result)
         self.assertIn(str(self.target), result.stdout)
         self.assertIn("已安装", result.stdout)
         self.assertEqual(self.target.stat().st_mode & 0o777, 0o755)
         self.assertTrue(os.access(self.target / "Contents/MacOS/idea", os.X_OK))
+        self.assertFalse((self.home / "Users").exists())
+        self.assertFalse((self.base / "Users/other-login").exists())
+        self.assertFalse(unexpected.exists())
         with (self.target / "Contents/Info.plist").open("rb") as stream:
             self.assertEqual(plistlib.load(stream), self.metadata)
         calls = self.calls.read_text().splitlines()
@@ -117,6 +123,12 @@ class IdeaInstallTests(unittest.TestCase):
         self.assertEqual(self.target.stat().st_ino, inode)
         self.assertEqual(sentinel.read_text(), "preserve")
         self.assert_clean()
+
+    def test_help_shows_expanded_install_destination_without_writing(self):
+        result = self.run_script("--help", defaults=False)
+        self.assert_ok(result)
+        self.assertIn(str(self.target), result.stdout)
+        self.assertEqual(list(self.home.iterdir()), [])
 
     def test_hash_failure_never_mounts_or_creates_applications(self):
         result = self.run_script("--sha256", "0" * 64)

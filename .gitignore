@@ -13,3 +13,9 @@ resources/**/*.part.*
 dist/
 dev-kit/.support/config/team.sh
 server/config.json
+# 在 macOS 单独构建后随分发包携带；不把本机产物提交到源码仓库。
+/resources/cleanup/
+/resources/tui/
+/npm-cli/assets/
+/npm-cli/node_modules/
+/npm-cli/*.tgz

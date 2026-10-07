@@ -1,6 +1,6 @@
-# 维护者实机测试前清理 JDK、Gradle 与 IDEA
+# 卸载 JDK、Gradle 与 IDEA
 
-`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置。交互运行时会询问是否同时删除检测到的 IDEA 软件；默认保留 IDEA 配置和用户插件。完整重装可显式加 `--include-idea`，同时删除应用、专属配置和用户插件。它需要 **Python 3.8+**，仅供维护者使用，不进入成员菜单或分发工具包。
+`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置。交互运行时会询问是否同时删除检测到的 IDEA 软件；默认保留 IDEA 配置和用户插件。完整重装可显式加 `--include-idea`，同时删除应用、专属配置和用户插件。成员使用分发包中的独立「卸载环境.command」，它执行自带运行时的同一份卸载实现，无需预装 Python。维护者直接使用此源码入口时才需要 **Python 3.8+**；安装菜单不增加卸载选项。
 
 本项目通过 tar 归档安装 JDK、ZIP 安装 Gradle、DMG 安装 IDEA。JDK/Gradle 的删除依据是安装根目录中的有效来源标记 `.team-java-env-install.json`：`schema` 为 `1`、`tool` 为 `team-java-env`、`kind` 分别为 `jdk` 或 `gradle`，并且目录结构通过相应 SDK 校验。IDEA 应用继续按静态应用标识识别。
 
@@ -10,7 +10,51 @@
 
 **清理工具直接删除或清理所选内容，不备份 JDK/Gradle 配置、IDEA 应用、配置或插件，也不自动回滚。** 外部 SDK、原有 Shell 变量与 PATH 引用、用户的版本管理选择以及 Gradle 用户配置和缓存都会保留。
 
-## 预览与执行
+## 成员双击卸载
+
+从新版 `start.zip` 解压后，双击「卸载环境.command」：入口会下载并校验最新工具，打开 Go TUI 安全卸载页面。选择只读预览，或进入保留原 DELETE 确认的清理引导；卸载页不会启动 SDK 运行探测。完整工具 ZIP 中也包含同名入口，可直接双击；须保留同目录的隐藏 `.support`。
+
+先保存工作，再按提示选择是否删除 IDEA 软件、核对完整删除清单，输入 `DELETE` 后才执行。默认保留 IDEA 配置和用户插件；取消不执行删除。Go TUI 会恢复结果页；普通模式的结果留在终端窗口，按回车后关闭。业务项目、外部 SDK 和 Gradle 用户配置及缓存继续保留；无来源标记的旧安装不会仅凭目录名删除。
+
+两个 Gradle 版本（4.5.1、6.8）均按来源标记识别，不需要分别下载卸载工具。每次卸载只保存操作记录，不建立软件或配置备份，具体边界见下文。
+
+在完整工具目录中，仅预览可执行：
+
+```bash
+bash 卸载环境.command --dry-run
+```
+
+已有用户要重新下载一次 `start.zip` 才能获得新入口；服务器地址不变时，每次启动都会获取最新发布工具。已下载并解压的完整工具包是快照，更新需重新下载。若提示卸载工具缺失、校验失败或清单无效，重新下载完整工具，不要单独移动或替换内部可执行文件。
+
+## 维护者构建成员卸载工具
+
+唯一源码为 `tools/uninstall_java_gradle.py`；用 macOS **python.org Python 3.14.6 universal2** 和固定 `PyInstaller==6.22.3` 构建包含 arm64 / x86_64 的单文件程序。成员无需 PyInstaller 或 Python，Windows 下载服务器也不需要安装 PyInstaller。仅有 arm64 的 Python 不能用于这个双架构构建。
+
+以下示例使用 python.org Python 3.14.6 的安装路径；若安装在其他位置，替换第一行的解释器路径。构建器要求这两个固定版本及虚拟环境，附带许可材料与所选运行时一致。在仓库根目录执行，构建依赖放入临时虚拟环境，不修改系统 Python：
+
+```bash
+/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14 -m venv /tmp/team-cleanup-build
+/tmp/team-cleanup-build/bin/python -m pip install 'pyinstaller==6.22.3'
+/tmp/team-cleanup-build/bin/python tools/build-cleanup.py
+python3 tools/build-cleanup.py --verify-only
+```
+
+默认生成：
+
+```text
+resources/cleanup/
+├── cleanup-macos-universal2
+├── manifest.json
+└── THIRD_PARTY_NOTICES.txt
+```
+
+把三个文件一起交给实际下载服务器，保留该相对目录；随后使用原来的 `server/manage.py start` 或 `package` 发布。它们是生成产物，不通过 Git 分发，也不在 `resources/catalog.tsv` 的软件下载清单中。服务端会核对产物摘要、源码摘要及双架构，不会在 Windows 上运行 Mac 工具。
+
+`source_sha256` 使用 UTF-8（忽略 BOM）、统一 LF 换行后的源码，避免 Windows 的 CRLF 导致错误判为过期。修改卸载源码后须重新构建；缺失、损坏或源码摘要不符时，打包会停止并提示处理，不会发布一个无法使用的卸载入口。成员执行前还会核对包内可执行文件摘要。
+
+构建采用 PyInstaller 的本地签名处理，不代表已取得 Developer ID 签名或 Apple 公证；首开及企业设备策略仍需遵循团队的 macOS 分发规则。[PyInstaller 打包说明](https://pyinstaller.org/en/stable/operating-mode.html)
+
+## 维护者源码预览与执行
 
 在仓库根目录运行：
 
@@ -130,7 +174,7 @@ Gradle 用户配置和缓存可能由外部版本共用，因此本次全部保�
 执行后查看报告，确认是否有失败或残留。**新开终端**后检查变量和命令路径，旧终端仍可能保留此前加载的变量：
 
 ```bash
-printenv JAVA_HOME JAVA_8_HOME JRE_HOME GRADLE_HOME GRADLE_4_5_1_HOME GRADLE_USER_HOME
+printenv JAVA_HOME JAVA_8_HOME JRE_HOME GRADLE_HOME GRADLE_4_5_1_HOME GRADLE_6_8_HOME GRADLE_USER_HOME
 command -v java
 command -v javac
 command -v gradle

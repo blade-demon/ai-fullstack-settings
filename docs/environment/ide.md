@@ -1,6 +1,6 @@
 # IDEA 与全部插件修复
 
-团队基线为 **IntelliJ IDEA Community 2024.3.7.1**，应用安装在 **`~/Applications/IntelliJ IDEA CE.app`**。这是当前用户的个人应用目录，与系统 `/Applications` 不同；工具使用当前 `HOME`，不要求填写用户名或运行 `sudo`。
+团队基线为 **IntelliJ IDEA Community 2024.3.7.1**，应用安装在 **`/Users/用户名/Applications/IntelliJ IDEA CE.app`**。脚本使用当前 `HOME` 解析用户名和主目录，`~/Applications` 是此个人应用目录的简写；不会在主目录下再次拼接 `Users/用户名`，也不要求填写用户名或运行 `sudo`。IDEA 与 iTerm2 共用这一目录规则，与系统 `/Applications` 不同。
 
 菜单 `1` 固定安装配置 JDK 8、Gradle 4.5.1、IDEA 和全部六个推荐插件；菜单 `4` 单独安装 IDEA，菜单 `5` 安装并验证全部六个推荐插件。仅下载功能保留为维护者命令行入口，下载 ZIP 不等于插件已经安装。
 

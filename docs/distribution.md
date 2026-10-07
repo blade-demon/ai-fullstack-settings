@@ -1,20 +1,22 @@
 # 内网分发指南
 
-维护者可在 Windows 或 macOS 上用 Python 3.8+ 准备资源、打包和运行下载服务，服务端不依赖 Bash。小组成员仍使用 macOS 中文安装入口，无需配置服务器地址，也无需安装 Python、Homebrew 或 Git。Windows 服务端不代表提供了 Windows 安装客户端。
+维护者可在 Windows 或 macOS 上用 Python 3.8+ 准备资源、打包和运行下载服务，服务端不依赖 Bash。小组成员仍使用 macOS 中文安装入口，无需配置服务器地址，也无需安装 Python 或 Homebrew。Java 安装不依赖 Git；Oh My Zsh 框架需可用 Git，缺少时提示处理，不会自动安装系统开发工具。Windows 服务端不代表提供了 Windows 安装客户端。
 
-首次部署前，先在实际运行脚本的电脑或服务器上完成[Python 3 安装与验证](service-startup.md#部署前安装-python-3)。服务端只使用标准库，无需安装第三方 Python 包。
+首次部署前，先在实际运行脚本的电脑或服务器上完成[Python 3 安装与验证](service-startup.md#部署前安装-python-3)。服务端只使用标准库，无需安装第三方 Python 包。首次发布还需[构建 Go TUI](environment/tui.md#构建与分发)并准备 `resources/tui/` 四文件，再在 Mac 上[构建成员卸载工具](environment/cleanup.md#维护者构建成员卸载工具)，将 `resources/cleanup/` 中的通用可执行文件、清单和第三方许可一起带到服务器；Windows 不编译或运行该 Mac 工具。
 
 **先启动下载服务，再运行成员启动包。** 本机与内网服务器的完整启动命令、停止/重启和端口处理见[服务启动指南](service-startup.md)。打包输出的链接只有在服务启动且根目录配置正确后才能访问。
+
+本次迁移同时更新启动器的终端取消处理。发布后请成员重新下载 `start.zip`；已有 npx 用户也需要使用重新打包后的 npm 包。仅替换服务器上的完整工具包，不能更新成员手里的旧下载模板或 npm 启动代码。
 
 ## 成员操作流程
 
 1. 连接团队内网，打开维护者提供的 `start.zip` 下载链接。
-2. 解压启动包，双击其中的「开始配置.command」。入口自动下载完整工具、校验 SHA-256、解压；菜单打开时先自动预检现有 JDK 8 和 Gradle 状态。
-3. 保存工作并退出 IDEA，选择菜单 `1` 一键安装并配置全部环境：固定补齐 JDK 8、独立 Gradle 4.5.1、完整环境变量、IDEA 和全部六个插件，再复验。菜单不选择业务项目，也不执行构建，只报告环境验证结果和“未执行项目构建”。
-4. 也可用菜单 `2`、`3`、`4`、`5` 分别处理 JDK、Gradle、IDEA 和全部 IDEA 插件。IDEA 位于 `~/Applications/IntelliJ IDEA CE.app`，其项目设置见 [IDE 指南](environment/ide.md)。
+2. 解压启动包，可见「开始配置.command」和「卸载环境.command」。安装时双击「开始配置.command」。入口自动下载完整工具、校验 SHA-256、解压；菜单打开时先自动预检现有 JDK 8 和 Gradle 状态。
+3. 保存工作并退出 IDEA，用方向键选择「一键安装 Java 环境」，按 Enter 查看并确认操作：固定补齐 JDK 8、独立 Gradle 4.5.1、完整环境变量、IDEA 和全部六个插件，再复验。菜单不选择业务项目，也不执行构建，只报告环境验证结果和“未执行项目构建”。
+4. 也可选择「安装并配置 JDK 8」「安装并配置 Gradle」「安装 IDEA 软件」「安装推荐 IDEA 插件」分别处理各组件。IDEA 位于 `~/Applications/IntelliJ IDEA CE.app`，其项目设置见 [IDE 指南](environment/ide.md)。
 5. 查看结果和输出的历史目录；新开终端加载环境，再在 IDEA 中导入、配置并同步业务项目。项目检查、构建验证、仅下载及历史查看保留为维护者命令行功能。
 
-菜单提供以下操作：
+卸载时双击独立的「卸载环境.command」，核对删除计划并输入 `DELETE` 确认；该入口自带运行时，成员无需安装 Python。卸载范围、无备份说明及取消方式见[卸载指南](environment/cleanup.md)。默认交互为 Go TUI，包含以下同名操作；下表编号供 `--plain` 数字菜单使用：
 
 | 选项 | 操作 |
 | --- | --- |
@@ -23,9 +25,10 @@
 | `3` | 安装并配置 Gradle；`3.1` Gradle 4.5.1、`3.2` Gradle 6.8 |
 | `4` | 安装 IDEA 软件；菜单显示当前用户 `$HOME/Applications` 的实际路径 |
 | `5` | 安装推荐 IDEA 插件（全部六个） |
+| `6` | 独立前端环境安装，详见[前端指南](environment/frontend.md) |
 | `0` | 退出 |
 
-主菜单可直接输入 `3.1` / `3.2`，也可输入 `3` 进入 Gradle 版本选择；子菜单可输入 `1` / `2` 或完整编号选择版本，输入 `0` 返回，空行不开始安装。两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
+普通模式主菜单可直接输入 `3.1` / `3.2`，也可输入 `3` 进入 Gradle 版本选择；子菜单可输入 `1` / `2` 或完整编号选择版本，输入 `0` 返回，空行不开始安装。两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
 
 启动自动预检保持只读，不下载、安装或构建。扫描结果用于判断待修复项，不代替实际 SDK、完整环境变量、IDEA、插件和项目构建验证。仅有安装包或 Wrapper 缓存，不能代表独立 Gradle 和项目已经就绪。
 
@@ -33,11 +36,11 @@
 
 维护者通过 `repair-env.sh --project` 指定已有 IDEA 配置的项目时，会在构建前统一 JDK 8 的 SDK 登记与项目引用名称，默认 `azul-1.8`，可通过 `IDEA_JDK_NAME` 配置。执行前须退出 IDEA；同目录的重复 SDK 名称会合并。尚未导入的项目仍提示待配置，之后完成导入并运行名称同步，见 [IDE 指南](environment/ide.md#统一-jdk-8-登记与项目引用)。
 
-维护者的 `download-tools.sh` 仅下载时把文件保存到 `~/Downloads/team-java-env/` 的对应子目录。菜单 `4` 校验 IDEA DMG 后只读挂载，将应用复制到当前用户的 `~/Applications`，无需 `sudo`，不修改系统 `/Applications`，也不自动启动 IDEA。同版本、同 build 且完整的现有应用会复用；其他已有目标保留并报错，不覆盖。手动安装和两个应用目录的区别见 [IDE 指南](environment/ide.md)。
+维护者的 `download-tools.sh` 仅下载时把文件保存到 `~/Downloads/team-java-env/` 的对应子目录。「安装 IDEA 软件」（普通模式菜单 `4`）校验 IDEA DMG 后只读挂载，将应用复制到当前用户的 `~/Applications`，无需 `sudo`，不修改系统 `/Applications`，也不自动启动 IDEA。同版本、同 build 且完整的现有应用会复用；其他已有目标保留并报错，不覆盖。手动安装和两个应用目录的区别见 [IDE 指南](environment/ide.md)。
 
 工具不下载业务项目，Docker 本次仅登记官方入口，未纳入下载清单。完整工具包 `team-dev-env.zip` 是备用入口：解压后双击 `team-dev-env/开始配置.command`，同样进入菜单；隐藏的 `.support` 必须与入口保持在一起。
 
-菜单 `3` 选择 Gradle 4.5.1 / 6.8，安装并配置独立 Gradle，验证版本及变量，不要求提供项目或 Wrapper。维护者通过命令行指定 `--project` 后才执行目标 Gradle 的 `build`（含测试），失败即保留失败结果；需要的企业依赖仓库、网络和权限由团队提供。详细说明见[Gradle 安装指南](environment/gradle.md)。
+「安装并配置 Gradle」（普通模式菜单 `3`）选择 Gradle 4.5.1 / 6.8，安装并配置独立 Gradle，验证版本及变量，不要求提供项目或 Wrapper。维护者通过命令行指定 `--project` 后才执行目标 Gradle 的 `build`（含测试），失败即保留失败结果；需要的企业依赖仓库、网络和权限由团队提供。详细说明见[Gradle 安装指南](environment/gradle.md)。
 
 ## 维护者一键准备与启动
 
@@ -49,7 +52,7 @@ python3 server/manage.py start
 
 也可双击 Windows 的 `server/start-server.cmd` 或 macOS 的 `server/start-server.command`；无参数时均执行 `start`。它自动检测本机活动 IPv4 地址，多个候选时在终端选择序号；先占用默认 `8080` 端口，再校验资源、补缺下载、带资源打包并显示真实 HTTP 下载链接。服务监听 `0.0.0.0`，窗口需要保持运行。自动检测不保证成员网段、防火墙或 VPN 已允许访问，分发前仍须从成员电脑验证。
 
-资源下载默认保存到仓库 `resources/`，清单共 14 项，包含 JDK 8、Gradle 4.5.1 / 6.8、IDEA 社区版、DBeaver 和六个免费 IDEA 插件。新增 Gradle 6.8 本次只登记来源与摘要，尚未下载；正式分发前须补齐并校验，完整下载大小以实际文件为准。重复执行时，已有且校验通过的资源会复用；损坏文件保留并报错，不自动覆盖。来源、版本、分组筛选和校验方式见[资源准备指南](resources/README.md)。
+资源下载默认保存到仓库 `resources/`，清单共 24 项，其中原有 14 项和新增前端工具 10 项；原资源包含 JDK 8、Gradle 4.5.1 / 6.8、IDEA 社区版、DBeaver 和六个免费 IDEA 插件。Gradle 6.8 已下载并通过固定摘要校验；正式分发时仍会校验完整资源，下载大小以实际文件为准。重复执行时，已有且校验通过的资源会复用；损坏文件保留并报错，不自动覆盖。来源、版本、分组筛选和校验方式见[资源准备指南](resources/README.md)。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -67,8 +70,9 @@ python3 server/manage.py start
 
 ```text
 dist/server/
-├── start.zip                         # 推荐下载；含可执行的「开始配置.command」
-├── start.command                     # 原始启动脚本，供维护者 CLI / 调试
+├── start.zip                         # 安装、卸载两个可执行的双击入口
+├── start.command                     # 安装下载入口，供维护者 CLI / 调试
+├── uninstall.command                 # 卸载下载入口，供维护者 CLI / 调试
 ├── dev-env/
 │   ├── team-dev-env.tar.gz            # 启动入口自动下载的完整工具
 │   └── team-dev-env.tar.gz.sha256     # 工具包校验值
@@ -76,15 +80,18 @@ dist/server/
 └── resources/                        # start 自动导出的独立资源目录
 ```
 
-启动 ZIP 只含启动入口；JDK、Gradle、DMG 和插件 ZIP 都在独立资源目录，不进入启动 ZIP 或完整工具 ZIP。本地完整资源库应保留供重复启动时复用、校验和生成成员清单。源码中的成员工具位于 `dev-kit/`，打包后解压为：
+启动 ZIP 只含两个轻量下载入口；JDK、Gradle、DMG 和插件 ZIP 都在独立资源目录，不进入启动 ZIP 或完整工具 ZIP。本地完整资源库应保留供重复启动时复用、校验和生成成员清单。源码中的成员工具位于 `dev-kit/`，打包后解压为：
 
 ```text
 team-dev-env/
 ├── 开始配置.command
+├── 卸载环境.command
 ├── 使用说明.txt
 └── .support/                         # Finder 默认隐藏，无需成员操作
     ├── install_env.sh
     ├── menu.sh
+    ├── cleanup/                      # 自带运行时的卸载工具、清单和许可
+    ├── tui/                          # Go双架构界面、清单和许可
     ├── config/
     │   ├── env.sh
     │   ├── team.sh                   # 打包时生成
@@ -105,7 +112,7 @@ python3 server/manage.py package --server "192.168.1.20:8080" --scheme http --wi
 python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 8080
 ```
 
-`package` 不下载缺失资源或启动服务；`serve` 只读托管已经打包的目录，不改写包。原生入口也可显式传入这些子命令。两系统无需先在 Mac 上制作发布包；Windows 尚未实机验收。启停、后台运行与下载检查见[服务启动指南](service-startup.md)。
+`package` 不下载缺失资源或启动服务；`serve` 只读托管已经打包的目录，不改写包。原生入口也可显式传入这些子命令。卸载可执行文件须先在 Mac 构建；之后完整 ZIP、TAR 和启动包均可在 Windows 或 macOS 生成。Windows 尚未实机验收。启停、后台运行与下载检查见[服务启动指南](service-startup.md)。
 
 本机测试可运行 `python3 server/manage.py preview --port 8081`，Windows 改用 `py -3`；原 Mac 命令 `bash tools/preview.sh --port 8081` 保持兼容。预览默认 `127.0.0.1:8081`，会使用本机地址重新打包；端口占用时先报错，不改发布物或关闭原服务。正式分发前重新 `start`，或用真实内网地址重新 `package`。
 
@@ -155,7 +162,9 @@ python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 808
 
 完成这些操作后，再发送形如 `http://实际内网地址:端口/start.zip` 的启动包链接。需要 HTTPS 时使用高级流程，由现有 HTTPS 静态服务器或反向代理提供证书，再用最终地址及 `package --scheme https` 打包；`start` 不配置 TLS。
 
-更新工具时应一起替换启动包、启动脚本、完整工具包及其校验文件，避免成员下载到不同版本的文件；更换服务器地址后重新 `start`（高级流程重新打包），并让成员下载新的启动包。
+已有用户须重新下载一次新版 `start.zip` 才能获得卸载入口。两个启动器每次运行都会下载最新发布的完整包并校验，不缓存旧工具；已解压的完整工具 ZIP 是快照，更新需重新下载。
+
+更新工具时应一起替换启动包、安装/卸载启动脚本、完整工具包及其校验文件，避免成员下载到不同版本的文件；更换服务器地址后重新 `start`（高级流程重新打包），并让成员下载新的启动包。
 
 资源准备没有生成业务依赖缓存、JDBC 驱动缓存或 MySQL 镜像。完全断网使用前，还需项目维护者补齐这些内容并验证实际构建与数据库连接。
 
@@ -211,3 +220,7 @@ bash "team-dev-env/.support/scripts/services/mysql.sh" up --dry-run
 ```
 
 `--dry-run` 仅预览，不安装、不构建、不创建历史目录。省略 `--project` 时仍可修复环境，但会明确记录“未执行项目构建”。这些是 Mac 客户端操作；Windows 服务端使用前述 Python 命令管理分发文件。
+
+## npm / npx 入口
+
+`npm-cli/` 生成的临时包只封装同一个下载模板，不携带服务器私有地址；由 `--server` 指定内网服务。它适合已有 Node/npm 的成员，首次无 Node 的成员仍使用 `start.zip`。本地验证、正式定名与发布步骤见[前端环境指南](environment/frontend.md#npm-打包与-npx-使用)。新增前端脚本随完整工具包下发；修改源码后仍须重新打包服务器资源和工具。

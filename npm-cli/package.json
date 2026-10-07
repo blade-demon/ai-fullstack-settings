@@ -1,0 +1,12 @@
+{
+  "name": "team-dev-env-preview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "macOS 团队开发环境的 npm/npx 启动入口",
+  "license": "UNLICENSED",
+  "bin": { "team-dev-env": "bin/team-dev-env.cjs" },
+  "files": ["bin/", "assets/", "README.md"],
+  "engines": { "node": ">=14.14" },
+  "os": ["darwin"],
+  "scripts": { "prepack": "node scripts/prepare-package.cjs" }
+}

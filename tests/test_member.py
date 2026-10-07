@@ -73,8 +73,8 @@ class MemberTests(unittest.TestCase):
         self.assertIn("Gradle", result.stdout)
         self.assertEqual(list(self.home.iterdir()), [self.jdk])
         options = [line for line in result.stdout.splitlines() if re.match(r"^\d+\. ", line)]
-        self.assertEqual([line.split(".", 1)[0] for line in options], ["1", "2", "3", "4", "5", "0"])
-        for option, label in zip(options, ("全部", "JDK", "Gradle", "IDEA", "插件", "退出")):
+        self.assertEqual([line.split(".", 1)[0] for line in options], ["1", "2", "3", "4", "5", "6", "0"])
+        for option, label in zip(options, ("全部", "JDK", "Gradle", "IDEA", "插件", "前端", "退出")):
             self.assertIn(label, option)
         self.assertNotIn("当前构建验证项目", result.stdout)
         self.assertNotIn("MySQL", result.stdout)
@@ -120,6 +120,14 @@ class MemberTests(unittest.TestCase):
                 self.assertEqual(self.repair_arguments(), expected)
                 self.assertFalse(self.picker_record.exists())
 
+    def test_install_menu_destination_does_not_follow_external_idea_scan_path(self):
+        external = self.base / "existing IDE/IntelliJ IDEA CE.app"
+        result = self.run_entry(menu=True, input_text="0\n", extra={"IDEA_APP": str(external)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        install_line = next(line for line in result.stdout.splitlines() if line.startswith("4. "))
+        self.assertIn(str(self.home / "Applications"), install_line)
+        self.assertNotIn(str(external.parent), install_line)
+
     def test_version_submenus_cancel_invalid_input_and_eof_without_installing(self):
         self.stub_repair()
         for typed in ("3\n0\n0\n", "3\n", "3\n\n99\n0\n0\n"):
@@ -130,9 +138,9 @@ class MemberTests(unittest.TestCase):
 
     def test_removed_choices_return_to_menu_without_installing(self):
         self.stub_repair()
-        result = self.run_entry(menu=True, input_text="6\n7\n8\n9\n10\n0\n")
+        result = self.run_entry(menu=True, input_text="7\n8\n9\n10\n0\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count("请输入 0 到 5 之间的编号"), 5)
+        self.assertEqual(result.stdout.count("请输入 0 到 6 之间的编号"), 4)
         self.assertFalse(self.repair_record.exists())
         self.assertFalse(self.picker_record.exists())
         self.assertFalse((self.home / ".zshrc").exists())

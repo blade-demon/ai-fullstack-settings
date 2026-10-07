@@ -22,7 +22,7 @@ while [ "$#" -gt 0 ]; do
         --dry-run) DRY_RUN=true; shift ;;
         --help|-h)
             log '用法：install-idea.sh --dmg 文件 --sha256 摘要 --version 版本 [--dry-run]'
-            log '校验并安装到 ~/Applications/IntelliJ IDEA CE.app；不会覆盖其他版本，不会打开 IDEA。'
+            log "校验并安装到 ${USER_APPLICATIONS_DIR}/IntelliJ IDEA CE.app；不会覆盖其他版本，不会打开 IDEA。"
             exit 0 ;;
         *) die "未知参数：$1" ;;
     esac
@@ -31,8 +31,8 @@ done
 validate_sha256 "$EXPECTED_SHA"
 [ -f "$DMG" ] || die "找不到 DMG 文件：$DMG"
 [ -d "$HOME" ] || die "用户目录不存在：$HOME"
-USER_HOME="$(CDPATH= cd -- "$HOME" && pwd -P)"
-APPLICATIONS="$USER_HOME/Applications"
+# 目录规则来自公共配置；保持安装时解析真实父目录的原有行为。
+APPLICATIONS="$(CDPATH= cd -- "${USER_APPLICATIONS_DIR%/*}" && pwd -P)/${USER_APPLICATIONS_DIR##*/}"
 APP_NAME='IntelliJ IDEA CE.app'
 TARGET="$APPLICATIONS/$APP_NAME"
 

@@ -18,7 +18,7 @@ while [ "$#" -gt 0 ]; do
         --dry-run) preview=true; shift ;;
         --help|-h)
             log '用法：download-tools.sh [--list] [--id 资源编号] [--dry-run] [--install-idea]'
-            log '--install-idea 选择适配本机的 IDEA，下载后安装到当前用户的 ~/Applications。'
+            log "--install-idea 选择适配本机的 IDEA，下载后安装到 ${USER_APPLICATIONS_DIR}。"
             exit 0 ;;
         *) die "未知参数：$1" ;;
     esac
@@ -86,7 +86,7 @@ if "$preview"; then
     log "[预演] 下载：$download_url"
     log "[预演] 保存：$output/$relative"
     if "$install_idea"; then
-        log "[预演] 校验并安装到：$HOME/Applications/IntelliJ IDEA CE.app"
+        log "[预演] 校验并安装到：${USER_APPLICATIONS_DIR}/IntelliJ IDEA CE.app"
     fi
     exit 0
 fi
@@ -108,12 +108,14 @@ log "文件已准备好：$output/$relative"
 if "$install_idea"; then
     /bin/bash "$REPO_ROOT/scripts/software/install-idea.sh" --dmg "$output/$relative" \
         --sha256 "${hashes[$selected]}" --version "${versions[$selected]}"
+elif [[ "$relative" = frontend/* ]]; then
+    log '前端资源已下载；请通过菜单 6 的相应选项安装和验证。'
 elif [ "${groups[$selected]}" = plugins ]; then
     log '在 IDEA 中打开 Settings → Plugins → 齿轮 → Install Plugin from Disk，选择此 ZIP；无需解压。'
 else
     case "$resource_id" in
         idea-*)
-            log "IDEA 安装到当前用户目录：$HOME/Applications。可返回主菜单选择 4 自动安装。"
+            log "IDEA 安装到当前用户目录：${USER_APPLICATIONS_DIR}。可返回主菜单选择 4 自动安装。"
             log '手动安装时，请复制 DMG 中的应用到个人 Applications，勿使用镜像内指向系统目录的 Applications 快捷方式。'
             ;;
         *) log '在 Finder 中打开上面的 DMG，按软件自身的安装提示操作。' ;;

@@ -7,11 +7,19 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
 import unittest
 import zipfile
+
+try:
+    from .cleanup_fixture import cleanup_fixture
+    from .tui_fixture import tui_fixture
+except ImportError:
+    from cleanup_fixture import cleanup_fixture
+    from tui_fixture import tui_fixture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +68,15 @@ class DistributionTests(unittest.TestCase):
         self.env = {"PATH": os.environ["PATH"], "HOME": str(self.home),
                     "TMPDIR": str(self.tmp), "LC_ALL": "C", "RESULT_FILE": str(self.result_file)}
         self.httpd = None
+        self.cleanup = cleanup_fixture(self.repo)
+        self.tui = tui_fixture(self.repo)
+        (self.kit / "卸载环境.command").write_text(
+            '#!/bin/bash\n'
+            'printf "%s\\n" "卸载入口" "$SERVER_ADDR" "$SERVER_SCHEME" "$@" > "$UNINSTALL_RESULT_FILE"\n'
+            'exit "${PAYLOAD_EXIT_CODE:-0}"\n'
+        )
+        self.uninstall_result = self.base / "uninstall-result"
+        self.env["UNINSTALL_RESULT_FILE"] = str(self.uninstall_result)
 
     def tearDown(self):
         if self.httpd:
@@ -128,6 +145,61 @@ class DistributionTests(unittest.TestCase):
         archive.with_suffix(".gz.sha256").write_text(
             hashlib.sha256(archive.read_bytes()).hexdigest() + "  team-dev-env.tar.gz\n")
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS controlling terminal")
+    def test_bootstrap_ctrl_c_keeps_payload_alive_and_preserves_final_exit(self):
+        import fcntl
+        import pty
+        import select
+        import signal
+        import termios
+        import time
+        import shlex
+        payload = ("import signal,sys; "
+                   "signal.signal(signal.SIGINT,lambda *_: print('CANCELLED',flush=True)); "
+                   "print('READY',flush=True); input(); sys.exit(23)")
+        (self.kit / "卸载环境.command").write_text(
+            '#!/bin/bash\nexec ' + shlex.quote(sys.executable) + ' -u -c ' + shlex.quote(payload) + '\n')
+        self.assert_ok(self.package())
+        server = self.serve()
+        master, slave = pty.openpty()
+        def terminal():
+            os.setsid()
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+        process = subprocess.Popen(["/bin/bash", str(self.output / "uninstall.command")],
+                                   stdin=slave, stdout=slave, stderr=slave,
+                                   env={**self.env, "SERVER_ADDR": server}, preexec_fn=terminal)
+        os.close(slave)
+        def read_until(expected):
+            data = b""
+            deadline = time.monotonic() + 8
+            while expected.encode() not in data and time.monotonic() < deadline:
+                if select.select([master], [], [], .05)[0]:
+                    try: data += os.read(master, 65536)
+                    except OSError: break
+                elif process.poll() is not None:
+                    break
+            self.assertIn(expected, data.decode(errors="replace"))
+        try:
+            read_until("READY")
+            os.write(master, b"\x03")
+            read_until("CANCELLED")
+            self.assertIsNone(process.poll())
+            os.write(master, b"q\n")
+            tail = b""
+            deadline = time.monotonic() + 5
+            while process.poll() is None and time.monotonic() < deadline:
+                if select.select([master], [], [], .05)[0]:
+                    try: tail += os.read(master, 65536)
+                    except OSError: pass
+            self.assertIsNotNone(process.poll(), tail.decode(errors="replace"))
+            self.assertEqual(process.wait(timeout=1), 23, tail.decode(errors="replace"))
+            self.assertEqual(list(self.tmp.iterdir()), [])
+        finally:
+            os.close(master)
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+
     def test_package_allowlist_checksums_and_executable_zip(self):
         for name in (".env", ".support/config/team.sh", ".support/config/passwords.txt",
                      "tests/test_private.py", "docs/internal.md", "__pycache__/cache.pyc"):
@@ -143,10 +215,18 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(names, {"team-dev-env/" + name for name in self.kit_files} |
                              {"team-dev-env/.support/config/team.sh",
                               "team-dev-env/.support/config/resources.tsv",
-                              "team-dev-env/.support/scripts/prepare-resources.sh"})
+                              "team-dev-env/.support/scripts/prepare-resources.sh",
+                              "team-dev-env/.support/cleanup/cleanup-macos",
+                              "team-dev-env/.support/cleanup/manifest.json",
+                              "team-dev-env/.support/cleanup/THIRD_PARTY_NOTICES.txt",
+                              "team-dev-env/.support/tui/team-dev-env-arm64",
+                              "team-dev-env/.support/tui/team-dev-env-amd64",
+                              "team-dev-env/.support/tui/manifest.json",
+                              "team-dev-env/.support/tui/THIRD_PARTY_NOTICES.txt"})
             self.assertTrue(tar.extractfile("team-dev-env/.support/config/resources.tsv")
                             .read().startswith(b"# id\tgroup\tversion\tarch\tpath\turl\tsha256\n"))
             self.assertEqual(tar.getmember("team-dev-env/开始配置.command").mode & 0o777, 0o755)
+            self.assertEqual(tar.getmember("team-dev-env/卸载环境.command").mode & 0o777, 0o755)
             for member in tar.getmembers():
                 if member.isfile():
                     self.assertNotIn(b"PRIVATE-MAINTAINER-DATA", tar.extractfile(member).read())
@@ -162,10 +242,76 @@ class DistributionTests(unittest.TestCase):
         with zipfile.ZipFile(self.output / "team-dev-env.zip") as zipped:
             self.assertEqual({i.filename for i in zipped.infolist() if not i.is_dir()}, names)
             self.assertEqual((zipped.getinfo("team-dev-env/开始配置.command").external_attr >> 16) & 0o777, 0o755)
+            self.assertEqual((zipped.getinfo("team-dev-env/卸载环境.command").external_attr >> 16) & 0o777, 0o755)
         with zipfile.ZipFile(self.output / "start.zip") as zipped:
-            self.assertEqual(zipped.namelist(), ["开始配置.command"])
+            self.assertEqual(zipped.namelist(), ["开始配置.command", "卸载环境.command"])
             self.assertEqual(zipped.read("开始配置.command"), (self.output / "start.command").read_bytes())
             self.assertEqual((zipped.getinfo("开始配置.command").external_attr >> 16) & 0o777, 0o755)
+            self.assertEqual(zipped.read("卸载环境.command"), (self.output / "uninstall.command").read_bytes())
+            self.assertEqual((zipped.getinfo("卸载环境.command").external_attr >> 16) & 0o777, 0o755)
+
+    def test_uninstall_bootstrap_selects_only_uninstall_entry_and_forwards_all_arguments(self):
+        self.assert_ok(self.package())
+        server = self.serve()
+        moved = self.base / "中文 目录's" / "卸载 启动器.command"
+        moved.parent.mkdir()
+        shutil.copy2(self.output / "uninstall.command", moved)
+        self.assertEqual(moved.stat().st_mode & 0o777, 0o755)
+        result = self.launch("--dry-run", "--help", "--home", "用户 空间's", launcher=moved,
+                             extra={"SERVER_ADDR": server})
+        self.assert_ok(result)
+        self.assertEqual(self.uninstall_result.read_text().splitlines(),
+                         ["卸载入口", server, "http", "--dry-run", "--help", "--home", "用户 空间's"])
+        self.assertFalse(self.result_file.exists())
+        self.assertEqual(list(self.tmp.iterdir()), [])
+        result = self.launch(launcher=moved, extra={"SERVER_ADDR": server, "PAYLOAD_EXIT_CODE": "7"})
+        self.assertEqual(result.returncode, 7, result.stdout)
+
+    def test_both_bootstraps_fetch_latest_package_each_time(self):
+        self.assert_ok(self.package())
+        server = self.serve()
+        for filename, result_path, source_name in (("start.command", self.result_file, "开始配置.command"),
+                                                    ("uninstall.command", self.uninstall_result, "卸载环境.command")):
+            with self.subTest(filename=filename):
+                saved_launcher = self.base / filename
+                shutil.copy2(self.output / filename, saved_launcher)
+                self.assert_ok(self.launch(launcher=saved_launcher, extra={"SERVER_ADDR": server}))
+                (self.kit / source_name).write_text('#!/bin/bash\nprintf latest > "$' +
+                    ("RESULT_FILE" if filename == "start.command" else "UNINSTALL_RESULT_FILE") + '"\n')
+                self.assert_ok(self.package())
+                self.assert_ok(self.launch(launcher=saved_launcher, extra={"SERVER_ADDR": server}))
+                self.assertEqual(result_path.read_text(), "latest")
+
+    def test_uninstall_publication_symlink_is_rejected_before_replacing_other_files(self):
+        self.assert_ok(self.package())
+        launcher = self.output / "uninstall.command"
+        outside = self.base / "outside-launcher"
+        outside.write_bytes(b"keep external content")
+        launcher.unlink()
+        launcher.symlink_to(outside)
+        before = self.published_files()
+        result = self.package("--server", "changed.example:8888")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(outside.read_bytes(), b"keep external content")
+        self.assertEqual(self.published_files(), before)
+        self.assertTrue(launcher.is_symlink())
+
+    def test_uninstall_checksum_failure_or_missing_entry_never_runs_installation(self):
+        self.assert_ok(self.package())
+        server = self.serve()
+        launcher = self.output / "uninstall.command"
+        archive = self.output / "dev-env/team-dev-env.tar.gz"
+        archive.write_bytes(archive.read_bytes() + b"corrupted")
+        result = self.launch(launcher=launcher, extra={"SERVER_ADDR": server})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("校验", result.stdout)
+        self.assertFalse(self.result_file.exists())
+        self.assertFalse(self.uninstall_result.exists())
+        self.replace_payload([("team-dev-env/开始配置.command", (self.kit / "开始配置.command").read_bytes(), "file")])
+        result = self.launch(launcher=launcher, extra={"SERVER_ADDR": server})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.result_file.exists())
+        self.assertFalse(self.uninstall_result.exists())
 
     def test_catalog_resolves_receipts_without_copying_resource_files_into_archives(self):
         _, entries = self.resources(unpinned=True)
@@ -374,11 +520,13 @@ class DistributionTests(unittest.TestCase):
         ):
             with self.subTest(name=name, kind=kind):
                 self.replace_payload([(name, data, kind)])
-                result = self.launch(extra={"SERVER_ADDR": server})
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("工具包", result.stdout)
-                self.assertFalse(self.result_file.exists())
-                self.assertEqual(list(self.tmp.iterdir()), [])
+                for launcher in ("start.command", "uninstall.command"):
+                    result = self.launch(launcher=self.output / launcher, extra={"SERVER_ADDR": server})
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("工具包", result.stdout)
+                    self.assertFalse(self.result_file.exists())
+                    self.assertFalse(self.uninstall_result.exists())
+                    self.assertEqual(list(self.tmp.iterdir()), [])
 
 
 if __name__ == "__main__":

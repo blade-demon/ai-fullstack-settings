@@ -5,11 +5,15 @@
 ## 小组成员开始使用
 
 1. 连接团队内网，下载维护者提供的 **`start.zip`**，解压并双击 **「开始配置.command」**。入口下载、校验完整工具后打开菜单，先显示环境扫描结果。
-2. 保存工作并退出 IDEA，然后选 **菜单 `1` 一键安装并配置全部环境**。它固定处理 JDK 8、独立 Gradle 4.5.1、IDEA 和全部六个插件，检查完整持久化环境变量；已验证的同版安装会复用。
+2. 保存工作并退出 IDEA，然后用方向键选择 **「一键安装 Java 环境」**，按 Enter 查看并确认操作。它固定处理 JDK 8、独立 Gradle 4.5.1、IDEA 和全部六个插件，检查完整持久化环境变量；已验证的同版安装会复用。
 3. 查看最终环境验证结果和显示的历史目录。菜单不选择业务项目，也不执行项目构建；安装结果会明确显示**未执行项目构建**。
 4. 新开终端使环境配置生效；打开 IDEA 后按 [IDE 指南](docs/environment/ide.md)确认 Project SDK、Gradle JVM 和分发设置，并执行 Gradle 同步。业务项目另行验证；静态配置可解析及终端构建通过均不代表 GUI 同步成功。
 
-成员无需克隆仓库、填写服务器地址，也无需预装 Python、Homebrew 或 Git。工具使用个人目录，不使用 `sudo`，不自动结束 IDEA 进程。业务项目由团队另行提供；仅使用本地 MySQL 时才需要 Docker。
+启动包同时包含「开始配置.command」和「卸载环境.command」。需要卸载时双击后者，按提示核对删除清单、选择是否删除 IDEA，并输入 `DELETE` 确认；卸载结果会保留在窗口中。已有成员须重新下载一次 `start.zip` 才能获得这个入口。详见[卸载指南](docs/environment/cleanup.md)。
+
+成员无需克隆仓库、填写服务器地址，也无需预装 Python 或 Homebrew。Java 安装不要求 Git；Oh My Zsh 框架需要可用 Git，缺少时工具会提示处理，不自动安装 Xcode 开发工具。工具使用个人目录，不使用 `sudo`，不自动结束 IDEA 进程。业务项目由团队另行提供；仅使用本地 MySQL 时才需要 Docker。
+
+下表编号对应 `--plain` 普通模式；默认 Go TUI 提供同名操作，用方向键和 Enter 选择。
 
 | 菜单 | 操作 |
 | --- | --- |
@@ -18,13 +22,22 @@
 | `3` | 安装并配置 Gradle；`3.1` Gradle 4.5.1、`3.2` Gradle 6.8 |
 | `4` | 安装 IDEA 软件；菜单显示当前用户 `$HOME/Applications` 的实际路径 |
 | `5` | 安装推荐 IDEA 插件（全部六个），执行前须退出 IDEA |
+| `6` | 独立前端环境：nvm / Node 14、16、18、iTerm2、Oh My Zsh 与四个常用插件 |
 | `0` | 退出 |
 
-主菜单可直接输入 `3.1` / `3.2`，也可输入 `3` 进入 Gradle 版本选择；子菜单可输入 `1` / `2` 或完整编号选择版本，输入 `0` 返回，空行不开始安装。两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
+普通模式主菜单可直接输入 `3.1` / `3.2`，也可输入 `3` 进入 Gradle 版本选择；子菜单可输入 `1` / `2` 或完整编号选择版本，输入 `0` 返回，空行不开始安装。两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
 
 启动扫描保持只读，不开始下载、安装或业务构建。项目检查、仅下载、历史查看和可选 MySQL 服务保留为维护者命令行功能。看到文件、版本参考或 Wrapper 缓存，不等于项目已经构建成功。首次打开的来源确认、备用完整 ZIP 和下载故障见[内网分发指南](docs/distribution.md)。请保留完整工具目录及隐藏的 `.support`。
 
+## 前端环境与 npx
+
+TUI 的“安装前端环境”页面（普通模式菜单 `6`）提供独立前端环境安装；原 Java 一键范围保持不变。nvm 管理固定 Node 14.21.3 / 16.20.2 / 18.20.8，iTerm2 安装到个人 Applications，Oh My Zsh 启用 git、z、zsh-autosuggestions、zsh-syntax-highlighting 并保留已有配置。Node 14 在 Apple Silicon 上要求已有 Rosetta；iTerm2 3.7.3 要求 macOS 13+。
+
+`npm-cli/` 提供临时 npm 包 `team-dev-env-preview`，可本地 `npm pack` 后通过 npx 运行，正式包名确定前保持 private。npx 需要已有 Node/npm；首次无 Node 的电脑继续用双击入口。完整命令、维护状态、配置备份和边界见[前端环境指南](docs/environment/frontend.md)。交互界面已迁移到 Go + Bubble Tea，npx 继续作为薄启动入口；参数化 CLI 和 `--plain` 保留，详见[TUI 指南](docs/environment/tui.md)。
+
 ## 安装位置与完整环境
+
+IDEA 和 iTerm2 统一安装到当前用户的 `/Users/用户名/Applications`。脚本从当前 `HOME` 解析该目录，`~/Applications` 是它的简写；不会在用户主目录下再创建 `Users/用户名`，也不安装到系统 `/Applications`。
 
 | 项目 | 默认位置或配置 |
 | --- | --- |
@@ -66,6 +79,8 @@ JDK 配置包含 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`，其中 `JRE_HOME` �
 
 服务端支持 Windows 和 macOS，需要 Python 3.8+。首次部署时，先在运行脚本的维护者电脑或服务器上按[Python 3 安装指引](docs/service-startup.md#部署前安装-python-3)完成安装与验证；服务端只使用标准库，无需安装第三方 Python 包。
 
+首次发布前，先[构建 Go TUI](docs/environment/tui.md#构建与分发)，准备 `resources/tui/` 四个文件；再在 Mac 上[构建卸载工具](docs/environment/cleanup.md#维护者构建成员卸载工具)，把生成的 `resources/cleanup/` 整个目录随项目交给下载服务器。它包含自带 Python 的双架构工具；源码变化后须重新构建，缺失、损坏或过期时打包会明确失败。Windows 服务端只校验和打包这些成品。
+
 在**实际运行下载服务的机器**上，进入项目根目录执行；Windows 把下方 `python3` 换成 `py -3`：
 
 ```bash
@@ -74,7 +89,7 @@ python3 server/manage.py start
 
 也可双击 macOS 的 `server/start-server.command` 或 Windows 的 `server/start-server.cmd`。`start` 自动检测本机活动 IPv4 地址；多个候选时按提示选择序号。它先占用默认的 `8080` 端口，再校验已有资源、下载缺失文件、带资源打包到 `dist/server`，最后通过 HTTP 提供下载并显示实际链接。保持窗口运行，从成员电脑验证链接后再分发。
 
-重复运行会复用校验通过的资源；遇到损坏文件会保留并报错。资源默认保存在 `resources/`，发布副本位于 `dist/server/resources/`，大包不进入启动 ZIP 或完整工具 ZIP。清单现含 14 项；新增 Gradle 6.8 本次仅登记来源与摘要，尚未下载，正式分发前须准备并验证。分组下载与摘要说明见[资源准备指南](docs/resources/README.md)。
+重复运行会复用校验通过的资源；遇到损坏文件会保留并报错。资源默认保存在 `resources/`，发布副本位于 `dist/server/resources/`，大包不进入启动 ZIP 或完整工具 ZIP。清单现含 24 项（原有 14 项及前端工具 10 项）；Gradle 6.8 已下载并通过固定摘要校验，正式分发时仍会核验本地资源。分组下载与摘要说明见[资源准备指南](docs/resources/README.md)。
 
 `start` 监听 `0.0.0.0`，自动选址不保证能穿过防火墙或 VPN；显式地址和端口可用 `start --server "192.168.1.20" --port 8080` 指定。IP 变化后重新 `start`，并让成员重新下载启动包。`127.0.0.1` 只指向成员自己的电脑，不可作为团队下载地址。停止、重启、参数，以及分机器部署或 HTTPS 所需的高级分步流程见[服务启动指南](docs/service-startup.md)；发布结构和更新要求见[内网分发指南](docs/distribution.md)。
 
@@ -126,7 +141,7 @@ python3 -m unittest discover -s tests -v
 
 `repair-env.sh --scope all|jdk|gradle|idea|plugins` 可选择修复范围；`--gradle-version 4.5.1|6.8` 选择 Gradle 版本，默认 `4.5.1`，JDK 固定使用 8。指定 `--project` 时仍需通过实际项目构建，并检查报告中的 IDEA 配置状态。直接调用 SDK 安装脚本适合单项调试；需要完整前后快照和汇总历史时，使用菜单或 `repair-env.sh`。
 
-维护者进行 macOS 实机重装测试前，可运行 `bash tools/uninstall-java-gradle.sh` 进入交互引导，选择是否删除 IDEA 软件、核对清理计划并输入 `DELETE` 确认；确认后请求正常退出 IDEA，再删除软件。退出失败会停止清理。仅预览时加 `--dry-run`，非交互默认也只预览。SDK 仅删除带有效 `.team-java-env-install.json` 来源标记的安装，外部 SDK 与 Gradle 用户配置和缓存均保留。`--include-idea-apps` 仅删除 IDEA 软件，`--include-idea` 同时清理配置和用户插件；系统安装需 `--include-system`，`--remove-caches` 仅额外删除 IDEA 缓存、Local History 和日志。清理不创建配置或插件备份、不自动回滚，只保存操作记录。此工具需要 Python 3.8+，独立于成员菜单和分发；参数与范围限制见[实机清理指南](docs/environment/cleanup.md)。
+维护者进行 macOS 实机重装测试前，可运行 `bash tools/uninstall-java-gradle.sh` 进入交互引导，选择是否删除 IDEA 软件、核对清理计划并输入 `DELETE` 确认；确认后请求正常退出 IDEA，再删除软件。退出失败会停止清理。仅预览时加 `--dry-run`，非交互默认也只预览。SDK 仅删除带有效 `.team-java-env-install.json` 来源标记的安装，外部 SDK 与 Gradle 用户配置和缓存均保留。`--include-idea-apps` 仅删除 IDEA 软件，`--include-idea` 同时清理配置和用户插件；系统安装需 `--include-system`，`--remove-caches` 仅额外删除 IDEA 缓存、Local History 和日志。清理不创建配置或插件备份、不自动回滚，只保存操作记录。维护者直接运行源码入口时需要 Python 3.8+；成员使用分发包中的「卸载环境.command」，由包内运行时执行同一份卸载实现，无需 Python。参数与范围限制见[卸载指南](docs/environment/cleanup.md)。
 
 本仓库测试使用临时 HOME、微型 SDK 和模拟项目；这些结果不代表真实业务项目已经构建通过，也不代表 Windows 实机安装已经验证。安装资源不包含业务 Maven/Gradle 依赖缓存、额外 JDBC 驱动或 MySQL 镜像，完全离线构建仍需项目维护者准备并实测。
 

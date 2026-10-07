@@ -4,6 +4,7 @@ set -euo pipefail
 
 SERVER_ADDR="${SERVER_ADDR:-@SERVER_ADDR@}"
 SERVER_SCHEME="${SERVER_SCHEME:-@SERVER_SCHEME@}"
+ENTRY_NAME="@ENTRY_NAME@"
 WORK_DIR=""
 PAYLOAD_STARTED=0
 PAUSE_ON_FAILURE=0
@@ -13,7 +14,8 @@ cleanup() {
   status=$?
   trap - EXIT
   if [ -n "$WORK_DIR" ]; then rm -rf -- "$WORK_DIR"; fi
-  if [ "$status" -ne 0 ] && [ "$PAYLOAD_STARTED" -eq 0 ] && [ "$PAUSE_ON_FAILURE" -eq 1 ]; then
+  if [ "$status" -ne 0 ] && [ "$status" -ne 129 ] && [ "$status" -ne 130 ] && [ "$status" -ne 143 ] &&
+     [ "$PAYLOAD_STARTED" -eq 0 ] && [ "$PAUSE_ON_FAILURE" -eq 1 ]; then
     printf '\n启动未完成，请查看上面的提示。按回车关闭窗口…'
     IFS= read -r _ || true
   fi
@@ -22,11 +24,12 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 die() { printf '\n启动失败：%s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'HELP'
-用法：开始配置.command [--dry-run] [完整工具参数]
+用法：@ENTRY_NAME@ [--dry-run] [完整工具参数]
 
 直接双击会下载并校验最新工具，然后显示配置菜单。
 --dry-run  仅显示轻量工具包下载地址，不联网或写入文件。
@@ -37,12 +40,15 @@ HELP
 }
 
 DRY_RUN=0
-for argument in "$@"; do
-  case "$argument" in
-    --help|-h) usage; exit 0 ;;
-    --dry-run) DRY_RUN=1 ;;
-  esac
-done
+# 保持安装启动器原参数含义；卸载参数（包括 --help / --dry-run）全部交给卸载工具。
+if [ "$ENTRY_NAME" = "开始配置.command" ]; then
+  for argument in "$@"; do
+    case "$argument" in
+      --help|-h) usage; exit 0 ;;
+      --dry-run) DRY_RUN=1 ;;
+    esac
+  done
+fi
 
 SERVER_PATTERN='^([A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(:[0-9]+)?$'
 [[ "$SERVER_ADDR" =~ $SERVER_PATTERN ]] || die '服务器应为主机:端口，不能包含协议、路径、空格或引号。'
@@ -74,7 +80,7 @@ download() {
   return "$curl_status"
 }
 
-printf '正在获取团队配置工具…\n'
+printf '正在获取团队@ENTRY_LABEL@工具…\n'
 printf '服务器：%s://%s\n' "$SERVER_SCHEME" "$SERVER_ADDR"
 download "$TOOL_URL" "$ARCHIVE" || die '工具包下载失败，请检查内网连接和服务器地址。'
 download "$TOOL_URL.sha256" "$CHECKSUM" || die '校验文件下载失败，请联系管理员补齐分发文件。'
@@ -100,9 +106,13 @@ tar -tvzf "$ARCHIVE" > "$WORK_DIR/types" || die '工具包目录读取失败。'
 awk 'substr($0, 1, 1) != "d" && substr($0, 1, 1) != "-" { exit 1 }' \
   "$WORK_DIR/types" || die '工具包包含不允许的链接或特殊文件。'
 COPYFILE_DISABLE=1 tar -xzf "$ARCHIVE" -C "$WORK_DIR" --no-same-owner || die '工具包解压失败。'
-ENTRY="$WORK_DIR/team-dev-env/开始配置.command"
-[ -f "$ENTRY" ] && [ ! -L "$ENTRY" ] || die '工具包缺少配置入口，请联系管理员重新打包。'
+ENTRY="$WORK_DIR/team-dev-env/$ENTRY_NAME"
+[ -f "$ENTRY" ] && [ ! -L "$ENTRY" ] || die '工具包缺少@ENTRY_LABEL@入口，请联系管理员重新打包。'
 
 export SERVER_ADDR SERVER_SCHEME
 PAYLOAD_STARTED=1
+# The foreground payload already receives terminal Ctrl-C. Keep its parent
+# alive and preserve its eventual status (the TUI can return to a result page).
+# Download-time Ctrl-C still uses the exit-130 handler above.
+trap ':' INT
 /bin/bash "$ENTRY" "$@"

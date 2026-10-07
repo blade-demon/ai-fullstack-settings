@@ -26,9 +26,11 @@ from server import manage
 try:
     from .cleanup_fixture import cleanup_fixture
     from .tui_fixture import tui_fixture
+    from .runtime_fixture import runtime_fixture, archive_fixture, lock_fixture
 except ImportError:
     from cleanup_fixture import cleanup_fixture
     from tui_fixture import tui_fixture
+    from runtime_fixture import runtime_fixture, archive_fixture, lock_fixture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -172,6 +174,113 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(target.stat().st_mtime_ns, before)
         self.assertIn("http://" + address + "/start.zip", output)
 
+    def test_start_prepares_missing_runtimes_before_packaging(self):
+        self.resources()
+        shutil.rmtree(self.cleanup)
+        shutil.rmtree(self.tui)
+        prepared = []
+
+        def restore(root, base_url=None, offline=False, report=print):
+            prepared.append(root)
+            cleanup_fixture(root)
+            tui_fixture(root)
+            return {"release": "fixture-runtime", "downloaded": True}
+
+        with mock.patch.object(manage, "ensure_runtimes", side_effect=restore, create=True):
+            status, output = self.start_once(
+                ["start", "--server", "127.0.0.1", "--port", str(self.free_port()),
+                 "--output", str(self.output)])
+        self.assertEqual(status, 0, output)
+        self.assertEqual(prepared, [self.repo])
+        with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
+            self.assertIn("team-dev-env/.support/tui/manifest.json", archive.getnames())
+            self.assertIn("team-dev-env/.support/cleanup/cleanup-macos", archive.getnames())
+
+    def test_prepare_runtimes_offline_reuses_valid_files_without_sdk_catalog(self):
+        before = {path: path.read_bytes() for folder in (self.tui, self.cleanup)
+                  for path in folder.iterdir()}
+        result = self.cli("prepare-runtimes", "--offline")
+        self.assert_ok(result)
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertFalse(self.output.exists())
+
+    def test_start_downloads_runtimes_from_mirror_before_first_publication(self):
+        self.resources()
+        payloads = runtime_fixture(self.repo)
+        archive = archive_fixture(payloads)
+        (self.repo / "resources/runtime-lock.json").write_text(json.dumps(lock_fixture(payloads, archive)))
+        source, mirror = self.fixture_server()
+        (source / "team-dev-env-runtimes.zip").write_bytes(archive)
+        shutil.rmtree(self.tui)
+        shutil.rmtree(self.cleanup)
+        # The CLI override must work even when a saved mirror is unreachable.
+        (self.repo / "server/config.json").write_text(json.dumps({
+            "runtime_base_url": "http://127.0.0.1:1/old-mirror"}))
+        port = self.free_port()
+        status, output = self.start_once([
+            "start", "--server", "127.0.0.1", "--port", str(port),
+            "--output", str(self.output), "--runtime-base-url", mirror])
+        self.assertEqual(status, 0, output)
+        for name, expected in payloads.items():
+            self.assertEqual((self.repo / name).read_bytes(), expected)
+        with zipfile.ZipFile(self.output / "start.zip") as startup:
+            self.assertEqual(set(startup.namelist()), {"开始配置.command", "卸载环境.command"})
+        with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as bundle:
+            self.assertIn("team-dev-env/.support/tui/team-dev-env-arm64", bundle.getnames())
+            self.assertIn("team-dev-env/.support/scripts/run-tui.sh", bundle.getnames())
+        self.assertIn("[3/3] 下载服务已就绪", output)
+
+    def test_offline_runtime_failure_preserves_old_publication(self):
+        self.assert_ok(self.package())
+        previous = {name: (self.output / name).read_bytes() for name in manage.PUBLISHED}
+        shutil.rmtree(self.cleanup)
+        result = self.cli("prepare-runtimes", "--offline")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual({name: (self.output / name).read_bytes() for name in manage.PUBLISHED}, previous)
+
+    def test_release_normalizes_valid_bom_and_uppercase_source_digests(self):
+        for folder in (self.tui, self.cleanup):
+            path = folder / "manifest.json"
+            manifest = json.loads(path.read_text())
+            manifest["source_sha256"] = manifest["source_sha256"].upper()
+            path.write_bytes(b"\xef\xbb\xbf" + json.dumps(manifest).encode("utf-8"))
+        self.assert_ok(self.package())
+        status, output = self.start_once([
+            "serve", "--directory", str(self.output), "--port", str(self.free_port())])
+        self.assertEqual(status, 0, output)
+
+    def test_package_records_actual_publication_version_and_runtime_sources(self):
+        self.assert_ok(self.package())
+        release_path = self.output / "release.json"
+        self.assertTrue(release_path.is_file(), "published version must accompany the actual bundle")
+        release = json.loads(release_path.read_text(encoding="utf-8"))
+        self.assertEqual(release["interface"], "go-tui")
+        archive = self.output / "dev-env/team-dev-env.tar.gz"
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        self.assertIn(digest[:12], release["version"])
+        self.assertEqual(release["artifacts"]["dev-env/team-dev-env.tar.gz"]["sha256"], digest)
+        self.assertEqual(release["runtime_sources"]["tui"],
+                         json.loads((self.tui / "manifest.json").read_text())["source_sha256"])
+
+    def test_start_displays_version_from_the_published_bundle(self):
+        self.resources()
+        status, output = self.start_once(
+            ["start", "--server", "127.0.0.1", "--port", str(self.free_port()),
+             "--output", str(self.output)])
+        self.assertEqual(status, 0, output)
+        self.assertIn("Go TUI 发布版本", output)
+        release = json.loads((self.output / "release.json").read_text())
+        self.assertIn(release["version"], output)
+        self.assertIn("/release.json", output)
+
+    def test_serve_rejects_tampered_published_bundle_before_starting(self):
+        self.assert_ok(self.package())
+        (self.output / "dev-env/team-dev-env.tar.gz").write_bytes(b"stale bundle")
+        status, output = self.start_once(
+            ["serve", "--directory", str(self.output), "--port", str(self.free_port())])
+        self.assertNotEqual(status, 0, output)
+        self.assertIn("重新打包", output)
+
     def test_no_arguments_starts_and_replaces_legacy_loopback_config_address(self):
         self.resources()
         port = self.free_port()
@@ -218,6 +327,8 @@ class ServerTests(unittest.TestCase):
         self.assertNotEqual(status, 0)
         self.assertIn("端口", output)
         self.assertNotIn("下载：", output)
+        self.assertIn("本次没有更新安装包", output)
+        self.assertIn("旧版本", output)
         self.assertFalse(missing.exists())
         self.assertEqual((self.output / "start.zip").read_bytes(), previous)
 
@@ -391,7 +502,7 @@ class ServerTests(unittest.TestCase):
                     metadata.write_text(json.dumps(manifest))
                 result = self.package("--server", "changed.example:90")
                 self.assertNotEqual(result.returncode, 0, problem)
-                self.assertIn("tools/build-cleanup.py", result.stdout)
+                self.assertIn("prepare-runtimes", result.stdout)
                 self.assertEqual({name: (self.output / name).read_bytes() for name in manage.PUBLISHED}, before)
 
     def test_cleanup_source_hash_allows_windows_line_endings_and_utf8_bom(self):
@@ -455,7 +566,7 @@ class ServerTests(unittest.TestCase):
                     metadata.write_text(json.dumps(manifest))
                 result = self.package("--server", "changed.example:91")
                 self.assertNotEqual(result.returncode, 0, problem)
-                self.assertIn("tools/build-tui.py", result.stdout)
+                self.assertIn("prepare-runtimes", result.stdout)
                 self.assertEqual({name: (self.output / name).read_bytes() for name in manage.PUBLISHED}, previous)
 
     def test_tui_source_hash_allows_windows_checkout_line_endings(self):
@@ -590,11 +701,21 @@ class ServerTests(unittest.TestCase):
             try:
                 with opener.open(address + "/start.zip", timeout=0.5) as response:
                     self.assertEqual(response.read(), (self.output / "start.zip").read_bytes())
+                    self.assertIn("no-store", response.headers.get("Cache-Control", ""))
                 break
             except (urllib.error.URLError, TimeoutError):
                 if time.monotonic() > deadline or process.poll() is not None:
                     self.fail(log.read_text(encoding="utf-8"))
                 time.sleep(0.03)
+        with opener.open(address + "/release.json") as response:
+            release = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(release["interface"], "go-tui")
+            self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+        cached = urllib.request.Request(address + "/start.zip", headers={
+            "If-Modified-Since": "Wed, 07 Oct 2099 05:25:22 GMT"})
+        with opener.open(cached) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.read(), (self.output / "start.zip").read_bytes())
         for path, status in [("/wrong-root/start.zip", 404), ("/linked.txt", 403), ("/nested/", 403),
                              ("/%2e%2e/secret.txt", 403)]:
             with self.subTest(path=path):

@@ -38,7 +38,9 @@ bash 卸载环境.command --dry-run
 
 ## 构建与分发
 
-界面源码位于 `tui/`，锁定 Bubble Tea、Bubbles、Lip Gloss 及间接依赖。使用 Go 1.27.1 构建，成员无需安装 Go。构建工具设置 `CGO_ENABLED=0`，分别生成 macOS arm64 和 amd64 可执行文件，并收集 Go 和依赖的许可证。
+Windows 或 macOS 下载服务器正常拉取仓库后，使用原来的 `python3 server/manage.py start` 即可，Windows 使用 `py -3`。有效本地产物会复用；缺失、损坏或过期时，根据 `resources/runtime-lock.json` 自动下载匹配的界面和卸载运行文件。首次缺少文件需访问 GitHub Release 或镜像，有效缓存可离线复用；下载服务器和成员都无需安装 Go，也无需手动复制四个文件。
+
+以下构建步骤供修改界面源码的维护者使用。界面源码位于 `tui/`，锁定 Bubble Tea、Bubbles、Lip Gloss 及间接依赖，使用 Go 1.27.1 构建。构建工具设置 `CGO_ENABLED=0`，分别生成 macOS arm64 和 amd64 可执行文件，并收集 Go 和依赖的许可证。
 
 ```bash
 python3 tools/build-tui.py --go /absolute/path/to/go
@@ -55,7 +57,11 @@ resources/tui/
 └── THIRD_PARTY_NOTICES.txt
 ```
 
-构建与校验使用临时缓存，不要求将 Go 放入用户全局 PATH。把四个文件一并带到下载服务器；服务端打包到 `.support/tui/`，在 Windows 上只校验文件，不运行 Mac 程序。每次 Go 源码、测试或依赖锁变化后须重建，服务器会拒绝源码摘要不符或损坏的产物。
+构建使用临时缓存，不要求将 Go 放入用户全局 PATH；`--verify-only` 只读校验，无需 Go。每次 Go 源码、测试或依赖锁变化后须重建。维护者在 Mac 上同时确认卸载产物有效，运行 `tools/release-runtimes.py` 生成确定性 ZIP 与锁文件，上传匹配的 GitHub Release，并将锁与源码配套提交。服务器随后自动获取成品，打包到 `.support/tui/`，在 Windows 上只校验文件，不运行 Mac 程序。发布命令、镜像和离线准备见[运行文件发布指南](runtime-release.md)；目前没有 CI 自动构建或上传。
+
+`python3 server/manage.py prepare-runtimes` 可单独补齐运行文件，`--offline` 仅校验本地且不写入。`package` 仍只校验和打包，文件过期或损坏时失败；不会隐式编译或联网。仅在预备离线服务器时，可把已校验的 TUI 和卸载七文件按原目录一起复制过去，再执行离线校验。
+
+拉取源码不会更新 `dist/server`。正式发布需重新完成 `start`，以输出的 `go-tui-<实际 TAR 摘要前 12 位>` 和 `/release.json` 核对当前服务；端口占用导致启动退出时，旧服务可能仍提供旧界面。
 
 成员入口按 CPU 架构选取程序，并重新校验摘要。若界面组件缺失或损坏，应重新下载完整包；明确需要使用旧文本模式时加 `--plain`。卸载运行包及原有资源准备流程见[卸载说明](cleanup.md)和[分发指南](../distribution.md)。
 

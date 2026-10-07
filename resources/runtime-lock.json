@@ -1,0 +1,43 @@
+{
+  "archive": {
+    "sha256": "37f4ae609031d1cffd2db76ddfad002b99a60abfe484896320d1e7a8bfc3414b",
+    "size": 26006495,
+    "url": "https://github.com/blade-demon/ai-fullstack-settings/releases/download/runtimes-37f4ae609031d1cf/team-dev-env-runtimes.zip"
+  },
+  "files": {
+    "resources/cleanup/THIRD_PARTY_NOTICES.txt": {
+      "sha256": "4d73eeb7dd7fb182950973b3bf0d7509ef08fe763c57d105c5343509fc27786f",
+      "size": 109860
+    },
+    "resources/cleanup/cleanup-macos-universal2": {
+      "sha256": "84e525d98b8b69c2d47ef5efab34254f9e22a146db904b4b3a17140ae4f26c53",
+      "size": 17378976
+    },
+    "resources/cleanup/manifest.json": {
+      "sha256": "f129adcb6c3abcf702cab7f0d9f62bbce3f8c486168b261d6eb3950f204fc4c5",
+      "size": 852
+    },
+    "resources/tui/THIRD_PARTY_NOTICES.txt": {
+      "sha256": "dc01aff64996ab338de782f74e1cff4b26e8d3c72863e982da912bc9b8e2a9c8",
+      "size": 41164
+    },
+    "resources/tui/manifest.json": {
+      "sha256": "0bcb811a1905121ee03424f8283ca188d1f6f8220e00dd041a51d97c056ebe1e",
+      "size": 2331
+    },
+    "resources/tui/team-dev-env-amd64": {
+      "sha256": "8ca6b45fded502095bb31d97d9f174df27843b3fe950144de8e801524093fc3f",
+      "size": 4326528
+    },
+    "resources/tui/team-dev-env-arm64": {
+      "sha256": "76a4ee06176ae08b8546a1d1be6f4932c9a8d7149e7430225a9509c6e199040a",
+      "size": 4145746
+    }
+  },
+  "release": "runtimes-37f4ae609031d1cf",
+  "schema": 1,
+  "source_sha256": {
+    "cleanup": "3b30a9d7d52c77d865c7ef5afc11835cf537d6ce0209b4b9d5a821bbff9f0c0e",
+    "tui": "a580fae9b336a6bf6bc69a1133add96539dc953163a3d455df8c9d182da15bad"
+  }
+}

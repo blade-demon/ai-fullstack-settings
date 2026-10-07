@@ -30,18 +30,23 @@ if __package__:
     from .tui_artifact import (BINARIES as TUI_BINARIES, FILES as TUI_FILES,
                                source_sha256 as tui_source_sha256, validate_tui_artifact)
     from .lan import DiscoveryError, discover_ipv4_addresses
+    from .runtime_artifacts import ensure_runtimes
+    from .publication import make_release, read_release
 else:
     from cleanup_artifact import validate_cleanup_artifact
     from tui_artifact import (BINARIES as TUI_BINARIES, FILES as TUI_FILES,
                               source_sha256 as tui_source_sha256, validate_tui_artifact)
     from lan import DiscoveryError, discover_ipv4_addresses
+    from runtime_artifacts import ensure_runtimes
+    from publication import make_release, read_release
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = "# id\tgroup\tversion\tarch\tpath\turl\tsha256"
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 SERVER = re.compile(r"(?:[A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?\Z")
-PUBLISHED = ("start.command", "uninstall.command", "start.zip", "team-dev-env.zip",
-             "dev-env/team-dev-env.tar.gz", "dev-env/team-dev-env.tar.gz.sha256")
+PUBLICATION_ARTIFACTS = ("start.command", "uninstall.command", "start.zip", "team-dev-env.zip",
+                         "dev-env/team-dev-env.tar.gz", "dev-env/team-dev-env.tar.gz.sha256")
+PUBLISHED = PUBLICATION_ARTIFACTS + ("release.json",)
 CLEANUP_FILES = (("cleanup-macos-universal2", "cleanup-macos"),
                  ("manifest.json", "manifest.json"), ("THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt"))
 TEXT_SUFFIXES = {".sh", ".command", ".txt", ".yaml", ".yml", ".tsv", ".json", ".in", ".xsl"}
@@ -339,8 +344,8 @@ def cleanup_members():
         if not payloads["THIRD_PARTY_NOTICES.txt"].strip():
             raise ValueError("卸载运行时第三方许可文件为空。")
     except (UserError, OSError, ValueError) as error:
-        raise UserError("卸载运行时不可发布：%s\n请在 Mac 上运行 python3 tools/build-cleanup.py，"
-                        "再将 resources/cleanup 构建产物复制到服务器重新打包。" % error) from error
+        raise UserError("卸载运行时不可发布：%s\n请运行 python server/manage.py prepare-runtimes "
+                        "自动补齐，或直接使用 start；维护者修改源码后须重新发布匹配运行文件。" % error) from error
     return {"team-dev-env/.support/cleanup/" + name: payload for name, payload in payloads.items()}
 
 
@@ -354,8 +359,8 @@ def tui_members():
                               payloads["manifest.json"], tui_source_sha256(source),
                               payloads["THIRD_PARTY_NOTICES.txt"])
     except (UserError, OSError, ValueError) as error:
-        raise UserError("TUI 运行时不可发布：%s\n请运行 python3 tools/build-tui.py --go /path/to/go，"
-                        "再将 resources/tui 构建产物复制到服务器重新打包。" % error) from error
+        raise UserError("TUI 运行时不可发布：%s\n请运行 python server/manage.py prepare-runtimes "
+                        "自动补齐，或直接使用 start；维护者修改源码后须重新发布匹配运行文件。" % error) from error
     return {"team-dev-env/.support/tui/" + name: payload for name, payload in payloads.items()}
 
 
@@ -451,6 +456,14 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
         archive = staging / "dev-env/team-dev-env.tar.gz"
         write_tar(archive, files)
         write_receipt(archive, sha256_file(archive))
+        runtime_sources = {
+            kind: json.loads(files["team-dev-env/.support/%s/manifest.json" % kind]
+                             .decode("utf-8-sig"))["source_sha256"].lower()
+            for kind in ("tui", "cleanup")
+        }
+        release = make_release(staging, PUBLICATION_ARTIFACTS, runtime_sources, server, scheme)
+        (staging / "release.json").write_text(
+            json.dumps(release, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         additions = []
         if args.with_resources:
             for item in resources:
@@ -481,6 +494,7 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
     if announce:
         print("已生成：%s\n静态服务根目录：%s\n待部署下载地址：%s://%s/start.zip" % (output, output, scheme, server))
         print("打包不会启动服务器。Windows/macOS 可使用 server/manage.py serve。", flush=True)
+        print("Go TUI 发布版本：%s" % release["version"], flush=True)
     return output
 
 
@@ -514,6 +528,13 @@ def option_path(cli, settings, key, default):
 
 
 class DownloadHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        requested = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).lstrip("/")
+        if requested in PUBLISHED:
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def send_head(self):
         try:
             decoded = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
@@ -523,6 +544,11 @@ class DownloadHandler(http.server.SimpleHTTPRequestHandler):
             relative = target.relative_to(absolute(self.directory))
             if str(relative) != ".":
                 relative_path(relative.as_posix(), "下载路径")
+            if relative.as_posix() in PUBLISHED:
+                # A cached pre-TUI startup ZIP must never be reused after an update.
+                for header in ("If-Modified-Since", "If-None-Match"):
+                    if header in self.headers:
+                        del self.headers[header]
             check_path(target, directory=target.is_dir())
             if target.is_dir():
                 # SimpleHTTPRequestHandler resolves these after the requested directory.
@@ -619,22 +645,47 @@ def start(args, settings):
     try:
         server = DownloadServer(("0.0.0.0", port), handler)
     except OSError as error:
-        raise UserError("端口已被占用或不可用：%s（%s）；未准备资源或改写发布文件。" % (port, error))
+        raise UserError("端口已被占用或不可用：%s（%s）。本次没有更新安装包，已有地址可能仍提供旧版本。"
+                        "请停止自己管理的旧服务后重新 start，或使用 --port 指定空闲端口；"
+                        "未准备资源或改写发布文件。" % (port, error))
     # Keep the bound socket throughout preparation; never probe and release it.
     with server:
-        print("服务器地址：http://%s\n[1/3] 正在校验资源，缺少的文件会自动下载…" % address, flush=True)
+        print("服务器地址：http://%s\n[1/3] 正在准备界面运行文件与安装资源…" % address, flush=True)
+        prepare_runtimes(args, settings)
         prepare(argparse.Namespace(output=str(storage), catalog=str(catalog), group="all", arch="all",
                                    id=None, verify=False, dry_run=False), {})
         print("[2/3] 正在生成启动包和发布目录…", flush=True)
         package(argparse.Namespace(output=str(directory), resources_dir=str(storage), server=address,
                                    scheme="http", with_resources=True), {}, forced_server=address,
                 catalog_path=catalog, announce=False)
-        print("[3/3] 下载服务已就绪\n成员下载链接：http://%s/start.zip" % address, flush=True)
+        release = verified_publication(directory)
+        print("[3/3] 下载服务已就绪\nGo TUI 发布版本：%s\n成员下载链接：http://%s/start.zip?v=%s\n"
+              "发布信息：http://%s/release.json" % (release["version"], address,
+                                                  release["version"], address), flush=True)
         print("监听：0.0.0.0:%s；托管目录：%s\n保持窗口运行，Ctrl+C 停止。" % (port, directory), flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             print("\n下载服务已停止。", flush=True)
+
+
+def prepare_runtimes(args, settings):
+    base_url = getattr(args, "runtime_base_url", None) or settings.get("runtime_base_url")
+    result = ensure_runtimes(ROOT, base_url=base_url,
+                             offline=getattr(args, "offline", False), report=print)
+    print("运行文件已就绪：%s（%s）" % (result["release"],
+          "已下载并校验" if result["downloaded"] else "复用本地校验结果"), flush=True)
+    return result
+
+
+def verified_publication(directory):
+    check_path(directory, directory=True, required=True)
+    for name in PUBLISHED:
+        if not (directory / name).is_file():
+            raise UserError("服务目录缺少新版发布文件 %s，请使用 start 或 package 重新打包：%s" %
+                            (name, directory))
+        check_path(directory / name, required=True)
+    return read_release(directory, PUBLICATION_ARTIFACTS)
 
 
 def serve(args, settings, preview=False):
@@ -647,11 +698,7 @@ def serve(args, settings, preview=False):
     port = args.port if args.port is not None else (8081 if preview else settings.get("port", 8080))
     port = checked_port(port)
     if not preview:
-        check_path(directory, directory=True, required=True)
-        if not all((directory / name).is_file() for name in PUBLISHED):
-            raise UserError("服务目录尚未打包完整，请先执行 package，并指定打包输出目录：%s" % directory)
-        for name in PUBLISHED:
-            check_path(directory / name, required=True)
+        verified_publication(directory)
     handler = functools.partial(DownloadHandler, directory=str(directory))
     try:
         server = DownloadServer((bind, port), handler)
@@ -659,9 +706,12 @@ def serve(args, settings, preview=False):
         raise UserError("端口已被占用或不可用：%s:%s（%s）；已有服务未改动。" % (bind, port, error))
     with server:
         if preview:
+            prepare_runtimes(args, settings)
             args.with_resources = True
             package(args, settings, forced_server="127.0.0.1:%s" % port)
+        release = verified_publication(directory)
         print("%s：http://127.0.0.1:%s/start.zip" % ("本机预览已就绪" if preview else "下载服务已就绪", port), flush=True)
+        print("Go TUI 发布版本：%s；发布信息：/release.json" % release["version"], flush=True)
         print("监听：%s:%s；托管目录：%s\n客户端安装脚本仅适用于 macOS。保持窗口运行，Ctrl+C 停止。" % (bind, port, directory), flush=True)
         try:
             server.serve_forever()
@@ -683,7 +733,8 @@ def read_settings(argv):
         return argv, {}
     check_path(config, required=True)
     settings = json.loads(config.read_text(encoding="utf-8-sig"))
-    allowed = {"server", "scheme", "output", "resources_dir", "catalog", "directory", "bind", "port"}
+    allowed = {"server", "scheme", "output", "resources_dir", "catalog", "directory", "bind", "port",
+               "runtime_base_url"}
     if not isinstance(settings, dict) or set(settings) - allowed:
         raise UserError("JSON 配置必须为对象，且只包含已支持的服务端选项。")
     return argv, settings
@@ -708,6 +759,7 @@ def make_parser():
     modes = preparation.add_mutually_exclusive_group()
     modes.add_argument("--verify", action="store_true")
     modes.add_argument("--dry-run", action="store_true")
+    runtimes = commands.add_parser("prepare-runtimes", help="自动下载并校验当前源码匹配的界面与卸载运行文件")
     packaging = commands.add_parser("package", help="生成启动包与完整工具包，不启动服务")
     preview = commands.add_parser("preview", help="先占用本机端口，再打包并启动本机预览")
     for command in (packaging, preview):
@@ -718,6 +770,9 @@ def make_parser():
     packaging.add_argument("--with-resources", action="store_true")
     preview.add_argument("--port", type=int)
     preview.set_defaults(server=None, scheme=None, with_resources=True)
+    for command in (startup, preview, runtimes):
+        command.add_argument("--runtime-base-url", help="运行文件内网镜像目录；默认使用源码锁定的 GitHub Release")
+    runtimes.add_argument("--offline", action="store_true", help="仅校验已有运行文件，不联网或写入")
     serving = commands.add_parser("serve", help="只读托管已打包目录，不修改发布文件")
     serving.add_argument("--directory")
     serving.add_argument("--bind", choices=("127.0.0.1", "0.0.0.0"))
@@ -739,6 +794,8 @@ def main(argv=None):
             start(args, settings)
         elif args.command == "prepare":
             prepare(args, settings)
+        elif args.command == "prepare-runtimes":
+            prepare_runtimes(args, settings)
         elif args.command == "package":
             package(args, settings)
         else:

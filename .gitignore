@@ -19,3 +19,5 @@ server/config.json
 /npm-cli/assets/
 /npm-cli/node_modules/
 /npm-cli/*.tgz
+# 自动补齐失败时可能保留运行文件备份，不能加入源码提交。
+/.runtime-stage-*/

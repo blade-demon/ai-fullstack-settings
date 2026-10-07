@@ -79,7 +79,9 @@ JDK 配置包含 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`，其中 `JRE_HOME` �
 
 服务端支持 Windows 和 macOS，需要 Python 3.8+。首次部署时，先在运行脚本的维护者电脑或服务器上按[Python 3 安装指引](docs/service-startup.md#部署前安装-python-3)完成安装与验证；服务端只使用标准库，无需安装第三方 Python 包。
 
-首次发布前，先[构建 Go TUI](docs/environment/tui.md#构建与分发)，准备 `resources/tui/` 四个文件；再在 Mac 上[构建卸载工具](docs/environment/cleanup.md#维护者构建成员卸载工具)，把生成的 `resources/cleanup/` 整个目录随项目交给下载服务器。它包含自带 Python 的双架构工具；源码变化后须重新构建，缺失、损坏或过期时打包会明确失败。Windows 服务端只校验和打包这些成品。
+Windows 或 macOS 下载服务器正常拉取仓库后，继续使用原来的 `start` 命令即可。它优先复用校验通过的 `resources/tui/` 和 `resources/cleanup/`；缺失、损坏或与当前源码不匹配时，按已提交的 `resources/runtime-lock.json` 自动下载并校验匹配的运行文件。首次缺少运行文件时需要访问 GitHub Release 或团队镜像，缓存齐全后可离线使用；服务器无需安装 Go、PyInstaller，也无需人工传入 ZIP。
+
+只有维护者修改 Go 或卸载源码后，才需要在 Mac 上重新构建相应产物，确认两套产物均有效，再生成并上传匹配的运行文件 Release，将锁文件与源码配套提交。完整步骤见[运行文件发布指南](docs/environment/runtime-release.md)；目前没有 CI 自动构建或上传。
 
 在**实际运行下载服务的机器**上，进入项目根目录执行；Windows 把下方 `python3` 换成 `py -3`：
 
@@ -87,9 +89,13 @@ JDK 配置包含 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`，其中 `JRE_HOME` �
 python3 server/manage.py start
 ```
 
-也可双击 macOS 的 `server/start-server.command` 或 Windows 的 `server/start-server.cmd`。`start` 自动检测本机活动 IPv4 地址；多个候选时按提示选择序号。它先占用默认的 `8080` 端口，再校验已有资源、下载缺失文件、带资源打包到 `dist/server`，最后通过 HTTP 提供下载并显示实际链接。保持窗口运行，从成员电脑验证链接后再分发。
+也可双击 macOS 的 `server/start-server.command` 或 Windows 的 `server/start-server.cmd`。`start` 自动检测本机活动 IPv4 地址；多个候选时按提示选择序号。它先占用默认的 `8080` 端口，再依次完成 `[1/3]` 运行文件与 SDK 资源准备、`[2/3]` 打包到 `dist/server`、`[3/3]` 启动下载服务。就绪输出包含实际 Go TUI 发布版本、带版本参数的 `start.zip?v=go-tui-…` 链接和 `release.json`。保持窗口运行，从成员电脑验证链接后再分发。
 
-重复运行会复用校验通过的资源；遇到损坏文件会保留并报错。资源默认保存在 `resources/`，发布副本位于 `dist/server/resources/`，大包不进入启动 ZIP 或完整工具 ZIP。清单现含 24 项（原有 14 项及前端工具 10 项）；Gradle 6.8 已下载并通过固定摘要校验，正式分发时仍会核验本地资源。分组下载与摘要说明见[资源准备指南](docs/resources/README.md)。
+**`git pull` 更新源码，不会更新已存在的发布目录或正在运行的服务。** 更新后应停止自己管理的旧服务，再运行 `start`。端口占用时，本次启动不会结束已有进程或改写旧包，已有地址可能仍提供旧版本；只有确认发布物已验证为本次预期版本后才能复用该地址。
+
+重复运行会复用校验通过的资源；24 项 SDK、软件和插件安装资源损坏时会保留并报错，运行文件则由锁定下载流程补齐。安装资源默认保存在 `resources/`，发布副本位于 `dist/server/resources/`，大包不进入启动 ZIP 或完整工具 ZIP。清单现含 24 项（原有 14 项及前端工具 10 项）；Gradle 6.8 已下载并通过固定摘要校验，正式分发时仍会核验本地资源。分组下载与摘要说明见[资源准备指南](docs/resources/README.md)。
+
+只准备运行文件可用 `python3 server/manage.py prepare-runtimes`，加 `--offline` 仅校验本地且不写入。内网镜像用 `--runtime-base-url "http://镜像地址/目录"` 或 `server/config.json` 的 `runtime_base_url` 指定，该目录须提供 `team-dev-env-runtimes.zip`，下载仍须满足仓库锁定的大小与摘要。高级 `package` 始终只校验和打包，不联网；`serve` 启动前校验 `release.json` 及六个发布文件，拒绝缺少新版清单的旧包或损坏包。
 
 `start` 监听 `0.0.0.0`，自动选址不保证能穿过防火墙或 VPN；显式地址和端口可用 `start --server "192.168.1.20" --port 8080` 指定。IP 变化后重新 `start`，并让成员重新下载启动包。`127.0.0.1` 只指向成员自己的电脑，不可作为团队下载地址。停止、重启、参数，以及分机器部署或 HTTPS 所需的高级分步流程见[服务启动指南](docs/service-startup.md)；发布结构和更新要求见[内网分发指南](docs/distribution.md)。
 
@@ -157,4 +163,5 @@ python3 -m unittest discover -s tests -v
 - [修复历史与 review](docs/repair-history.md)
 - [Python 3 安装、服务器启动与排错](docs/service-startup.md)
 - [分发流程](docs/distribution.md)
+- [运行文件自动下载与维护者发布](docs/environment/runtime-release.md)
 - [全部环境指南](docs/environment/README.md)

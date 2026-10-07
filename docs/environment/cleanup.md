@@ -28,7 +28,9 @@ bash 卸载环境.command --dry-run
 
 ## 维护者构建成员卸载工具
 
-唯一源码为 `tools/uninstall_java_gradle.py`；用 macOS **python.org Python 3.14.6 universal2** 和固定 `PyInstaller==6.22.3` 构建包含 arm64 / x86_64 的单文件程序。成员无需 PyInstaller 或 Python，Windows 下载服务器也不需要安装 PyInstaller。仅有 arm64 的 Python 不能用于这个双架构构建。
+正常部署不需要下载服务器执行本节构建。Windows 或 macOS 拉取仓库后继续运行原 `start`，会复用有效的界面与卸载产物，或按 `resources/runtime-lock.json` 从 GitHub Release / 镜像自动下载匹配运行文件。首次缺少运行文件需联网，缓存有效时可离线使用；服务器无需手动搬运 ZIP。
+
+本节供修改卸载实现的维护者使用。唯一源码为 `tools/uninstall_java_gradle.py`；用 macOS **python.org Python 3.14.6 universal2** 和固定 `PyInstaller==6.22.3` 构建包含 arm64 / x86_64 的单文件程序。成员无需 PyInstaller 或 Python，Windows 下载服务器也不需要安装 PyInstaller。仅有 arm64 的 Python 不能用于这个双架构构建。
 
 以下示例使用 python.org Python 3.14.6 的安装路径；若安装在其他位置，替换第一行的解释器路径。构建器要求这两个固定版本及虚拟环境，附带许可材料与所选运行时一致。在仓库根目录执行，构建依赖放入临时虚拟环境，不修改系统 Python：
 
@@ -48,9 +50,11 @@ resources/cleanup/
 └── THIRD_PARTY_NOTICES.txt
 ```
 
-把三个文件一起交给实际下载服务器，保留该相对目录；随后使用原来的 `server/manage.py start` 或 `package` 发布。它们是生成产物，不通过 Git 分发，也不在 `resources/catalog.tsv` 的软件下载清单中。服务端会核对产物摘要、源码摘要及双架构，不会在 Windows 上运行 Mac 工具。
+维护者确认 Go TUI 产物也与当前源码匹配后，运行 `tools/release-runtimes.py` 生成包含两套运行文件的 ZIP 与锁，上传匹配的 GitHub Release，并将 `resources/runtime-lock.json` 随源码提交；详见[运行文件发布步骤](runtime-release.md)。目前没有 CI 自动构建或上传。二进制是生成产物，不直接通过 Git 分发，也不在 `resources/catalog.tsv` 的 24 项软件下载清单中；Git 保存的是下载地址、摘要、大小及源码摘要的锁。服务器会核对这些信息及双架构，不会在 Windows 上运行 Mac 工具。
 
-`source_sha256` 使用 UTF-8（忽略 BOM）、统一 LF 换行后的源码，避免 Windows 的 CRLF 导致错误判为过期。修改卸载源码后须重新构建；缺失、损坏或源码摘要不符时，打包会停止并提示处理，不会发布一个无法使用的卸载入口。成员执行前还会核对包内可执行文件摘要。
+`source_sha256` 使用 UTF-8（忽略 BOM）、统一 LF 换行后的源码，避免 Windows 的 CRLF 导致错误判为过期。修改卸载源码后须重新构建并更新对应发布锁。`start` 或 `prepare-runtimes` 可自动补齐失效缓存；`prepare-runtimes --offline` 只读校验，不联网或写入。`package` 仍只使用本地产物，缺失、损坏或源码摘要不符时停止，不会联网或发布无法使用的卸载入口。成员执行前还会核对包内可执行文件摘要。
+
+离线部署可选择把已校验的 `resources/tui/` 和 `resources/cleanup/` 七个文件按原目录一起复制到服务器，再运行 `prepare-runtimes --offline`；这不是联网部署的必需步骤。
 
 构建采用 PyInstaller 的本地签名处理，不代表已取得 Developer ID 签名或 Apple 公证；首开及企业设备策略仍需遵循团队的 macOS 分发规则。[PyInstaller 打包说明](https://pyinstaller.org/en/stable/operating-mode.html)
 

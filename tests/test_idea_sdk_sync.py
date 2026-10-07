@@ -24,7 +24,7 @@ class IdeaSdkSyncTests(unittest.TestCase):
         self.home.mkdir()
         self.project = self.base / "业务 项目's &"
         (self.project / ".idea").mkdir(parents=True)
-        self.config = self.home / "Library/Application Support/JetBrains/IdeaIC2024.3"
+        self.config = self.home / "Library/Application Support/JetBrains/IdeaIC2025.3"
         (self.config / "options").mkdir(parents=True)
         self.table = self.config / "options/jdk.table.xml"
         self.misc = self.project / ".idea/misc.xml"
@@ -39,7 +39,7 @@ class IdeaSdkSyncTests(unittest.TestCase):
         self.env = {"HOME": str(self.home), "PATH": f"{self.fakebin}:/usr/bin:/bin:/usr/sbin:/sbin",
                     "LC_ALL": "C", "JAVA_HOME": str(self.jdk), "JDK_AUTO_DETECT": "false",
                     "JDK_INSTALL_DIR": str(self.jdk), "ENV_FILE": str(self.home / "missing-env.sh"),
-                    "IDEA_CONFIG_DIR": str(self.config), "CDPATH": str(self.base)}
+                    "CDPATH": str(self.base)}
         self.write_project()
 
     def make_jdk(self, name):

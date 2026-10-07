@@ -14,11 +14,11 @@
 
 1. 连接团队内网，打开维护者提供的 `start.zip` 下载链接。
 2. 解压启动包，可见「开始配置.command」和「卸载环境.command」。安装时双击「开始配置.command」。入口自动下载完整工具、校验 SHA-256、解压；菜单打开时先自动预检现有 JDK 8 和 Gradle 状态。
-3. 保存工作并退出 IDEA，用方向键选择「一键安装 Java 环境」，按 Enter 查看并确认操作：固定补齐 JDK 8、独立 Gradle 4.5.1、完整环境变量、IDEA 和全部六个插件，再复验。菜单不选择业务项目，也不执行构建，只报告环境验证结果和“未执行项目构建”。
+3. 保存工作并退出 IDEA，用方向键选择「一键安装 Java 环境」，按 Enter 查看并确认操作：固定补齐 JDK 8、独立 Gradle 4.5.1、完整环境变量、IDEA Community Open Source 2025.3.6.1 和全部六个插件，再复验。菜单不选择业务项目，也不执行构建，只报告环境验证结果和“未执行项目构建”。
 4. 也可选择「安装并配置 JDK 8」「安装并配置 Gradle」「安装 IDEA 软件」「安装推荐 IDEA 插件」分别处理各组件。IDEA 位于 `~/Applications/IntelliJ IDEA CE.app`，其项目设置见 [IDE 指南](environment/ide.md)。
 5. 查看结果和输出的历史目录；新开终端加载环境，再在 IDEA 中导入、配置并同步业务项目。项目检查、构建验证、仅下载及历史查看保留为维护者命令行功能。
 
-卸载时双击独立的「卸载环境.command」，核对删除计划并输入 `DELETE` 确认；该入口自带运行时，成员无需安装 Python。卸载范围、无备份说明及取消方式见[卸载指南](environment/cleanup.md)。默认交互为 Go TUI，包含以下同名操作；下表编号供 `--plain` 数字菜单使用：
+卸载时双击独立的「卸载环境.command」，先选择是否删除 IDEA；选择删除后，配置、SDK 登记和用户插件默认一并删除，只有在保留提示中输入 `y` / `yes` 才保留。核对删除计划并输入 `DELETE` 后才执行，缓存、日志和 Local History 默认保留。该入口自带运行时，成员无需安装 Python。卸载范围、无备份说明及取消方式见[卸载指南](environment/cleanup.md)。默认交互为 Go TUI，包含以下同名操作；下表编号供 `--plain` 数字菜单使用：
 
 | 选项 | 操作 |
 | --- | --- |
@@ -39,6 +39,8 @@
 维护者通过 `repair-env.sh --project` 指定已有 IDEA 配置的项目时，会在构建前统一 JDK 8 的 SDK 登记与项目引用名称，默认 `azul-1.8`，可通过 `IDEA_JDK_NAME` 配置。执行前须退出 IDEA；同目录的重复 SDK 名称会合并。尚未导入的项目仍提示待配置，之后完成导入并运行名称同步，见 [IDE 指南](environment/ide.md#统一-jdk-8-登记与项目引用)。
 
 维护者的 `download-tools.sh` 仅下载时把文件保存到 `~/Downloads/team-java-env/` 的对应子目录。「安装 IDEA 软件」（普通模式菜单 `4`）校验 IDEA DMG 后只读挂载，将应用复制到当前用户的 `~/Applications`，无需 `sudo`，不修改系统 `/Applications`，也不自动启动 IDEA。同版本、同 build 且完整的现有应用会复用；其他已有目标保留并报错，不覆盖。手动安装和两个应用目录的区别见 [IDE 指南](environment/ide.md)。
+
+当前 IDEA 原包来自 JetBrains GitHub 的 Community Open Source 2025.3.6.1，默认配置目录为 `IdeaIC2025.3`。2024 已从有效下载清单和新安装基线移除；已有旧应用须先按卸载引导核对并确认删除，再安装 2025。发布时一并更新清单、两架构 DMG 和 Lombok 253.28294.251，来源与摘要见[核验记录](resources/plugin-sources.md)。
 
 工具不下载业务项目，Docker 本次仅登记官方入口，未纳入下载清单。完整工具包 `team-dev-env.zip` 是备用入口：解压后双击 `team-dev-env/开始配置.command`，同样进入菜单；隐藏的 `.support` 必须与入口保持在一起。
 
@@ -203,7 +205,7 @@ ZIP 能保留执行权限，但不会绕过 macOS 的来源检查。首次打开
 | 安装时下载失败或提示资源缺失 | 维护者重新运行 `start`，或确认高级 `package` 使用了 `--with-resources`；保留 `resources/` 下的目录、文件和校验文件 |
 | 维护者项目验证提示缺少构建文件 | 用 `--project` 指定包含 `build.gradle` 或 `build.gradle.kts` 的实际业务项目；独立 Gradle 安装不要求 Wrapper |
 | 菜单 `3` 无法完成验证 | 检查 JDK、资源地址、SHA-256、完整环境变量和阶段日志；见 [Gradle 指南](environment/gradle.md) |
-| 菜单 `4` 提示 IDEA 目标已存在但不可复用 | 保留现有应用；检查是否为其他版本或不完整文件，请维护者协助处理后再重试 |
+| 菜单 `4` 提示 IDEA 目标已存在但不可复用 | 保留现有应用；若是旧 2024 版，先按卸载引导核对并确认删除，再安装 2025；其他冲突请维护者检查后重试 |
 | 配置后当前终端仍显示旧 Java | 重新打开终端；IDEA 另行设置 Project SDK 和 Gradle JVM |
 | 维护者命令行启动本地 MySQL 失败 | 确认 Docker 已启动、端口未占用，并使用团队确认的 MySQL 镜像版本 |
 | 修复后仍显示失败 | 打开输出的历史目录查看失败阶段；组件安装完成不代表复验或项目构建通过，不要忽略失败后继续宣称整体成功 |

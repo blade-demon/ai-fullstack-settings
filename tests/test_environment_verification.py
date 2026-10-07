@@ -32,8 +32,8 @@ class EnvironmentVerificationTests(unittest.TestCase):
         self.app=self.home/'Applications/IntelliJ IDEA CE.app'
         (self.app/'Contents/MacOS').mkdir(parents=True)
         with (self.app/'Contents/Info.plist').open('wb') as f:
-            plistlib.dump({'CFBundleIdentifier':'com.jetbrains.intellij.ce','CFBundleVersion':'IC-243.28141.41',
-                          'CFBundleShortVersionString':'2024.3.7.1','CFBundleExecutable':'idea'},f)
+            plistlib.dump({'CFBundleIdentifier':'com.jetbrains.intellij.ce','CFBundleVersion':'IC-253.33813.55',
+                          'CFBundleShortVersionString':'2025.3.6.1','CFBundleExecutable':'idea'},f)
         (self.app/'Contents/MacOS/idea').write_text('#!/bin/sh\nexit 89\n'); (self.app/'Contents/MacOS/idea').chmod(0o755)
         jbr=self.app/'Contents/jbr/Contents/Home/bin/java'; jbr.parent.mkdir(parents=True)
         jbr.write_text('#!/bin/sh\necho "runtime 21"\n'); jbr.chmod(0o755)
@@ -86,7 +86,7 @@ class EnvironmentVerificationTests(unittest.TestCase):
         ET.SubElement(jdk, 'name', value='fixture-jdk-8')
         ET.SubElement(jdk, 'type', value='JavaSDK')
         ET.SubElement(jdk, 'homePath', value=str(home or self.jdk))
-        config = self.home / 'Library/Application Support/JetBrains/IdeaIC2024.3/options'
+        config = self.home / 'Library/Application Support/JetBrains/IdeaIC2025.3/options'
         config.mkdir(parents=True)
         ET.ElementTree(root).write(config / 'jdk.table.xml', encoding='utf-8')
         return idea
@@ -111,6 +111,20 @@ class EnvironmentVerificationTests(unittest.TestCase):
         self.assertIn('Wrapper', result.stdout)
         self.assertIn('同步', result.stdout)
         self.assertNotIn('SHOULD_NOT_RUN_WRAPPER', result.stdout)
+
+    def test_project_sdk_fallback_uses_shared_data_directory(self):
+        self.idea_project()
+        config = self.home / 'Library/Application Support/JetBrains/IdeaIC2025.3'
+        config.rename(config.with_name('IdeaIC2025.fixture'))
+        result = subprocess.run(['/bin/bash', '-c',
+                                 'source "$1/scripts/lib/common.sh"; '
+                                 'source "$1/scripts/lib/idea-project.sh"; unset IDEA_CONFIG_DIR; '
+                                 'probe_idea_project "$2"; printf "%s\\n%s\\n" "$PROBE_IDEA_PROJECT_STATE" "$PROBE_IDEA_PROJECT_JAVA_HOME"',
+                                 'probe', str(self.support), str(self.project)],
+                                env={**self.env, 'IDEA_DATA_DIRECTORY': 'IdeaIC2025.fixture'},
+                                text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['ready', str(self.jdk)])
 
     def test_registered_sdk_with_missing_installation_is_pending(self):
         self.idea_project(home=self.base / 'deleted-jdk')
@@ -176,9 +190,33 @@ class EnvironmentVerificationTests(unittest.TestCase):
     def test_full_scan_lists_all_variables_and_idea_without_running_ide(self):
         result=self.run_script('check-env.sh')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        for name in ['JAVA_HOME=','JAVA_8_HOME=','JRE_HOME=','GRADLE_HOME=','GRADLE_4_5_1_HOME=','GRADLE_USER_HOME=','IDEA 2024.3.7.1']:
+        for name in ['JAVA_HOME=','JAVA_8_HOME=','JRE_HOME=','GRADLE_HOME=','GRADLE_4_5_1_HOME=','GRADLE_USER_HOME=','IDEA 2025.3.6.1']:
             self.assertIn(name,result.stdout)
         self.assertIn('未选择项目',result.stdout)
+
+    def test_2024_idea_is_not_reported_as_installed_or_verified(self):
+        with (self.app / 'Contents/Info.plist').open('wb') as stream:
+            plistlib.dump({'CFBundleIdentifier': 'com.jetbrains.intellij.ce',
+                          'CFBundleVersion': 'IC-243.28141.41',
+                          'CFBundleShortVersionString': '2024.3.7.1',
+                          'CFBundleExecutable': 'idea'}, stream)
+        scan = self.run_script('check-env.sh')
+        self.assertNotIn('[已安装] IDEA', scan.stdout)
+        result = self.run_script('verify-environment.sh', '--scope', 'idea')
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_configured_baseline_build_is_used_for_probe_and_verification(self):
+        with (self.app / 'Contents/Info.plist').open('wb') as stream:
+            plistlib.dump({'CFBundleIdentifier': 'com.jetbrains.intellij.ce',
+                          'CFBundleVersion': 'IC-253.40000.1',
+                          'CFBundleShortVersionString': '2025.3.fixture',
+                          'CFBundleExecutable': 'idea'}, stream)
+        self.env.update(IDEA_VERSION='2025.3.fixture', IDEA_BUILD='IC-253.40000.1')
+        result = self.run_script('verify-environment.sh', '--scope', 'idea')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('IDEA 2025.3.fixture', result.stdout)
+        self.env['IDEA_BUILD'] = 'IC-253.1.1'
+        self.assertNotEqual(self.run_script('verify-environment.sh', '--scope', 'idea').returncode, 0)
 
     def test_incomplete_environment_is_repairable_not_ready(self):
         (self.home/'.config/java-dev/jdk.sh').write_text("export JAVA_HOME='"+str(self.jdk)+"'\n")

@@ -7,10 +7,10 @@
 | 分组 | 固定资源 | 架构与使用方式 |
 | --- | --- | --- |
 | `runtime` | Azul Zulu JDK 8u504+1、Gradle 4.5.1 / 6.8 | JDK 分 arm64/x64；Gradle 共用。菜单 `1` 固定 JDK 8 + Gradle 4.5.1，`2` 单独安装 JDK 8，`3.1` / `3.2` 分别安装两版 Gradle |
-| `software` | IDEA Community 2024.3.7.1、DBeaver Community 26.2.2 | 各有 arm64/x64 DMG；IDEA 用菜单 `4` 安装到个人应用目录，DBeaver 由维护者命令行下载后手动安装 |
-| `plugins` | Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 243.28141.18 | 通用 ZIP；菜单 `5` 安装并验证全部插件，或由维护者命令行下载后从 IDEA 磁盘安装 |
+| `software` | IDEA Community Open Source 2025.3.6.1、DBeaver Community 26.2.2 | 各有 arm64/x64 DMG；IDEA 用菜单 `4` 安装到个人应用目录，DBeaver 由维护者命令行下载后手动安装 |
+| `plugins` | Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 253.28294.251 | 通用 ZIP；菜单 `5` 安装并验证全部插件，或由维护者命令行下载后从 IDEA 磁盘安装 |
 
-以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。现共 24 项（原有 14 项、前端工具 10 项）；Gradle 6.8 已于 2026-10-07 下载并通过固定摘要校验，分发前仍须核对全部资源。完整资源大小以实际下载为准；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。Spring Boot Helper 为收费插件，原 Spring Assistant 不兼容目标 IDEA，均不纳入默认清单；研究中记录的 Spring Boot Assistant 替代项也未加入本次下载。
+以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。现共 24 项（原有 14 项、前端工具 10 项）；Gradle 6.8 已于 2026-10-07 下载并通过固定摘要校验，分发前仍须核对全部资源。IDEA 当前固定 JetBrains GitHub 的 2025.3.6.1 Community Open Source 原包；2024 已从有效下载清单和新安装基线移除，Lombok 改为适配 253 的版本，其余五个插件保留兼容版本。完整资源大小以实际下载为准；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。默认 IDEA 插件仅包含上表六个，之前研究的其他候选不加入本次清单。
 
 版本、官方直链、系统支持范围及校验依据见[运行环境与桌面工具来源](runtime-sources.md)、[IDEA 与插件来源](plugin-sources.md)。来源核验、文件下载、目标电脑安装和业务构建验收是不同步骤，不应互相替代。
 
@@ -58,7 +58,7 @@ cp resources/catalog.tsv /absolute/path/team-resources/catalog.tsv
 
 `--group` 支持 `runtime`、`software`、`plugins`、`all`；`--arch` 支持 `arm64`、`x64`、`any`、`all`。筛选条件同时生效。`--dry-run` 不联网、不写文件；`--verify` 只校验已存在文件，不下载、不补写校验记录。
 
-已有且校验通过的资源会复用。校验不符时保留原文件并停止，由维护者检查后移走异常文件再重试；不要仅为了让校验通过而修改摘要。有官方 SHA-256 的 JDK、Gradle、IDEA、DBeaver 使用清单中的固定值。六个插件的官方元数据未提供独立 SHA-256，清单记为 `-`，首次下载时生成同名 `.sha256` 本地记录，后续用它检查文件是否变化；这不等于官方发布了该摘要。保留原始 ZIP、DMG、许可证及校验文件。
+已有且校验通过的资源会复用。校验不符时保留原文件并停止，由维护者检查后移走异常文件再重试；不要仅为了让校验通过而修改摘要。有官方 SHA-256 的 JDK、Gradle、IDEA、DBeaver 使用清单中的固定值；IDEA 2025.3.6.1 的值来自官方 GitHub Release 资产 `digest`，详见[来源记录](plugin-sources.md)。六个插件的官方元数据未提供独立 SHA-256，清单记为 `-`，首次下载时生成同名 `.sha256` 本地记录，后续用它检查文件是否变化；这不等于官方发布了该摘要。保留原始 ZIP、DMG、许可证及校验文件。
 
 ## 高级：单独打包与托管
 
@@ -83,6 +83,8 @@ Windows 用 `py -3` 执行同样的 `package` / `serve`，原生入口也可显�
 4. 只需下载软件、DBeaver 或插件时，由维护者在完整工具目录运行 `bash .support/scripts/download-tools.sh` 并选择资源，文件保存到 `~/Downloads/team-java-env/` 下的对应子目录。DBeaver 打开 DMG 手动安装；插件也可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选原始 ZIP，**无需解压**。
 
 `download-tools.sh` 仅下载时只保存文件；安装和复验结果以对应安装菜单为准。IDEA 的个人目录 `~/Applications` 与系统 `/Applications` 不同，工具自动识别当前用户，无需填写用户名。手动安装时，在 Finder 按 `Command + Shift + G` 前往 `~/Applications`（没有则先创建），复制 DMG 中的 `IntelliJ IDEA CE.app`，不使用通常指向系统目录的 `Applications` 快捷方式。完整步骤见 [IDE 指南](../environment/ide.md)。独立 JDK / Gradle 及完整变量见[运行环境指南](../environment/runtime.md)；安装 IDEA 后另行设置项目 SDK 和 Gradle JVM。
+
+已有 2024 应用占用目标位置时会保留并报冲突，先按[卸载指南](../environment/cleanup.md)核对并确认卸载，再安装 2025。重新发布时须使用新清单及对应资源，不能把旧 2024 安装包继续作为当前下载提供。
 
 ## 前端工具资源
 

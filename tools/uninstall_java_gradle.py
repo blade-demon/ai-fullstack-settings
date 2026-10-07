@@ -981,8 +981,15 @@ def main(argv=None, cleaner_factory=None, input_reader=None):
             apps = [item.path for item in discovery.plan.removals if item.kind == "IDEA 应用"]
             if apps:
                 print("检测到以下 IDEA 软件：\n" + "\n".join("  " + str(path) for path in apps))
-                print("选择删除时仅包含这些应用；保留 IDEA 用户配置、SDK 登记和用户插件。")
+                print("选择删除后，默认连同 IDEA 用户配置、SDK 登记和用户插件一起删除；下一步可选择保留。")
                 args.include_idea_apps = read_answer("是否删除上述 IDEA 软件？[y/N]：").strip().lower() in ("y", "yes")
+                if args.include_idea_apps:
+                    while True:
+                        preserve = read_answer("是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]：").strip().lower()
+                        if preserve in ("", "n", "no", "y", "yes"):
+                            args.include_idea = preserve in ("", "n", "no")
+                            break
+                        print("请输入 y 保留，或输入 n / 直接回车按默认删除；之后仍需输入 DELETE 最终确认。")
             else:
                 print("未在当前扫描范围发现可识别的 IDEA 软件。")
             if not args.include_idea_apps:

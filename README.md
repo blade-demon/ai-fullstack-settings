@@ -1,6 +1,6 @@
 # 前端转型 AI 全栈计划
 
-为团队维护一套 macOS 开发环境工具，一键安装基线为 **JDK 8、独立安装的 Gradle 4.5.1、IDEA 2024.3.7.1 社区版和六个配套插件**，Gradle 另可选择 6.8。成员菜单先只读扫描，再安装、配置、验证并保存历史；项目检查和构建验证由维护者通过命令行执行。团队学习安排见[转型推进方案](docs/roadmap.md)。
+为团队维护一套 macOS 开发环境工具，一键安装基线为 **JDK 8、独立安装的 Gradle 4.5.1、IDEA 2025.3.6.1 开源社区版和六个配套插件**，Gradle 另可选择 6.8。成员菜单先只读扫描，再安装、配置、验证并保存历史；项目检查和构建验证由维护者通过命令行执行。团队学习安排见[转型推进方案](docs/roadmap.md)。
 
 ## 小组成员开始使用
 
@@ -9,7 +9,7 @@
 3. 查看最终环境验证结果和显示的历史目录。菜单不选择业务项目，也不执行项目构建；安装结果会明确显示**未执行项目构建**。
 4. 新开终端使环境配置生效；打开 IDEA 后按 [IDE 指南](docs/environment/ide.md)确认 Project SDK、Gradle JVM 和分发设置，并执行 Gradle 同步。业务项目另行验证；静态配置可解析及终端构建通过均不代表 GUI 同步成功。
 
-启动包同时包含「开始配置.command」和「卸载环境.command」。需要卸载时双击后者，按提示核对删除清单、选择是否删除 IDEA，并输入 `DELETE` 确认；卸载结果会保留在窗口中。已有成员须重新下载一次 `start.zip` 才能获得这个入口。详见[卸载指南](docs/environment/cleanup.md)。
+启动包同时包含「开始配置.command」和「卸载环境.command」。需要卸载时双击后者，先选择是否删除 IDEA；选择删除后，默认一并删除配置、SDK 登记和用户插件，只有在保留提示中输入 `y` / `yes` 才保留。核对删除清单并输入 `DELETE` 后才执行；缓存、日志和 Local History 默认保留。已有成员须重新下载一次 `start.zip` 才能获得这个入口。详见[卸载指南](docs/environment/cleanup.md)。
 
 成员无需克隆仓库、填写服务器地址，也无需预装 Python 或 Homebrew。Java 安装不要求 Git；Oh My Zsh 框架需要可用 Git，缺少时工具会提示处理，不自动安装 Xcode 开发工具。工具使用个人目录，不使用 `sudo`，不自动结束 IDEA 进程。业务项目由团队另行提供；仅使用本地 MySQL 时才需要 Docker。
 
@@ -39,15 +39,17 @@ TUI 的“安装前端环境”页面（普通模式菜单 `6`）提供独立前
 
 IDEA 和 iTerm2 统一安装到当前用户的 `/Users/用户名/Applications`。脚本从当前 `HOME` 解析该目录，`~/Applications` 是它的简写；不会在用户主目录下再创建 `Users/用户名`，也不安装到系统 `/Applications`。
 
+IDEA 使用 JetBrains GitHub 发布的 **2025.3.6.1 Community Open Source** 原包；2024 已从有效下载清单和新安装基线移除。已有 2024 应用不会被静默覆盖，须先按[卸载指南](docs/environment/cleanup.md)核对并确认卸载，再安装 2025。官方来源及插件兼容依据见[来源记录](docs/resources/plugin-sources.md)。
+
 | 项目 | 默认位置或配置 |
 | --- | --- |
 | JDK 8 | `~/.local/share/java-dev/jdk8`；复用已有 JDK 时以实际 `JAVA_HOME` 为准 |
 | 独立 Gradle | `~/.local/share/java-dev/gradle-4.5.1` 或 `~/.local/share/java-dev/gradle-6.8`，按版本分别保存 |
 | Gradle 用户缓存 | `~/.gradle`，可通过 `GRADLE_USER_HOME` 指定 |
 | IDEA | `~/Applications/IntelliJ IDEA CE.app`，不是系统 `/Applications` |
-| IDEA 配置 | `~/Library/Application Support/JetBrains/IdeaIC2024.3`，可通过 `IDEA_CONFIG_DIR` 指定 |
+| IDEA 配置 | `~/Library/Application Support/JetBrains/IdeaIC2025.3`，可通过 `IDEA_CONFIG_DIR` 指定 |
 | IDEA JDK 8 名称 | `azul-1.8`，可通过 `IDEA_JDK_NAME` 指定；与实际安装路径分别管理 |
-| IDEA 插件 | `~/Library/Application Support/JetBrains/IdeaIC2024.3/plugins` |
+| IDEA 插件 | `~/Library/Application Support/JetBrains/IdeaIC2025.3/plugins` |
 | 受管环境 | `~/.config/java-dev/jdk.sh`、`gradle.sh`，由同目录 `env.sh` 聚合加载 |
 
 JDK 配置包含 `JAVA_HOME`、`JAVA_8_HOME`、`JRE_HOME`，其中 `JRE_HOME` 指向实际 `$JAVA_HOME/jre`。`GRADLE_HOME` 指向最近选择的 Gradle，保留已配置的 `GRADLE_4_5_1_HOME` / `GRADLE_6_8_HOME` 版本别名，并配置 `GRADLE_USER_HOME`。聚合环境把 Java 和 Gradle 的 `bin` 放在 `PATH` 前部并去重，不设置全局 `CLASSPATH`。

@@ -1,6 +1,8 @@
 # IDEA 与全部插件修复
 
-团队基线为 **IntelliJ IDEA Community 2024.3.7.1**，应用安装在 **`/Users/用户名/Applications/IntelliJ IDEA CE.app`**。脚本使用当前 `HOME` 解析用户名和主目录，`~/Applications` 是此个人应用目录的简写；不会在主目录下再次拼接 `Users/用户名`，也不要求填写用户名或运行 `sudo`。IDEA 与 iTerm2 共用这一目录规则，与系统 `/Applications` 不同。
+团队基线为 **IntelliJ IDEA Community Open Source 2025.3.6.1**，应用安装在 **`/Users/用户名/Applications/IntelliJ IDEA CE.app`**。脚本使用当前 `HOME` 解析用户名和主目录，`~/Applications` 是此个人应用目录的简写；不会在主目录下再次拼接 `Users/用户名`，也不要求填写用户名或运行 `sudo`。IDEA 与 iTerm2 共用这一目录规则，与系统 `/Applications` 不同。
+
+安装包来自 JetBrains 的 GitHub 官方开源发行，应用标识为 `com.jetbrains.intellij.ce`，配置目录标识为 `IdeaIC2025.3`。2025.3 起官网采用统一分发，团队这里固定使用独立开源构建；发行来源、DMG 摘要和插件依据见[来源说明](../resources/plugin-sources.md)。2024 已从有效下载清单和新安装基线移除。
 
 菜单 `1` 固定安装配置 JDK 8、Gradle 4.5.1、IDEA 和全部六个推荐插件；菜单 `4` 单独安装 IDEA，菜单 `5` 安装并验证全部六个推荐插件。仅下载功能保留为维护者命令行入口，下载 ZIP 不等于插件已经安装。
 
@@ -15,6 +17,8 @@
 菜单 `4` 显示当前用户 `$HOME/Applications` 的实际路径，并按 Mac 架构从内网下载或复用 DMG，校验固定 SHA-256 后只读挂载。安装前检查社区版 bundle ID、短版本、构建号和可执行文件；复制到个人应用目录的临时位置后再次检查，最后保存到目标路径。
 
 已有同版本、同构建号且完整的应用会复用；其他版本、不完整目标或符号链接会保留并报错，不直接覆盖。`~/Applications` 若是指向其他位置的符号链接，安装器也会拒绝，避免意外写入系统目录。
+
+若目标位置已有 2024 版，先按[卸载指南](cleanup.md)核对并确认卸载，再重新运行安装。选择删除 IDEA 后，配置、SDK 登记和用户插件默认一并删除；如需保留，应在保留提示中明确回答 `y` / `yes`。新版本默认读取 `IdeaIC2025.3`，保留旧配置不代表已经迁移或完成新版本的 SDK 设置。
 
 完成后在 Finder 中按 `Command + Shift + G`，输入：
 
@@ -35,14 +39,14 @@
 | GenerateAllSetter | 2.8.5 | 生成 setter 调用 |
 | GsonFormatPlus | 1.6.1 | 根据 JSON 生成 Java 对象代码 |
 | Key Promoter X | 2026.1.2 | 提示操作对应的快捷键 |
-| Lombok | 243.28141.18 | 让 IDEA 识别 Lombok 生成的构造器、getter 和 setter |
+| Lombok | 253.28294.251 | 让 IDEA 识别 Lombok 生成的构造器、getter 和 setter |
 
-这些版本与团队 IDEA 2024 基线配套。固定来源和兼容范围见[插件来源说明](../resources/plugin-sources.md)，不要直接替换为 Marketplace 最新版。
+这些版本与团队 IDEA 2025.3 基线配套。本次仅将 Lombok 更新为 `253.28294.251`，其余五个版本的声明范围仍覆盖目标 build；MyBatisX 保留兼容的 `1.7.6`，`1.7.7` 也已支持该基线，不再适用原先针对 2024 的排除理由。固定来源和兼容范围见[插件来源说明](../resources/plugin-sources.md)，调整版本前仍须复核兼容性。
 
 默认插件目录为：
 
 ```text
-~/Library/Application Support/JetBrains/IdeaIC2024.3/plugins
+~/Library/Application Support/JetBrains/IdeaIC2025.3/plugins
 ```
 
 维护者可通过 `IDEA_PLUGINS_DIR` 指定其他受控目录；应用位置由 `IDEA_APP` 表示。修复流程会对全部目标插件逐项安装和验证，最终报告实际结果。需要替换原插件时，旧目录保存在**本次修复历史**的 `plugin-backups/`；用户其他插件不应当作这六个插件的安装结果。
@@ -60,14 +64,14 @@
 
 菜单 `1` 和 `5` 已包含 Lombok；自动安装完成后，从第 4 步开始检查。需要单独手动安装时，按以下步骤操作：
 
-1. 由维护者运行 `bash dev-kit/.support/scripts/download-tools.sh --id lombok`，得到 `~/Downloads/team-java-env/plugins/idea/lombok-243.28141.18.zip`。
+1. 由维护者运行 `bash dev-kit/.support/scripts/download-tools.sh --id lombok`，得到 `~/Downloads/team-java-env/plugins/idea/lombok-253.28294.251.zip`。
 2. 打开 IDEA，在 macOS 顶部菜单选择 `IntelliJ IDEA → Settings… → Plugins`（旧版本设置菜单可能叫 `Preferences…`）。
 3. 点击 Plugins 页的齿轮，选择 `Install Plugin from Disk…`，选中上述原始 ZIP，点击 `OK`，按提示重启 IDEA。无需先解压 ZIP。[IDEA 官方安装说明](https://www.jetbrains.com/help/idea/managing-plugins.html)
 4. 进入 `Settings → Plugins → Installed`，搜索 `Lombok`，确认已启用；若显示 `Enable`，点击启用并按提示重启。
 5. 进入 `Settings → Build, Execution, Deployment → Compiler → Annotation Processors`，勾选 `Enable annotation processing` 和 `Obtain processors from project classpath`，点击 `Apply → OK`。[IDEA 官方注解处理说明](https://www.jetbrains.com/help/idea/annotation-processors-support.html)
 6. 重新加载 Gradle 项目，检查使用 `@RequiredArgsConstructor` 的类是否仍提示 `final` 字段未初始化，并完成真实项目构建验证。
 
-IDEA Lombok 插件用于编辑器识别，业务项目仍需在 `build.gradle` 中声明 Lombok 依赖。IDE 插件版本 `243.28141.18` 与项目使用的 Lombok 库版本分别管理；团队 Gradle 4.5.1 的依赖处理见[项目依赖说明](dependencies.md#gradle-451-与-lombok)。
+IDEA Lombok 插件用于编辑器识别，业务项目仍需在 `build.gradle` 中声明 Lombok 依赖。IDE 插件版本 `253.28294.251` 与项目使用的 Lombok 库版本分别管理；团队 Gradle 4.5.1 的依赖处理见[项目依赖说明](dependencies.md#gradle-451-与-lombok)。
 
 ## 必要设置
 
@@ -83,7 +87,7 @@ SDK 配置完成后，在 IDEA 中检查：
 
 ## 只读项目预检
 
-维护者通过 `check-env.sh --project` 或 `repair-env.sh --project` 指定项目后，会使用 macOS 的 `xmllint` 读取项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。成员无需安装 Python；菜单不选择或检查业务项目。
+维护者通过 `check-env.sh --project` 或 `repair-env.sh --project` 指定项目后，会使用 macOS 的 `xmllint` 读取项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2025.3`。成员无需安装 Python；菜单不选择或检查业务项目。
 
 预检检查 Project SDK、Gradle JVM 是否已登记且指向有效 JDK 8，以及 LOCAL 的 Gradle 目录等信息；待配置时打印实际 JDK/Gradle 路径和 IDEA 设置入口。它不会自动写入用户 IDEA 配置，也不会启动 GUI。自定义配置目录时，可由维护者设置 `IDEA_CONFIG_DIR` 后运行：
 

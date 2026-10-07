@@ -1,104 +1,107 @@
-# IDEA 2024 与离线插件来源核验
+# IDEA 2025 与离线插件来源核验
 
-## 新增 Lombok
+核验日期：**2026-10-07**。当前基线为 **IntelliJ IDEA Community Open Source 2025.3.6.1**，面向 macOS Apple Silicon / Intel。2024 已从有效下载清单和新安装基线移除；本文替代此前针对 2024.3.7.1 与 Lombok 243 系列的下载建议。旧验收记录只代表当时版本，不作为新版本已完成安装或 GUI 验收的依据。
 
-2026-10-06 将 Lombok 纳入默认插件清单。使用 JetBrains 官方按 build 下载接口传入 `IC-243.28141.41`，解析到以下 stable 版本，已下载官方原包并读取内部 `META-INF/plugin.xml`：
+## 发行版本与应用标识
 
-| 插件 | 固定版本 / updateId | 声明的兼容 build | 必需依赖 | 官方原包 |
-| --- | --- | --- | --- | --- |
-| Lombok | `243.28141.18` / `854391` | `243.28141 — 243.*` | `com.intellij.modules.lang`、`com.intellij.modules.platform`、`com.intellij.modules.java` | [lombok-243.28141.18.zip](https://plugins.jetbrains.com/files/6317/854391/lombok-243.28141.18.zip) |
+JetBrains 从 2025.3 起在官网提供统一发行版，同时在 `JetBrains/intellij-community` 发布仅包含开源部分的构建。本工具固定使用后者的 CE / OSS 原包。官方 GitHub Release 列表中，2025 系列最高稳定版本为 **2025.3.6.1**，发布日期为 **2026-07-29**；2025.2.6.3 属于较早的版本分支，不作为此次基线。来源：[JetBrains 发行方式说明](https://blog.jetbrains.com/idea/2025/07/intellij-idea-unified-distribution-plan/)、[官方社区版下载说明](https://youtrack.jetbrains.com/projects/DS/articles/SUPPORT-A-2314/IntelliJ-IDEA-Community-Edition)、[GitHub Release 列表 API](https://api.github.com/repos/JetBrains/intellij-community/releases?per_page=100)、[2025.3.6.1 Release](https://github.com/JetBrains/intellij-community/releases/tag/idea%2F2025.3.6.1)。
 
-ZIP 为 494873 字节，唯一条目为 `lombok/lib/lombok.jar`；XML ID 使用历史拼写 `Lombook Plugin`。描述文件使用旧式 `<depends>`，无额外必需插件及新式 `<dependencies>` 子元素，兼容当前自动安装器。官方 Marketplace 标记 `pricingModel=FREE`，许可链接指向 [JetBrains User Agreement](https://www.jetbrains.com/legal/docs/toolbox/user.html)；归档未附独立 LICENSE/NOTICE 文件，不将其标记为 Apache 2.0。
+该版本 tag 的官方构建源码明确了以下标识：
 
-来源：[按 build 下载接口](https://plugins.jetbrains.com/pluginManager?action=download&id=Lombook%20Plugin&build=IC-243.28141.41)、[指定更新](https://plugins.jetbrains.com/api/updates/854391)、[插件详情](https://plugins.jetbrains.com/api/plugins/6317)、[版本页](https://plugins.jetbrains.com/plugin/6317-lombok/versions/stable/854391)。
+| 项目 | 当前值 |
+| --- | --- |
+| 应用目录名 | `IntelliJ IDEA CE.app` |
+| macOS bundle ID | `com.jetbrains.intellij.ce` |
+| DataDirectorySelector | `IdeaIC2025.3` |
+| 产品代码 | `IC` |
+| 两架构 DMG 实测 build | `IC-253.33813.55` |
+| 默认配置目录 | `~/Library/Application Support/JetBrains/IdeaIC2025.3` |
+| 默认用户插件目录 | `~/Library/Application Support/JetBrains/IdeaIC2025.3/plugins` |
 
-ZIP 和内部 JAR 完整性检查通过，本地计算的 SHA-256 为：
+应用名称、bundle ID 和目录标识依据该 tag 的 [IdeaCommunityProperties.kt](https://github.com/JetBrains/intellij-community/blob/idea/2025.3.6.1/build/src/org/jetbrains/intellij/build/IdeaCommunityProperties.kt)；版本和 `IC` 产品代码依据 [IdeaApplicationInfo.xml](https://github.com/JetBrains/intellij-community/blob/idea/2025.3.6.1/community-resources/resources/idea/IdeaApplicationInfo.xml)。2026-10-07 已下载两份 CE 原包并核对官方摘要，然后分别只读挂载：`Contents/Info.plist` 的版本均为 `2025.3.6.1`、构建号均为 `IC-253.33813.55`、bundle ID 均为 `com.jetbrains.intellij.ce`；`Contents/Resources/product-info.json` 的产品代码为 `IC`、目录标识为 `IdeaIC2025.3`。检查后已卸载挂载，未启动或安装 IDEA。
 
-```text
-cfd5f5dea4cfff7291219f143a53941f12f85fecb55f62d7f36ff61f0e2e8290  lombok-243.28141.18.zip
-```
+## 两架构官方 DMG
 
-该摘要来自实际下载文件，不是官方独立公布的摘要。IDE 插件版本与业务项目的 Lombok 库版本分别管理，安装、启用、注解处理和项目验收步骤见 [IDE 指南](../environment/ide.md#lombok-安装与启用步骤)。此次核验未在真实 IDEA 中验收编辑器功能。
+下列下载地址、字节数和 SHA-256 均来自 [JetBrains 官方 GitHub Release 资产 API](https://api.github.com/repos/JetBrains/intellij-community/releases/tags/idea%2F2025.3.6.1)。摘要读取资产的 `digest` 字段，已去掉其 `sha256:` 前缀写入下载清单；不是沿用旧版的校验文件，也不是统一发行版的 DMG 摘要。
 
-## 新增 GsonFormatPlus 与 Key Promoter X
+| 平台 | 官方原包 | 字节数 |
+| --- | --- | ---: |
+| Apple Silicon / arm64 | [idea-2025.3.6.1-aarch64.dmg](https://github.com/JetBrains/intellij-community/releases/download/idea/2025.3.6.1/idea-2025.3.6.1-aarch64.dmg) | 792071294 |
+| Intel / x86_64 | [idea-2025.3.6.1.dmg](https://github.com/JetBrains/intellij-community/releases/download/idea/2025.3.6.1/idea-2025.3.6.1.dmg) | 802415690 |
 
-2026-10-06 根据团队选择追加两款免费插件，已下载并读取 ZIP 内的 `plugin.xml`：
-
-| 插件 | 固定版本 / updateId | 声明的最低 IDEA build | 平台依赖 | 官方原包 |
-| --- | --- | --- | --- | --- |
-| GsonFormatPlus | 1.6.1 / 115983 | 135.121，无声明上限 | `com.intellij.modules.java` | [GsonFormatPlus.zip](https://plugins.jetbrains.com/files/14949/115983/GsonFormatPlus.zip) |
-| Key Promoter X | 2026.1.2 / 1098878 | 241，无声明上限 | `com.intellij.modules.lang` | [Key_Promoter_X-2026.1.2.zip](https://plugins.jetbrains.com/files/9792/1098878/Key_Promoter_X-2026.1.2.zip) |
-
-两者声明的范围覆盖目标 `IC-243.28141.41`，依赖均为 IDEA 平台模块。版本元数据：[GsonFormatPlus](https://plugins.jetbrains.com/api/updates/115983)、[Key Promoter X](https://plugins.jetbrains.com/api/updates/1098878)。GsonFormatPlus 的本地文件重命名为 `GsonFormatPlus-1.6.1.zip`，文件内容保持原样。
-
-已检查 ZIP 完整性，并记录以下本地 SHA-256（不是官方独立公布的摘要）：
+官方 SHA-256：
 
 ```text
-36e98bbfbf6900704e87a8eea99635b076c49ae69ebca058e77f0fd3c0f6f250  GsonFormatPlus-1.6.1.zip
-dd76969715fb8d1d2e1f1fee4e9961c8f9b0d49f835a2c7a7d0c1e71709fae4c  Key_Promoter_X-2026.1.2.zip
+95d0a589966484688dfdd14d5396edca38d8aa3462c366e286e1422b40afafbd  idea-2025.3.6.1-aarch64.dmg
+a4655cbf9b4c7d97efceff3e10221777124a445d9a5ad02b420002fd0ddfe4ce  idea-2025.3.6.1.dmg
 ```
 
-成员可通过菜单 `5` 安装全部 IDEA 插件；需要手动安装时，由维护者通过 `download-tools.sh` 下载原始 ZIP，再使用 IDEA 的 `Install Plugin from Disk` 安装并按提示重启。本次来源核验未对用户正在使用的 IDEA 执行安装或功能验收。
+两个 DMG 合计 1594486984 字节，约 1.59 GB；应按目标电脑架构提供对应文件。本轮已完成实际文件摘要校验和只读包内元数据检查；后续分发仍须重新校验文件。资源校验通过不等于已在每种 macOS 或两种 CPU 的真实电脑上运行通过。
 
-核验日期：2026-10-06。目标：macOS Apple Silicon / Intel，IntelliJ IDEA **Community Edition 2024.3.7.1，build `IC-243.28141.41`**。本文记录官方来源和静态兼容性；不表示已经在 IDEA 中安装并验收全部插件。
+## 六个固定插件与兼容性
 
-## IDEA 安装包
+本轮复核了 JetBrains Marketplace 原始更新 API，以及现有 ZIP 内 JAR 的 `META-INF/plugin.xml`；新 Lombok 也已下载官方原包并读取描述文件。目标为 `IC-253.33813.55`。旧 Lombok `243.28141.18` 的上限是 `243.*`，必须替换；另外五个现有插件均覆盖 253，保留原固定版本。
 
-JetBrains 产品发行 API 的 `IIC` / `type=release` 记录中，2024.3 分支最新正式版为 `2024.3.7.1`，发行日期 `2026-04-30`，build `243.28141.41`。固定这一版本；不要使用会滚动到新大版本的“latest”地址。来源：[官方发行 API](https://data.services.jetbrains.com/products/releases?code=IIC&type=release)、[版本说明](https://youtrack.jetbrains.com/articles/IDEA-A-2100662666/IntelliJ-IDEA-2024.3.7.1-243.28141.41-build-Release-Notes)。
+| 插件 | 固定版本 / updateId | Marketplace 范围 | 实际 plugin.xml 范围 | 字节数 |
+| --- | --- | --- | --- | ---: |
+| Database Navigator | `4.1.0.3` / `1177352` | `231.9423.9 — 263.*` | `231.9423.9 — 263.*` | 83426592 |
+| MyBatisX | `1.7.6` / `1049967` | `232.0 — 262.*` | `232 — 263.*` | 3294483 |
+| GenerateAllSetter | `2.8.5` / `1062692` | `213.0+` | `213+` | 192249 |
+| GsonFormatPlus | `1.6.1` / `115983` | `135.121+` | `135.121+` | 169687 |
+| Key Promoter X | `2026.1.2` / `1098878` | `241.0+` | `241+` | 66926 |
+| Lombok | `253.28294.251` / `902657` | `253.28294 — 253.*` | `253.28294 — 253.*` | 530229 |
 
-| 平台 | 文件与官方直链 | 字节数 | 官方校验文件 |
-| --- | --- | ---: | --- |
-| Apple Silicon / arm64 | [ideaIC-2024.3.7.1-aarch64.dmg](https://download.jetbrains.com/idea/ideaIC-2024.3.7.1-aarch64.dmg) | 950743474 | [SHA-256](https://download.jetbrains.com/idea/ideaIC-2024.3.7.1-aarch64.dmg.sha256) |
-| Intel / x86_64 | [ideaIC-2024.3.7.1.dmg](https://download.jetbrains.com/idea/ideaIC-2024.3.7.1.dmg) | 960390082 | [SHA-256](https://download.jetbrains.com/idea/ideaIC-2024.3.7.1.dmg.sha256) |
+`+` 表示描述文件没有声明最高 build，不代表所有后续 IDE 版本的功能均已实机验证。MyBatisX 的元数据与实际包上限不同，但 253 同时位于两者范围内。
 
-2026-10-06 实际读取的官方 SHA-256：
+官方固定下载和元数据：
 
-```text
-9ea06122b3917fe1f252e28cd0448fed47e5c723917e1cd3188356a728b16461  ideaIC-2024.3.7.1-aarch64.dmg
-3decf9108691293922f87b3596154a6b7738edff0c2170ecc4cb39737117153a  ideaIC-2024.3.7.1.dmg
-```
-
-两条 DMG 链接均经 HEAD 跟随到 `download-cdn.jetbrains.com` 并返回 HTTP 200，长度与发行 API 一致。它们是两个独立架构的完整安装包，总计约 1.91 GB；不要仅准备其中一个供所有 Mac 使用。研究阶段未下载 DMG。当前核验未覆盖 2024.3.7.1 对每种 macOS 版本的实际运行兼容性，旧系统应先在团队样机试装。
-
-Community Edition 的核心按 Apache 2.0 提供，部分随附插件有独立免费条款；保留官方原包及其中的许可证。`IIC` 发行 API 含 `licenseRequired: true` 字段，不能仅凭该字段把社区版判为收费产品。[JetBrains Community Edition 条款](https://www.jetbrains.com/legal/docs/toolbox/user_community/)、[官方商业开发使用说明](https://sales.jetbrains.com/hc/en-gb/articles/360021922640-Can-I-use-free-versions-of-IntelliJ-IDEA-and-PyCharm-for-developing-commercial-proprietary-software)
-
-## 已确认适配的免费插件
-
-下列版本来自官方 Marketplace stable 更新 API；同时以 JetBrains 公开下载接口传入 `build=IC-243.28141.41` 发起 HEAD 请求，服务端选择的 `updateId` 与下表一致，最终均返回 HTTP 200。`since` / `until` 表示声明的兼容范围；没有上限不等于所有功能已通过实机测试。[官方按 build 下载说明](https://plugins.jetbrains.com/docs/marketplace/plugin-update-download.html)、[build 范围说明](https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html)
-
-| 插件 | 固定版本 / updateId | Marketplace 兼容 build | 字节数 | 官方离线 ZIP |
-| --- | --- | --- | ---: | --- |
-| Database Navigator | `4.1.0.3` / `1177352` | `231.9423.9 — 263.*` | 83426592 | [DBN-4.1.0.3.zip](https://plugins.jetbrains.com/files/1800/1177352/DBN-4.1.0.3.zip) |
-| MyBatisX | `1.7.6` / `1049967` | `232.0 — 262.*` | 3294483 | [MybatisX-1.7.6.zip](https://plugins.jetbrains.com/files/10119/1049967/MybatisX-1.7.6.zip) |
-| GenerateAllSetter | `2.8.5` / `1062692` | `213.0+` | 192249 | [GenerateAllSetter-2.8.5.zip](https://plugins.jetbrains.com/files/9360/1062692/GenerateAllSetter-2.8.5.zip) |
-| Spring Boot Assistant（可选替代插件） | `601.0.7+242` / `1118264` | `242.0+` | 7534079 | [spring-boot-assistant-601.0.7_242.zip](https://plugins.jetbrains.com/files/17747/1118264/spring-boot-assistant-601.0.7_242.zip) |
-
-插件 ZIP 无需按 Mac CPU 架构重复存储。上述下载地址会重定向至 JetBrains 官方 `downloads.marketplace.jetbrains.com` CDN。静态兼容性及文件信息可复查：
-
-- Database Navigator：[详情与费用元数据](https://plugins.jetbrains.com/api/plugins/1800)、[指定更新](https://plugins.jetbrains.com/api/updates/1177352)、[版本页](https://plugins.jetbrains.com/plugin/1800-database-navigator/versions/stable/1177352)。XML ID 为 `DBN`；`pricingModel=FREE`，许可链接为 Apache 2.0；源码：[Oracle 官方仓库](https://github.com/oracle/database-navigator)。该版本声明了按需下载 JDBC 驱动的功能，离线数据库连接不能只凭插件 ZIP 判定准备完成；还应验证所用 MySQL 驱动已随包提供或另行缓存。
-- MyBatisX：[详情与费用元数据](https://plugins.jetbrains.com/api/plugins/10119)、[指定更新](https://plugins.jetbrains.com/api/updates/1049967)、[全部版本](https://plugins.jetbrains.com/api/plugins/10119/updates?size=100)。XML ID 为 `com.baomidou.plugin.idea.mybatisx`；`pricingModel=FREE`，Marketplace 许可链接为 MIT，源码为作者提供的 [MybatisX 仓库](https://gitee.com/baomidou/MybatisX/)。**不要下载当前最新版 `1.7.7`：其最低 build 为 `251.0`，不支持 IDEA 2024。** 已读取 `1.7.6` ZIP 中的 `plugin.xml`，其中范围为 `232 — 263.*`，比 Marketplace API 的上限宽；目标 `243.28141.41` 同时落在两者范围内。必需依赖为 `com.intellij.java`，数据库、Spring、Spring Boot、Kotlin、IntelliLang 均标记为可选。
-- GenerateAllSetter：[详情与费用元数据](https://plugins.jetbrains.com/api/plugins/9360)、[指定更新](https://plugins.jetbrains.com/api/updates/1062692)。XML ID 为 `com.bruce.intellijplugin.generatesetter`；`pricingModel=FREE`；作者的 [license 文件](https://github.com/gejun123456/intellij-generateAllSetMethod/blob/master/license) 为 GNU GPL Version 2 文本。已读取 `2.8.5` ZIP 中的 `plugin.xml`：必需 `com.intellij.modules.java`，Kotlin、Groovy 为可选。离线分发保留许可证，并为对应源码提供随包副本或符合该许可要求的获取方式；本次尚未核验哪个源码 tag 精确对应 Marketplace 二进制。
-- Spring Boot Assistant：[详情与费用元数据](https://plugins.jetbrains.com/api/plugins/17747)、[指定更新](https://plugins.jetbrains.com/api/updates/1118264)。XML ID 为 `dev.flikas.idea.spring.boot.assistant.plugin`；`pricingModel=FREE`，MPL 2.0。作者明确面向 Community Edition，提供 Spring Boot YAML / properties 配置辅助，且与原 Spring Assistant 是不同插件。[作者说明与源码](https://github.com/flikas/idea-spring-boot-assistant)。已读取 ZIP 中的 `plugin.xml`：必需 `com.intellij.modules.platform`、`com.intellij.modules.java`、`com.intellij.modules.lang`、`org.jetbrains.plugins.yaml`、`com.intellij.properties`。本次未确认目标 DMG 中 YAML / Properties 的随附与启用状态，内网使用前须检查；若缺失，要再准备匹配 `243.28141.41` 的依赖插件。
-
-## 不纳入默认免费包的候选
-
-| 候选 | 核验结果 | 处理 |
+| 插件 | 官方原包 | 官方更新元数据 |
 | --- | --- | --- |
-| Spring Boot Helper（Marketplace ID `18622`） | `2023.3.6` / updateId `1104365`，最低 build `233.0`，无上限；适配范围包含目标，但 `pricingModel=PAID` | 不作为免费插件默认分发；需要时使用者按作者条款取得许可 |
-| 原 Spring Assistant（Marketplace ID `10229`） | 最新 `0.12.0` / updateId `44968`，build `172.0 — 201`，Marketplace 支持列表只到 IDEA 2019.3.5；免费 / MIT | 不适配 `243`，不打包、不通过修改 plugin.xml 强装 |
+| Database Navigator | [DBN-4.1.0.3.zip](https://plugins.jetbrains.com/files/1800/1177352/DBN-4.1.0.3.zip) | [update 1177352](https://plugins.jetbrains.com/api/updates/1177352) |
+| MyBatisX | [MybatisX-1.7.6.zip](https://plugins.jetbrains.com/files/10119/1049967/MybatisX-1.7.6.zip) | [update 1049967](https://plugins.jetbrains.com/api/updates/1049967) |
+| GenerateAllSetter | [GenerateAllSetter-2.8.5.zip](https://plugins.jetbrains.com/files/9360/1062692/GenerateAllSetter-2.8.5.zip) | [update 1062692](https://plugins.jetbrains.com/api/updates/1062692) |
+| GsonFormatPlus | [GsonFormatPlus.zip](https://plugins.jetbrains.com/files/14949/115983/GsonFormatPlus.zip) | [update 115983](https://plugins.jetbrains.com/api/updates/115983) |
+| Key Promoter X | [Key_Promoter_X-2026.1.2.zip](https://plugins.jetbrains.com/files/9792/1098878/Key_Promoter_X-2026.1.2.zip) | [update 1098878](https://plugins.jetbrains.com/api/updates/1098878) |
+| Lombok | [lombok-253.28294.251.zip](https://plugins.jetbrains.com/files/6317/902657/lombok-253.28294.251.zip) | [update 902657](https://plugins.jetbrains.com/api/updates/902657) |
 
-Spring Boot Helper 的元数据：[插件详情](https://plugins.jetbrains.com/api/plugins/18622)、[指定版本](https://plugins.jetbrains.com/api/updates/1104365)、[作者许可](https://github.com/eltonsandre/intellij-spring-boot-helper/blob/main/LICENSE_PLUGIN.md)。其官方原包为 [spring-boot-helper-2023.3.6.zip](https://plugins.jetbrains.com/files/18622/1104365/spring-boot-helper-2023.3.6.zip)，4910227 字节；能下载 ZIP 不代表免费使用。本次没有下载或安装它。
+GsonFormatPlus 的本地文件命名为 `GsonFormatPlus-1.6.1.zip`，内容保持原样。六个 ZIP 不需要按 Mac CPU 架构重复保存。
 
-原 Spring Assistant 的元数据：[插件详情](https://plugins.jetbrains.com/api/plugins/10229)、[指定版本](https://plugins.jetbrains.com/api/updates/44968)。旧包追溯链接为 [intellij-spring-assistant-0.12.0.zip](https://plugins.jetbrains.com/files/10229/44968/intellij-spring-assistant-0.12.0.zip)，1027198 字节；仅用于记录，不作为 IDEA 2024 下载清单。
+同时调用官方 `plugins/list?pluginId=…&build=IC-253.33813.55` 查询完整 CE 构建的兼容版本，返回 Database Navigator 4.1.0.3、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 253.28294.251，MyBatisX 则返回 1.7.7。复查入口：[DBN](https://plugins.jetbrains.com/plugins/list?pluginId=1800&build=IC-253.33813.55)、[MyBatisX](https://plugins.jetbrains.com/plugins/list?pluginId=10119&build=IC-253.33813.55)、[GenerateAllSetter](https://plugins.jetbrains.com/plugins/list?pluginId=9360&build=IC-253.33813.55)、[GsonFormatPlus](https://plugins.jetbrains.com/plugins/list?pluginId=14949&build=IC-253.33813.55)、[Key Promoter X](https://plugins.jetbrains.com/plugins/list?pluginId=9792&build=IC-253.33813.55)、[Lombok](https://plugins.jetbrains.com/plugins/list?pluginId=6317&build=IC-253.33813.55)。接口用法见[官方详情 API](https://plugins.jetbrains.com/docs/marketplace/plugin-details.html)和[按 build 下载 API](https://plugins.jetbrains.com/docs/marketplace/plugin-update-download.html)。
 
-## 校验与验证边界
+**MyBatisX 1.7.7 可以适配当前基线。** 其最低 build 为 `251.0`、最高为 `263.*`，见[官方更新元数据](https://plugins.jetbrains.com/api/updates/1171092)。此前“不使用 1.7.7，因为 IDEA 2024 不支持”的建议已失效；本次保留 1.7.6，是因为它仍兼容，不需要随着 IDEA 升级更换。其他研究候选不纳入本次六插件清单。
 
-本次查看的 Marketplace 元数据和下载响应头未提供官方 SHA-256，响应头的 ETag 不能作为 SHA-256 使用。维护者实际下载后应计算本地 SHA-256，写入发放目录的校验清单。研究时为读取描述文件下载了三个小 ZIP，得到以下**本地计算值（不是官方独立公布值）**：
+## 必需依赖与离线边界
+
+以下来自实际 `plugin.xml`，未通过修改描述文件放宽兼容范围：
+
+| 插件 | XML ID | 必需依赖 |
+| --- | --- | --- |
+| Database Navigator | `DBN` | `com.intellij.modules.platform`、`com.intellij.modules.lang` |
+| MyBatisX | `com.baomidou.plugin.idea.mybatisx` | `com.intellij.java` |
+| GenerateAllSetter | `com.bruce.intellijplugin.generatesetter` | `com.intellij.modules.java` |
+| GsonFormatPlus | `GsonFormatPlus`（沿用插件名称） | `com.intellij.modules.java` |
+| Key Promoter X | `Key Promoter X`（沿用插件名称） | `com.intellij.modules.lang` |
+| Lombok | `Lombook Plugin`（历史拼写） | `com.intellij.modules.lang`、`com.intellij.modules.platform`、`com.intellij.modules.java` |
+
+Database Navigator 的 Java、JSON、Maven、调试器等扩展依赖均为可选；MyBatisX 的数据库、Spring、Spring Boot、Kotlin、IntelliLang 依赖也均为可选。GenerateAllSetter 的 Kotlin 和 Groovy 支持为可选。这些可选功能不能据此视为已经在开源版中启用。
+
+数据库连接可能仍需额外 JDBC 驱动和网络访问；插件 ZIP 不包含全部业务依赖缓存。IDEA 的 Lombok 插件与项目中的 Lombok 依赖版本分别管理，使用步骤见[IDE 指南](../environment/ide.md#lombok-安装与启用步骤)。
+
+## 插件本地摘要与验收边界
+
+上述 Marketplace 更新元数据未提供独立 SHA-256，下载清单中的插件摘要字段仍为 `-`，下载流程生成同名 `.sha256` 本地记录。2026-10-07 对现有五个原始包和新下载 Lombok 计算得到以下值；**这是本地文件摘要，不是官方独立发布的摘要**：
 
 ```text
+ca5420425544a5a87b3f95a06766ba9e57d04ed404f5b2e187cb7c24b75f77a9  DBN-4.1.0.3.zip
 7ce651b368306a0bf037f55cc2a4eb1c7c0faf56ac6da35665a4448b2c859db0  MybatisX-1.7.6.zip
 66af4972ec650e7165c73186c12f3992f5267aa2c8a697fa12c1997a113ca7d3  GenerateAllSetter-2.8.5.zip
-391f77c7d08e97cca736bd2126e36f6d9a42e1c8a8b991d1a7424c4015f29d77  spring-boot-assistant-601.0.7_242.zip
+36e98bbfbf6900704e87a8eea99635b076c49ae69ebca058e77f0fd3c0f6f250  GsonFormatPlus-1.6.1.zip
+dd76969715fb8d1d2e1f1fee4e9961c8f9b0d49f835a2c7a7d0c1e71709fae4c  Key_Promoter_X-2026.1.2.zip
+051776507843b46cc1764e733cee8b806df8139db81553420f2ff6751f4087a0  lombok-253.28294.251.zip
 ```
 
-待离线包形成后，在目标 IDEA 内通过 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 选择原始 ZIP，按 IDE 提示重启，再验证数据库连接、Mapper/XML 跳转、setter 生成和配置提示。研究阶段未执行安装或功能验收；Database Navigator 包内容、额外 JDBC 驱动、macOS 系统版本以及 Spring 替代插件的目标 IDE 随附依赖仍需在发放前确认。[Oracle 官方从磁盘安装说明](https://docs.oracle.com/en/database/oracle/database-navigator/3.7/dbnug/oracle-database-navigator-users-guide.pdf)
+成员可使用菜单 `5` 安装全部固定插件，或从 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 选择原始 ZIP，无需预先解压。按提示重启后，仍须在真实项目中验证数据库连接、Mapper/XML 跳转、setter 和 JSON 代码生成、快捷键提示与 Lombok 识别。
+
+本轮来源核验覆盖官方发行元数据、固定下载地址、摘要及插件声明范围；不宣称已启动真实 IDEA、完成插件功能验收或完成 Gradle GUI 同步。保留原始安装包及其中的许可证，实际安装结果和项目构建结果分别记录。
+
+本轮还使用六个真实官方插件 ZIP，在临时 HOME 与微型 IDEA 2025.3 fixture 中执行安装和 `--verify-only`，两次均通过；没有修改当前用户的 IDEA 或启动 IDE。

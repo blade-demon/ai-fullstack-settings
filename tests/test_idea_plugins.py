@@ -18,7 +18,7 @@ PLUGINS = (
     ("generate-all-setter", "GenerateAllSetter", "com.bruce.intellijplugin.generatesetter", "2.8.5"),
     ("gsonformatplus", "GsonFormatPlus", "GsonFormatPlus", "1.6.1"),
     ("key-promoter-x", "Key Promoter X", "Key Promoter X", "2026.1.2"),
-    ("lombok", "lombok", "Lombook Plugin", "243.28141.18"),
+    ("lombok", "lombok", "Lombook Plugin", "253.28294.251"),
 )
 
 
@@ -37,11 +37,11 @@ class IdeaPluginTests(unittest.TestCase):
         (self.app / "Contents/MacOS/idea").chmod(0o755)
         with (self.app / "Contents/Info.plist").open("wb") as f:
             plistlib.dump({"CFBundleIdentifier": "com.jetbrains.intellij.ce",
-                          "CFBundleShortVersionString": "2024.3.7.1",
-                          "CFBundleVersion": "IC-243.28141.41"}, f)
+                          "CFBundleShortVersionString": "2025.3.6.1",
+                          "CFBundleVersion": "IC-253.33813.55"}, f)
         (self.app / "Contents/Resources").mkdir()
-        (self.app / "Contents/Resources/product-info.json").write_text('{"dataDirectoryName":"IdeaIC2024.3"}')
-        self.plugins = self.home / "Library/Application Support/JetBrains/IdeaIC2024.3/plugins"
+        (self.app / "Contents/Resources/product-info.json").write_text('{"dataDirectoryName":"IdeaIC2025.3"}')
+        self.plugins = self.home / "Library/Application Support/JetBrains/IdeaIC2025.3/plugins"
         self.sources = self.base / "离线 fixture"
         self.sources.mkdir()
         self.catalog = self.support / "config/resources.tsv"
@@ -68,7 +68,7 @@ class IdeaPluginTests(unittest.TestCase):
             self.write_zip(rid, directory, xml_id, version, omit_id=rid in ("gsonformatplus", "key-promoter-x"))
         self.save_catalog()
 
-    def jar(self, plugin_id, version, since="231", until="243.*", omit_id=False, dependency="com.intellij.modules.java"):
+    def jar(self, plugin_id, version, since="231", until="253.*", omit_id=False, dependency="com.intellij.modules.java"):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w") as archive:
             archive.writestr("META-INF/plugin.xml", '<idea-plugin>' +
@@ -152,6 +152,47 @@ class IdeaPluginTests(unittest.TestCase):
         self.assertFalse(self.plugins.exists())
         self.assertFalse(self.download_marker.exists())
 
+    def test_2024_idea_is_rejected_before_plugin_directory_or_download(self):
+        with (self.app / "Contents/Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleIdentifier": "com.jetbrains.intellij.ce",
+                          "CFBundleShortVersionString": "2024.3.7.1",
+                          "CFBundleVersion": "IC-243.28141.41"}, stream)
+        (self.app / "Contents/Resources/product-info.json").write_text('{"dataDirectoryName":"IdeaIC2024.3"}')
+        for mode in ("--dry-run", "--verify-only"):
+            with self.subTest(mode=mode):
+                result = self.run_script(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("2025.3.6.1", result.stderr)
+        self.assertFalse(self.plugins.exists())
+        self.assertFalse(self.download_marker.exists())
+
+    def test_baseline_overrides_control_build_compatibility_and_default_plugin_directory(self):
+        with (self.app / "Contents/Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleIdentifier": "com.jetbrains.intellij.ce",
+                          "CFBundleShortVersionString": "2025.3.fixture",
+                          "CFBundleVersion": "IC-253.40000.1"}, stream)
+        (self.app / "Contents/Resources/product-info.json").write_text('{"dataDirectoryName":"IdeaIC2025.fixture"}')
+        rid, directory, xml_id, version = PLUGINS[-1]
+        self.write_zip(rid, directory, xml_id, version, since="253.40000", until="253.40000.*")
+        self.save_catalog()
+        extra = {"IDEA_VERSION": "2025.3.fixture", "IDEA_BUILD": "IC-253.40000.1",
+                 "IDEA_DATA_DIRECTORY": "IdeaIC2025.fixture"}
+        self.assert_ok(self.run_script(extra=extra))
+        destination = self.home / "Library/Application Support/JetBrains/IdeaIC2025.fixture/plugins"
+        for _, directory, _, _ in PLUGINS:
+            self.assertTrue((destination / directory / "lib/plugin.jar").is_file())
+        self.assertFalse(self.plugins.exists())
+        self.assert_ok(self.run_script("--verify-only", extra=extra))
+
+    def test_mismatched_build_or_data_directory_is_rejected_without_download(self):
+        result = self.run_script("--dry-run", extra={"IDEA_BUILD": "IC-253.1.1"})
+        self.assertNotEqual(result.returncode, 0)
+        (self.app / "Contents/Resources/product-info.json").write_text('{"dataDirectoryName":"IdeaIC2024.3"}')
+        result = self.run_script("--dry-run")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.plugins.exists())
+        self.assertFalse(self.download_marker.exists())
+
     def test_verify_only_missing_plugins_fails_without_download_or_profile_creation(self):
         result = self.run_script("--verify-only")
         self.assertNotEqual(result.returncode, 0)
@@ -160,11 +201,14 @@ class IdeaPluginTests(unittest.TestCase):
 
     def test_hash_mismatch_and_incompatible_version_leave_all_plugins_uninstalled(self):
         rid, directory, xml_id, version = PLUGINS[-1]
-        self.write_zip(rid, directory, xml_id, version, since="251")
-        self.save_catalog()
-        result = self.run_script()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse((self.plugins / PLUGINS[0][1]).exists())
+        for bounds in ({"since": "261"}, {"until": "243.*"}):
+            with self.subTest(bounds=bounds):
+                self.write_zip(rid, directory, xml_id, version, **bounds)
+                self.save_catalog()
+                result = self.run_script()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("不兼容", result.stderr)
+                self.assertFalse((self.plugins / PLUGINS[0][1]).exists())
         self.write_zip(rid, directory, xml_id, version)
         self.save_catalog()
         (self.sources / f"{rid}.zip").write_bytes(b"bad hash")

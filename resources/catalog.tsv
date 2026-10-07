@@ -5,14 +5,14 @@ gradle-4.5.1-bin	runtime	4.5.1	any	runtime/gradle/gradle-4.5.1-bin.zip	https://s
 gradle-6.8-bin	runtime	6.8	any	runtime/gradle/gradle-6.8-bin.zip	https://services.gradle.org/distributions/gradle-6.8-bin.zip	e2774e6fb77c43657decde25542dea710aafd78c4022d19b196e7e78d79d8c6c
 dbeaver-ce-macos-arm64	software	26.2.2	arm64	software/dbeaver/dbeaver-ce-26.2.2-macos-aarch64.dmg	https://dbeaver.io/files/26.2.2/dbeaver-ce-26.2.2-macos-aarch64.dmg	7f47579bc583571ca0ccef9fdce7d6cc56f84b74844e4e700ab7a46d1e501ec5
 dbeaver-ce-macos-x64	software	26.2.2	x64	software/dbeaver/dbeaver-ce-26.2.2-macos-x86_64.dmg	https://dbeaver.io/files/26.2.2/dbeaver-ce-26.2.2-macos-x86_64.dmg	e8d60c79a9e0191ede23d33b4f6c21385da3474d8aa34c63bae0a553a0c510de
-idea-ce-2024-arm64	software	2024.3.7.1	arm64	software/idea/ideaIC-2024.3.7.1-aarch64.dmg	https://download.jetbrains.com/idea/ideaIC-2024.3.7.1-aarch64.dmg	9ea06122b3917fe1f252e28cd0448fed47e5c723917e1cd3188356a728b16461
-idea-ce-2024-x64	software	2024.3.7.1	x64	software/idea/ideaIC-2024.3.7.1.dmg	https://download.jetbrains.com/idea/ideaIC-2024.3.7.1.dmg	3decf9108691293922f87b3596154a6b7738edff0c2170ecc4cb39737117153a
+idea-ce-2025-arm64	software	2025.3.6.1	arm64	software/idea/idea-2025.3.6.1-aarch64.dmg	https://github.com/JetBrains/intellij-community/releases/download/idea/2025.3.6.1/idea-2025.3.6.1-aarch64.dmg	95d0a589966484688dfdd14d5396edca38d8aa3462c366e286e1422b40afafbd
+idea-ce-2025-x64	software	2025.3.6.1	x64	software/idea/idea-2025.3.6.1.dmg	https://github.com/JetBrains/intellij-community/releases/download/idea/2025.3.6.1/idea-2025.3.6.1.dmg	a4655cbf9b4c7d97efceff3e10221777124a445d9a5ad02b420002fd0ddfe4ce
 database-navigator	plugins	4.1.0.3	any	plugins/idea/DBN-4.1.0.3.zip	https://plugins.jetbrains.com/files/1800/1177352/DBN-4.1.0.3.zip	-
 mybatisx	plugins	1.7.6	any	plugins/idea/MybatisX-1.7.6.zip	https://plugins.jetbrains.com/files/10119/1049967/MybatisX-1.7.6.zip	-
 generate-all-setter	plugins	2.8.5	any	plugins/idea/GenerateAllSetter-2.8.5.zip	https://plugins.jetbrains.com/files/9360/1062692/GenerateAllSetter-2.8.5.zip	-
 gsonformatplus	plugins	1.6.1	any	plugins/idea/GsonFormatPlus-1.6.1.zip	https://plugins.jetbrains.com/files/14949/115983/GsonFormatPlus.zip	-
 key-promoter-x	plugins	2026.1.2	any	plugins/idea/Key_Promoter_X-2026.1.2.zip	https://plugins.jetbrains.com/files/9792/1098878/Key_Promoter_X-2026.1.2.zip	-
-lombok	plugins	243.28141.18	any	plugins/idea/lombok-243.28141.18.zip	https://plugins.jetbrains.com/files/6317/854391/lombok-243.28141.18.zip	-
+lombok	plugins	253.28294.251	any	plugins/idea/lombok-253.28294.251.zip	https://plugins.jetbrains.com/files/6317/902657/lombok-253.28294.251.zip	051776507843b46cc1764e733cee8b806df8139db81553420f2ff6751f4087a0
 nvm	runtime	0.40.8	any	frontend/nvm/nvm.tar.gz	https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.8.tar.gz	7c5b2c4c78e6447b518860ead1f365056e9a03b3562903439bb401607b05a2ef
 node14-macos-x64	runtime	14.21.3	x64	frontend/node/node-v14.21.3-darwin-x64.tar.gz	https://nodejs.org/dist/v14.21.3/node-v14.21.3-darwin-x64.tar.gz	a024f0dd5a4c1f951b79959c3e991b30a5919a734ab3e197ae0ef439e5a538b5
 node16-macos-arm64	runtime	16.20.2	arm64	frontend/node/node-v16.20.2-darwin-arm64.tar.gz	https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz	6a5c4108475871362d742b988566f3fe307f6a67ce14634eb3fbceb4f9eea88c

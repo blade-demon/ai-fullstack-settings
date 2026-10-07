@@ -1,6 +1,6 @@
 Java 开发环境修复与验证（macOS）
 
-一键安装基线：JDK 8、独立 Gradle 4.5.1、IDEA 2024.3.7.1 社区版和六个插件。
+一键安装基线：JDK 8、独立 Gradle 4.5.1、IDEA 2025.3.6.1 开源社区版和六个插件。
 Gradle 单独安装还可选择 6.8。
 成员不必安装 Python 或 Homebrew，不必填写内网服务器地址。
 Java安装不需要Git；Oh My Zsh框架需要可用Git，工具不会自动安装Xcode开发工具。
@@ -79,18 +79,20 @@ IDEA 安装到：/Users/当前用户名/Applications/IntelliJ IDEA CE.app
 不会在主目录下再拼接 Users/用户名，也不写入系统 /Applications；无需填写用户名。
 工具校验安装包、版本与应用内容；相同版本和构建号且完整时复用。
 其他已有目标保留并报错，不直接覆盖，不使用 sudo。
+当前使用 JetBrains GitHub 发布的 2025.3.6.1 Community Open Source 原包。
+2024 已从有效下载清单和新安装基线移除；已有 2024 应用须先按第六节核对并确认卸载，再安装 2025。
 
 菜单 1 和 5 默认安装验证全部六个固定插件：
   Database Navigator、MyBatisX、GenerateAllSetter、GsonFormatPlus、Key Promoter X、Lombok。
 插件默认目录：
-  ~/Library/Application Support/JetBrains/IdeaIC2024.3/plugins
+  ~/Library/Application Support/JetBrains/IdeaIC2025.3/plugins
 安装前保存工作并退出 IDEA；工具不会自动强制结束进程。
 完成后手动打开 IDEA，检查 Plugins 页面和实际功能。
 
 维护者通过命令行指定 --project 后，工具使用 macOS 的 xmllint 只读检查
 项目 .idea/misc.xml、.idea/gradle.xml，
 以及 IDEA_CONFIG_DIR/options/jdk.table.xml 中的 SDK 登记，成员无需 Python。
-IDEA_CONFIG_DIR 默认 ~/Library/Application Support/JetBrains/IdeaIC2024.3。
+IDEA_CONFIG_DIR 默认 ~/Library/Application Support/JetBrains/IdeaIC2025.3。
 检查关注 Project SDK、Gradle JVM 是否登记且有效 JDK 8，以及 LOCAL 的 Gradle 目录。
 待配置时打印实际 JDK/Gradle 路径与设置入口，不自动修改 IDEA 配置或启动 GUI。
 已选项目待配置时，环境扫描返回 1；修复预检以阶段退出码 2 记录并继续 SDK/构建验证。
@@ -116,7 +118,7 @@ Settings → Plugins → 齿轮 → Install Plugin from Disk 中选择原始 ZIP
 
 Lombok 已包含在菜单 1 和 5 的自动安装中。单独手动安装步骤：
 1. 由维护者在完整工具目录运行 bash .support/scripts/download-tools.sh --id lombok，文件为：
-   ~/Downloads/team-java-env/plugins/idea/lombok-243.28141.18.zip
+   ~/Downloads/team-java-env/plugins/idea/lombok-253.28294.251.zip
 2. 打开 IntelliJ IDEA → Settings → Plugins，点击齿轮 → Install Plugin from Disk。
 3. 选择上述原始 ZIP，点击 OK，按提示重启 IDEA。
 4. 在 Plugins → Installed 中搜索 Lombok，确认已启用；需要时点击 Enable。
@@ -150,9 +152,12 @@ IDE 插件版本与业务项目的 Lombok 库版本分别管理，项目仍需�
 1. 保存工作，双击「卸载环境.command」。启动入口会下载并校验最新工具，打开安全卸载页面。
    可先只读预览；进入实际卸载时会临时交出终端，保留下面的原确认流程。
    使用完整工具 ZIP 时，直接双击 team-dev-env 内的同名入口，并保留 .support。
-2. 按提示选择是否删除检测到的 IDEA 软件。默认保留 IDEA 配置和用户插件。
+2. 按提示选择是否删除检测到的 IDEA 软件；此处留空或回答 n/no 会保留 IDEA。
+   选择删除后，会继续询问“是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]”。
+   留空或回答 n/no 会一并删除；只有回答 y/yes 才保留这些内容。
 3. 核对实际删除路径和配置清理计划，输入 DELETE 后才执行；取消不会删除。
    清理直接删除所选内容，不建立软件或配置备份；业务项目及 Gradle 用户缓存保留。
+   IDEA 缓存、日志和 Local History 默认也保留，须由维护者显式加 --remove-caches 才纳入。
 4. 查看结果，按 Enter 返回菜单，按 q 退出。实际执行清理时，操作记录位于：
    ~/Library/Logs/team-java-env/cleanup/<本次记录>/report.txt
 

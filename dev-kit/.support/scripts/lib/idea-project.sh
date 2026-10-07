@@ -98,7 +98,7 @@ probe_idea_project() {
     type="$(_idea_xml_value "$misc" '/project/component[@name="ProjectRootManager"]/@project-jdk-type')" || type=''
     if [ "$type" != JavaSDK ]; then PROBE_IDEA_PROJECT_NOTE='项目 SDK 类型不是 JavaSDK，需在 Project Structure 中选择 JDK 8'; return 0; fi
     PROBE_IDEA_PROJECT_SDK_NAME="$(_idea_xml_value "$misc" '/project/component[@name="ProjectRootManager"]/@project-jdk-name')" || PROBE_IDEA_PROJECT_SDK_NAME=''
-    table="${IDEA_CONFIG_DIR:-$HOME/Library/Application Support/JetBrains/IdeaIC2024.3}/options/jdk.table.xml"
+    table="${IDEA_CONFIG_DIR:-$HOME/Library/Application Support/JetBrains/$IDEA_DATA_DIRECTORY}/options/jdk.table.xml"
     sdk_home="$(_idea_sdk_home "$PROBE_IDEA_PROJECT_SDK_NAME" "$project" "$table")" || {
         PROBE_IDEA_PROJECT_NOTE="项目 SDK 未登记、路径失效或不是 JDK 8；Gradle JVM=${PROBE_IDEA_PROJECT_JVM}"
         return 0

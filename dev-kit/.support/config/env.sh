@@ -19,14 +19,16 @@ GRADLE_SHA256="${GRADLE_SHA256:-}"
 GRADLE_INSTALL_DIR="${GRADLE_INSTALL_DIR:-$HOME/.local/share/java-dev/gradle-${GRADLE_VERSION}}"
 GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 GRADLE_BUILD_TASK="${GRADLE_BUILD_TASK:-build}"
-IDEA_VERSION="${IDEA_VERSION:-2024.3.7.1}"
+IDEA_VERSION="${IDEA_VERSION:-2025.3.6.1}"
+IDEA_BUILD="${IDEA_BUILD:-IC-253.33813.55}"
+IDEA_DATA_DIRECTORY="${IDEA_DATA_DIRECTORY:-IdeaIC2025.3}"
 IDEA_JDK_NAME="${IDEA_JDK_NAME:-azul-1.8}"
 # GUI 软件固定安装到当前 HOME 下的 Applications，通常即 /Users/用户名/Applications。
 # 这是派生路径，不接受继承值覆盖，也不使用 USER 再拼接一层 Users/用户名。
 USER_APPLICATIONS_DIR="${HOME%/}/Applications"
 IDEA_APP="${IDEA_APP:-${USER_APPLICATIONS_DIR}/IntelliJ IDEA CE.app}"
-IDEA_CONFIG_DIR="${IDEA_CONFIG_DIR:-$HOME/Library/Application Support/JetBrains/IdeaIC2024.3}"
-IDEA_PLUGINS_DIR="${IDEA_PLUGINS_DIR:-$HOME/Library/Application Support/JetBrains/IdeaIC2024.3/plugins}"
+IDEA_CONFIG_DIR="${IDEA_CONFIG_DIR:-$HOME/Library/Application Support/JetBrains/$IDEA_DATA_DIRECTORY}"
+IDEA_PLUGINS_DIR="${IDEA_PLUGINS_DIR:-$HOME/Library/Application Support/JetBrains/$IDEA_DATA_DIRECTORY/plugins}"
 REPAIR_HISTORY_DIR="${REPAIR_HISTORY_DIR:-$HOME/Library/Logs/team-java-env/history}"
 
 # 可选本地数据库的团队默认值；不在分发文件中保存 MYSQL_ROOT_PASSWORD。

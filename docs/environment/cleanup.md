@@ -1,6 +1,6 @@
 # 卸载 JDK、Gradle 与 IDEA
 
-`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置。交互运行时会询问是否同时删除检测到的 IDEA 软件；默认保留 IDEA 配置和用户插件。完整重装可显式加 `--include-idea`，同时删除应用、专属配置和用户插件。成员使用分发包中的独立「卸载环境.command」，它执行自带运行时的同一份卸载实现，无需预装 Python。维护者直接使用此源码入口时才需要 **Python 3.8+**；安装菜单不增加卸载选项。
+`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置。交互运行时先询问是否删除检测到的 IDEA 软件，默认不删除；选择删除后，默认一并删除专属配置、SDK 登记和用户插件，只有在保留提示中明确回答 `y` / `yes` 才保留。命令行 `--include-idea` 同时删除应用、专属配置和用户插件；`--include-idea-apps` 保持仅删除应用的原语义。成员使用分发包中的独立「卸载环境.command」，它执行自带运行时的同一份卸载实现，无需预装 Python。维护者直接使用此源码入口时才需要 **Python 3.8+**；安装菜单不增加卸载选项。
 
 本项目通过 tar 归档安装 JDK、ZIP 安装 Gradle、DMG 安装 IDEA。JDK/Gradle 的删除依据是安装根目录中的有效来源标记 `.team-java-env-install.json`：`schema` 为 `1`、`tool` 为 `team-java-env`、`kind` 分别为 `jdk` 或 `gradle`，并且目录结构通过相应 SDK 校验。IDEA 应用继续按静态应用标识识别。
 
@@ -14,7 +14,9 @@
 
 从新版 `start.zip` 解压后，双击「卸载环境.command」：入口会下载并校验最新工具，打开 Go TUI 安全卸载页面。选择只读预览，或进入保留原 DELETE 确认的清理引导；卸载页不会启动 SDK 运行探测。完整工具 ZIP 中也包含同名入口，可直接双击；须保留同目录的隐藏 `.support`。
 
-先保存工作，再按提示选择是否删除 IDEA 软件、核对完整删除清单，输入 `DELETE` 后才执行。默认保留 IDEA 配置和用户插件；取消不执行删除。Go TUI 会恢复结果页；普通模式的结果留在终端窗口，按回车后关闭。业务项目、外部 SDK 和 Gradle 用户配置及缓存继续保留；无来源标记的旧安装不会仅凭目录名删除。
+先保存工作，再按提示选择是否删除 IDEA 软件。选择删除后，会询问“是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]”：留空或回答 `n` / `no` 会一并删除，回答 `y` / `yes` 才保留。核对完整删除清单，输入 `DELETE` 后才执行；取消不执行删除。Go TUI 会恢复结果页；普通模式的结果留在终端窗口，按回车后关闭。业务项目、外部 SDK 和 Gradle 用户配置及缓存继续保留；IDEA 缓存、日志和 Local History 也默认保留。无来源标记的旧 SDK 安装不会仅凭目录名删除。
+
+当前新安装基线为 IDEA Community Open Source 2025.3.6.1，默认配置目录为 `IdeaIC2025.3`。2024 已从有效下载清单移除；已有 2024 应用不会被安装器覆盖，先在此核对范围并确认卸载，再安装 2025。需要留存旧设置时，在保留提示中明确回答 `y` / `yes`；保留旧目录不会自动完成新版本的配置迁移。
 
 两个 Gradle 版本（4.5.1、6.8）均按来源标记识别，不需要分别下载卸载工具。每次卸载只保存操作记录，不建立软件或配置备份，具体边界见下文。
 
@@ -72,7 +74,7 @@ bash tools/uninstall-java-gradle.sh --dry-run
 # 执行所选范围；显示计划后必须输入 DELETE 确认
 bash tools/uninstall-java-gradle.sh --apply
 
-# 只删除 IDEA 软件，保留用户配置和插件
+# 额外只删除 IDEA 软件，保留用户配置、SDK 登记和插件
 bash tools/uninstall-java-gradle.sh --include-idea-apps --apply
 
 # 纳入带有效来源标记的系统 JDK；Gradle 用户配置和缓存仍保留
@@ -88,7 +90,9 @@ bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-cac
 bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-caches --apply
 ```
 
-交互引导中的“是否删除 IDEA”用于选择范围；输入 `DELETE` 是对完整永久清理计划的最终确认。回答否、留空或取消 IDEA 选择时，会明确提示保留 IDEA。最终确认之前不关闭应用，也不删除文件。退出应用后重新扫描并校验，避免 IDEA 保存配置使旧计划失效。
+交互引导有两次范围选择：第一问“是否删除上述 IDEA 软件？[y/N]”默认不删除，留空或回答 `n` / `no` 时保留 IDEA 应用和设置；回答 `y` / `yes` 后，第二问“是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]”默认不保留。第二问留空或回答 `n` / `no` 会一并删除，只有 `y` / `yes` 才保留，其他输入会要求重答。输入 `DELETE` 才是对完整永久清理计划的最终确认；最终确认之前不关闭应用，也不删除文件。退出应用后重新扫描并校验，避免 IDEA 保存配置使旧计划失效。
+
+显式使用 `--include-idea-apps` 或 `--include-idea` 时按参数选择范围，不再显示这两次交互范围选择。`--include-idea-apps` 只额外删除应用，仍保留设置；`--include-idea` 额外删除应用、配置、SDK 登记和用户插件。两种方式都保留最终 `DELETE` 确认。
 
 `--apply --yes` 可省略输入确认，适合已经核对计划的自动化测试；`--yes` 必须与 `--apply` 搭配。非交互执行须显式指定删除范围；预览不修改文件、不退出 IDEA，也不创建操作记录。
 
@@ -100,9 +104,9 @@ bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-cac
 | `--apply` | 按计划执行；默认要求输入 `DELETE` |
 | `--yes` | 与 `--apply` 搭配，省略输入确认 |
 | `--include-system` | 允许清理带有效来源标记的系统 JDK；开启 IDEA 清理时也允许 `/Applications` 中的 IDEA；必要时仅针对具体系统安装目录使用 `sudo` |
-| `--include-idea-apps` | 额外删除可识别的 IDEA 软件，保留配置、用户插件和缓存 |
-| `--include-idea` | 额外删除可识别版本的 IDEA 应用、专属配置及用户插件 |
-| `--remove-caches` | 仅在同时指定 `--include-idea` 时额外删除 IDEA 缓存、Local History 和日志；不删除 Gradle 用户配置或缓存 |
+| `--include-idea-apps` | 额外删除可识别的 IDEA 软件，保留配置、SDK 登记、用户插件和缓存 |
+| `--include-idea` | 额外删除可识别版本的 IDEA 应用、专属配置（含 SDK 登记）及用户插件 |
+| `--remove-caches` | 在已纳入 IDEA 配置清理时额外删除 IDEA 缓存、Local History 和日志；维护者可显式搭配 `--include-idea`，不删除 Gradle 用户配置或缓存 |
 | `--jdk-dir /absolute/path` | 补充一个自定义 JDK 候选安装目录，可重复；仍须有效来源标记，不强制删除外部 SDK |
 | `--gradle-dir /absolute/path` | 补充一个自定义 Gradle 候选安装目录，可重复；仍须有效来源标记，不强制删除外部 SDK |
 | `--idea-app /absolute/path/App.app` | 显式添加一个自定义 IDEA 应用，可重复；须同时指定 `--include-idea-apps` 或 `--include-idea` |
@@ -141,14 +145,14 @@ JDK/Gradle 的符号链接及含链接祖先的安装路径不会删除。IDEA �
 
 Gradle 用户配置和缓存可能由外部版本共用，因此本次全部保留，包括 `~/.gradle`、自定义 `GRADLE_USER_HOME`、Wrapper 分发、依赖缓存、`gradle.properties`、`init.gradle`、`init.gradle.kts` 和 `init.d`。`--remove-caches` 也不会删除这些内容。业务项目内的 `.gradle`、Wrapper 文件及构建配置不在清理范围内。
 
-开启 `--include-idea` 后，额外处理下列范围：
+开启 `--include-idea`，或在交互中选择删除 IDEA 且不保留设置后，额外处理下列范围：
 
 - `~/Applications` 和 `/Applications` 中的具体 IDEA `.app`：静态读取 `Contents/Info.plist`，按 `com.jetbrains.intellij` 或 `com.jetbrains.intellij.ce` 标识识别，包含应用内置 JBR 和插件；系统目录执行清理需要 `--include-system`。
-- `~/Library/Application Support/JetBrains/{IdeaIC,IntelliJIdea,IntelliJ}<版本>` 中可明确识别的版本专属目录，包含用户配置和 `plugins`；旧版 `~/Library/Preferences/<产品><版本>` 配置和 `~/Library/Application Support/<产品><版本>` 插件也会清理。
+- `~/Library/Application Support/JetBrains/{IdeaIC,IntelliJIdea,IntelliJ}<版本>` 中可明确识别的版本专属目录，包含用户配置、`options/jdk.table.xml` 中的 SDK 登记和 `plugins`；旧版 `~/Library/Preferences/<产品><版本>` 配置和 `~/Library/Application Support/<产品><版本>` 插件也会清理。
 - `~/Library/Preferences/com.jetbrains.intellij.plist` 和 `com.jetbrains.intellij.ce.plist` 两份 IDEA 专属偏好文件，以及隐藏旧版 `~/.<产品><版本>` 下的 `config`、`plugins` 子目录。产品名和版本须完整匹配；不删除整个 JetBrains 父目录、隐藏旧版父目录或其他 JetBrains 产品。
 - `--idea-app`、`--idea-plugins-dir` 显式指定且通过校验的具体应用或专用插件目录；开启 IDEA 清理时，`IDEA_APP`、`IDEA_PLUGINS_DIR` 指定的位置也会纳入。
 
-默认保留 IDEA 缓存和日志；同时指定 `--include-idea --remove-caches` 才删除对应的 `~/Library/Caches/JetBrains` 和 `~/Library/Logs/JetBrains` 版本专属目录、旧版 `~/Library/Caches/<产品><版本>` 和 `~/Library/Logs/<产品><版本>`，以及隐藏旧版 `~/.<产品><版本>/system`。缓存目录包含 **Local History**，因此此参数也会永久删除本地历史。现代 macOS 默认目录与用户插件的位置依据 [JetBrains 官方目录说明](https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html)。
+默认保留 IDEA 缓存和日志；纳入 IDEA 配置清理后，还须显式加 `--remove-caches` 才删除对应的 `~/Library/Caches/JetBrains` 和 `~/Library/Logs/JetBrains` 版本专属目录、旧版 `~/Library/Caches/<产品><版本>` 和 `~/Library/Logs/<产品><版本>`，以及隐藏旧版 `~/.<产品><版本>/system`。维护者可使用 `--include-idea --remove-caches` 明确选择这一范围。缓存目录包含 **Local History**，因此此参数也会永久删除本地历史。现代 macOS 默认目录与用户插件的位置依据 [JetBrains 官方目录说明](https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html)。
 
 配置检查默认使用 `~/.config/java-dev/{env,jdk,gradle}.sh`；设置 `ENV_FILE` 后检查其所在目录的模块文件，以及 `ENV_FILE`、`JDK_ENV_FILE`、`GRADLE_ENV_FILE`、`SHELL_PROFILE` 显式指定的文件。还会检查 Bash/Zsh 常见启动文件、`ZDOTDIR` 下的 Zsh 配置及 `--profile` 添加的文件，清除本工具受管配置及对应待删除 SDK 的设置，保留外部 SDK 的原有变量与 PATH 引用。共享 Shell 文件即使在受管标记内混入了别名、编辑器变量等无关内容，也会逐行保留；混合逻辑无法安全拆分时阻止执行。专属环境文件清理后为空时直接删除；共享的 Shell 启动文件始终保留，即使其路径同时被指定为 `ENV_FILE`。引用仍保留的环境或共享配置文件的加载行也会保留，以便其中的无关设置继续生效。
 
@@ -190,4 +194,4 @@ macOS 的 `/usr/bin/java`、`/usr/bin/javac` 是系统启动占位程序，清�
 
 脚本不会搜索全盘任意自定义目录，也不遍历整个 Toolbox 目录。安装在其他位置的本工具 JDK/Gradle 可通过显式目录参数补充查找，仍须有效来源标记；其他位置的 IDEA 须通过 `--idea-app` 指定具体 `.app`，自定义用户插件目录通过 `--idea-plugins-dir` 添加。IDEA 自定义的配置、缓存和日志路径需另行核对。清理成功只表示本次所选、可确认的范围已处理，不代表外部 SDK 或未发现的目录也已删除。
 
-以下内容保留并由维护者按实际情况核对：业务项目及其 `.idea`/`.gradle`/Wrapper、其他 JetBrains 产品、其他 SDKMAN 工具、全局 `/etc` 配置、`launchctl` 环境和 `.pkg` 安装收据。未开启 `--include-idea` 时保留 IDEA 应用、配置、插件及内置 JBR；开启后内置 JBR 随所选应用删除。删除安装文件不会自动保证这些外部登记和设置也已移除。
+以下内容保留并由维护者按实际情况核对：业务项目及其 `.idea`/`.gradle`/Wrapper、其他 JetBrains 产品、其他 SDKMAN 工具、全局 `/etc` 配置、`launchctl` 环境和 `.pkg` 安装收据。未选择 IDEA 清理时保留应用、配置、插件及内置 JBR；只删除应用时，内置 JBR 和内置插件随应用删除，用户配置、SDK 登记和用户插件继续保留。删除安装文件不会自动保证这些外部登记和设置也已移除。

@@ -1,8 +1,8 @@
 {
   "archive": {
-    "sha256": "37f4ae609031d1cffd2db76ddfad002b99a60abfe484896320d1e7a8bfc3414b",
-    "size": 26006495,
-    "url": "https://github.com/blade-demon/ai-fullstack-settings/releases/download/runtimes-37f4ae609031d1cf/team-dev-env-runtimes.zip"
+    "sha256": "b87d6d2d2f677f9deba3fb0c8a09cf8ea75611a65edd4383209c9da76d28436c",
+    "size": 26006111,
+    "url": "https://github.com/blade-demon/ai-fullstack-settings/releases/download/runtimes-b87d6d2d2f677f9d/team-dev-env-runtimes.zip"
   },
   "files": {
     "resources/cleanup/THIRD_PARTY_NOTICES.txt": {
@@ -10,11 +10,11 @@
       "size": 109860
     },
     "resources/cleanup/cleanup-macos-universal2": {
-      "sha256": "84e525d98b8b69c2d47ef5efab34254f9e22a146db904b4b3a17140ae4f26c53",
-      "size": 17378976
+      "sha256": "e370a412c7f3c9dfa8893e2ba45390b634eaa918d6ed9ab47bc3128efaa656ad",
+      "size": 17378592
     },
     "resources/cleanup/manifest.json": {
-      "sha256": "f129adcb6c3abcf702cab7f0d9f62bbce3f8c486168b261d6eb3950f204fc4c5",
+      "sha256": "6b6881eb5818892ca4d1bab33eb946a0170060e33c671a350144cc18a14f7e08",
       "size": 852
     },
     "resources/tui/THIRD_PARTY_NOTICES.txt": {
@@ -22,22 +22,22 @@
       "size": 41164
     },
     "resources/tui/manifest.json": {
-      "sha256": "0bcb811a1905121ee03424f8283ca188d1f6f8220e00dd041a51d97c056ebe1e",
+      "sha256": "082018ecfc6b2b7a1a8c5689e6e62deab6b776e1894c5ff1baf2640d0c86ce2d",
       "size": 2331
     },
     "resources/tui/team-dev-env-amd64": {
-      "sha256": "8ca6b45fded502095bb31d97d9f174df27843b3fe950144de8e801524093fc3f",
+      "sha256": "d97566559ed424b418d05e6b554f47c99e76a872d7639c9d7516f188a06ada86",
       "size": 4326528
     },
     "resources/tui/team-dev-env-arm64": {
-      "sha256": "76a4ee06176ae08b8546a1d1be6f4932c9a8d7149e7430225a9509c6e199040a",
+      "sha256": "b4b1cb49fdc26ab02b4bc587c4ec22a5dbe3c8f121ab2f79c859056b6e236af8",
       "size": 4145746
     }
   },
-  "release": "runtimes-37f4ae609031d1cf",
+  "release": "runtimes-b87d6d2d2f677f9d",
   "schema": 1,
   "source_sha256": {
-    "cleanup": "3b30a9d7d52c77d865c7ef5afc11835cf537d6ce0209b4b9d5a821bbff9f0c0e",
-    "tui": "a580fae9b336a6bf6bc69a1133add96539dc953163a3d455df8c9d182da15bad"
+    "cleanup": "7c77e8fbdfcdc83761894c97be5a1b8f5f1b91c35e4ed720b88d1919a4befd51",
+    "tui": "ab63590bfd54b9a0daa13df621ea6a9c20c1b11227f78031ed0515fe857d92d2"
   }
 }

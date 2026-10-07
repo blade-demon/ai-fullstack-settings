@@ -1,6 +1,6 @@
 # JDK、Gradle 与完整环境配置
 
-本工具面向 macOS，一键安装基线为 **JDK 8、独立安装的 Gradle 4.5.1、IDEA 2024.3.7.1 社区版及配套插件**，Gradle 另可选择 6.8。SDK 安装在用户目录，不使用 `sudo`。本仓库是环境工具，不是 Java 业务项目。
+本工具面向 macOS，一键安装基线为 **JDK 8、独立安装的 Gradle 4.5.1、IDEA 2025.3.6.1 开源社区版及配套插件**，Gradle 另可选择 6.8。SDK 安装在用户目录，不使用 `sudo`。本仓库是环境工具，不是 Java 业务项目。
 
 ## 成员修复流程
 
@@ -25,7 +25,7 @@
 
 JDK 探测依次考虑已生成环境文件中的 `JAVA_HOME`、当前环境的 `JAVA_HOME`、`JDK_INSTALL_DIR`；`JDK_AUTO_DETECT=true` 时还检查系统登记与可识别的 PATH JDK。只有 `java`、`javac` 都符合 1.8 才采用，写入 `JRE_HOME` 前还要求实际 `jre` 目录存在。系统 `/usr/bin/java` 占位程序不代表已有可用 JDK 8，也不用于触发系统安装提示。
 
-维护者命令行的 IDEA 项目检查通过 macOS 的 `xmllint` 读取 `.idea/misc.xml`、`.idea/gradle.xml` 和 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`，成员无需 Python。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。扫描保持只读；使用 `--project` 修复已导入项目时会统一 SDK 名称，见 [IDE 指南](ide.md#统一-jdk-8-登记与项目引用)。工具不启动 GUI；设置可解析仍需在 IDEA 中执行 Gradle 同步。
+维护者命令行的 IDEA 项目检查通过 macOS 的 `xmllint` 读取 `.idea/misc.xml`、`.idea/gradle.xml` 和 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`，成员无需 Python。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2025.3`。扫描保持只读；使用 `--project` 修复已导入项目时会统一 SDK 名称，见 [IDE 指南](ide.md#统一-jdk-8-登记与项目引用)。工具不启动 GUI；设置可解析仍需在 IDEA 中执行 Gradle 同步。
 
 Wrapper 缓存由下载 URL 和项目缓存设置共同决定，仅有 ZIP 或另一个 URL 的同版缓存不算当前项目完整缓存。独立 SDK 安装不依赖该缓存；项目构建则遵循 IDEA 的 Wrapper 或 LOCAL 分发选择。无法可靠解析的配置显示待确认；构建入口无法确定分发时会报错。
 
@@ -129,8 +129,8 @@ bash dev-kit/.support/scripts/runtime/config-jdk.sh
 | `GRADLE_USER_HOME` / `GRADLE_BUILD_TASK` | `~/.gradle` / `build`；任务覆盖只能是单一合法任务名 |
 | `ENV_FILE` / `JDK_ENV_FILE` / `GRADLE_ENV_FILE` | 上述聚合文件与两个模块文件 |
 | `SHELL_PROFILE` | 默认随 Shell 选择 `.zshrc` / `.bash_profile` |
-| `IDEA_APP` / `IDEA_PLUGINS_DIR` | 个人 IDEA 应用目录及 `IdeaIC2024.3/plugins` 目录 |
-| `IDEA_CONFIG_DIR` | `~/Library/Application Support/JetBrains/IdeaIC2024.3`；IDEA 配置与 SDK 登记表位置 |
+| `IDEA_APP` / `IDEA_PLUGINS_DIR` | 个人 IDEA 应用目录及 `IdeaIC2025.3/plugins` 目录 |
+| `IDEA_CONFIG_DIR` | `~/Library/Application Support/JetBrains/IdeaIC2025.3`；IDEA 配置与 SDK 登记表位置 |
 | `IDEA_JDK_NAME` | `azul-1.8`；修复时统一使用的 JDK 8 SDK 名称 |
 | `REPAIR_HISTORY_DIR` | `~/Library/Logs/team-java-env/history` |
 

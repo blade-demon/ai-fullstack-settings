@@ -1,6 +1,8 @@
 # 本地开发环境指南
 
-目标平台为 macOS，一键安装基线为 JDK 8、Gradle 4.5.1、IDEA 2024.3.7.1 社区版和全部六个推荐插件；Gradle 单独安装另可选择 6.8。
+目标平台为 macOS，一键安装基线为 JDK 8、Gradle 4.5.1、IDEA 2025.3.6.1 开源社区版和全部六个推荐插件；Gradle 单独安装另可选择 6.8。
+
+IDEA 使用 JetBrains GitHub 的 Community Open Source 构建，默认配置目录为 `IdeaIC2025.3`。2024 已从有效下载和新安装基线移除；已有 2024 应用须先按[卸载指南](cleanup.md)核对并确认卸载，再安装 2025，安装器不会直接覆盖旧应用。
 
 小组成员从维护者提供的内网地址下载 `start.zip`，解压后双击「开始配置.command」，默认通过 Go TUI 操作，方向键选择、Enter 确认；`--plain` 保留数字菜单。完整工具 ZIP 是备用入口。成员简要操作见[使用说明](../../dev-kit/使用说明.txt)，服务器准备与首次打开说明见[内网分发指南](../distribution.md)。
 

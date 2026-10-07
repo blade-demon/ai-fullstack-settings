@@ -28,15 +28,15 @@ plugin_safe_directory "$IDEA_APP" || exit 1
 PLIST="$IDEA_APP/Contents/Info.plist"
 [ -f "$PLIST" ] && [ ! -L "$PLIST" ] || die "IDEA 元数据缺失：$PLIST"
 [ "$(plutil -extract CFBundleIdentifier raw -o - "$PLIST")" = com.jetbrains.intellij.ce ] || die '只支持目标 IDEA 社区版'
-[ "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" = 2024.3.7.1 ] || die '需要先安装 IDEA 社区版 2024.3.7.1'
-[ "$(plutil -extract CFBundleVersion raw -o - "$PLIST")" = IC-243.28141.41 ] || die 'IDEA 构建号与团队基线不一致'
+[ "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" = "$IDEA_VERSION" ] || die "需要先安装 IDEA 社区版 $IDEA_VERSION"
+[ "$(plutil -extract CFBundleVersion raw -o - "$PLIST")" = "$IDEA_BUILD" ] || die 'IDEA 构建号与团队基线不一致'
 [ -s "$IDEA_APP/Contents/MacOS/idea" ] && [ -x "$IDEA_APP/Contents/MacOS/idea" ] || die 'IDEA 启动文件不完整'
-IDEA_BUILD=243.28141.41
-SELECTOR=IdeaIC2024.3
+IDEA_NUMERIC_BUILD="${IDEA_BUILD#IC-}"
+SELECTOR="$IDEA_DATA_DIRECTORY"
 if [ -f "$IDEA_APP/Contents/Resources/product-info.json" ]; then
     SELECTOR="$(plutil -extract dataDirectoryName raw -o - "$IDEA_APP/Contents/Resources/product-info.json")" || die '无法读取 IDEA 用户目录标识'
 fi
-[ "$SELECTOR" = IdeaIC2024.3 ] || die 'IDEA 用户目录标识与团队基线不一致'
+[ "$SELECTOR" = "$IDEA_DATA_DIRECTORY" ] || die 'IDEA 用户目录标识与团队基线不一致'
 PLUGINS_DIR="${IDEA_PLUGINS_DIR:-$USER_HOME/Library/Application Support/JetBrains/$SELECTOR/plugins}"
 require_absolute_path IDEA_PLUGINS_DIR "$PLUGINS_DIR"
 while [ "$PLUGINS_DIR" != / ] && [ "${PLUGINS_DIR%/}" != "$PLUGINS_DIR" ]; do PLUGINS_DIR="${PLUGINS_DIR%/}"; done
@@ -149,7 +149,7 @@ while [ "$index" -lt "$COUNT" ]; do
         inv=$((inv + 1))
     done
     [ "$match_count" -le 1 ] || die "发现多个同资源插件目录，原目录均已保留：$rid"
-    if [ -n "$existing" ] && plugin_verify_installed "$existing" "$rid" "$version" "$hash" "$IDEA_BUILD" "$SCRATCH" 2>/dev/null; then
+    if [ -n "$existing" ] && plugin_verify_installed "$existing" "$rid" "$version" "$hash" "$IDEA_NUMERIC_BUILD" "$SCRATCH" 2>/dev/null; then
         TARGETS[$index]="$existing"; OLD_PATHS[$index]="$existing"; XML_IDS[$index]="$PLUGIN_XML_ID"; ACTIONS[$index]=reuse
         if [ "$MODE" = verify ]; then STATUSES[$index]=verified; else STATUSES[$index]=reused; fi
         log "[已验证] $rid ${version}：${existing}（收据、元数据与全部文件一致）"
@@ -167,7 +167,7 @@ while [ "$index" -lt "$COUNT" ]; do
         mkdir "$WORK/extract-$index"
         unzip -q "$archive" -d "$WORK/extract-$index" || die "无法解压插件：$rid"
         source_dir="$WORK/extract-$index/$root"
-        plugin_make_receipt "$source_dir" "$rid" "$version" "$hash" "$IDEA_BUILD" "$WORK/receipt-$index" "$SCRATCH" || die "插件归档验证未通过：$rid"
+        plugin_make_receipt "$source_dir" "$rid" "$version" "$hash" "$IDEA_NUMERIC_BUILD" "$WORK/receipt-$index" "$SCRATCH" || die "插件归档验证未通过：$rid"
         XML_IDS[$index]="$PLUGIN_XML_ID"; ROOTS[$index]="$root"
         target="$PLUGINS_DIR/$root"; TARGETS[$index]="$target"
         plugin_safe_directory "$target" || exit 1
@@ -185,7 +185,7 @@ while [ "$index" -lt "$COUNT" ]; do
         if [ -n "$existing" ]; then
             if [ "$existing_version" = "$version" ]; then
                 ACTIONS[$index]=repaired
-                if plugin_make_receipt "$existing" "$rid" "$version" "$hash" "$IDEA_BUILD" "$WORK/existing-$index" "$SCRATCH" 2>/dev/null && cmp -s "$WORK/existing-$index" "$WORK/receipt-$index"; then
+                if plugin_make_receipt "$existing" "$rid" "$version" "$hash" "$IDEA_NUMERIC_BUILD" "$WORK/existing-$index" "$SCRATCH" 2>/dev/null && cmp -s "$WORK/existing-$index" "$WORK/receipt-$index"; then
                     ACTIONS[$index]=adopt; TARGETS[$index]="$existing"
                 fi
             else ACTIONS[$index]=upgraded; fi
@@ -231,7 +231,7 @@ else
             root="${ROOTS[$index]}"
             ditto "$WORK/extract-$index/$root" "$TRANSACTION/staged/$root" || die '插件暂存复制失败'
             cp "$WORK/receipt-$index" "$TRANSACTION/staged/$root/$PLUGIN_RECEIPT"
-            plugin_verify_installed "$TRANSACTION/staged/$root" "${IDS[$index]}" "${VERSIONS[$index]}" "${HASHES[$index]}" "$IDEA_BUILD" "$SCRATCH" || die '暂存插件验证失败' ;;
+            plugin_verify_installed "$TRANSACTION/staged/$root" "${IDS[$index]}" "${VERSIONS[$index]}" "${HASHES[$index]}" "$IDEA_NUMERIC_BUILD" "$SCRATCH" || die '暂存插件验证失败' ;;
         esac
         index=$((index + 1))
     done
@@ -271,7 +271,7 @@ else
                 [ ! -e "$staged" ] || die "插件发布冲突，原目录与备份均已保留：$target"
                 STATUSES[$index]="$action" ;;
         esac
-        plugin_verify_installed "$target" "$rid" "${VERSIONS[$index]}" "${HASHES[$index]}" "$IDEA_BUILD" "$SCRATCH" || die "安装后最终验证失败：${rid}；已有备份已保留"
+        plugin_verify_installed "$target" "$rid" "${VERSIONS[$index]}" "${HASHES[$index]}" "$IDEA_NUMERIC_BUILD" "$SCRATCH" || die "安装后最终验证失败：${rid}；已有备份已保留"
         log "[已验证] $rid ${VERSIONS[$index]}：${target}（${STATUSES[$index]}）"
         index=$((index + 1))
     done

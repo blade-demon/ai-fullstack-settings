@@ -67,8 +67,8 @@ probe_idea() {
     version="$(plutil -extract CFBundleShortVersionString raw -o - "$plist" 2>/dev/null)" || return 0
     build="$(plutil -extract CFBundleVersion raw -o - "$plist" 2>/dev/null)" || return 0
     PROBE_IDEA_VERSION="$version"; PROBE_IDEA_BUILD="$build"
-    [ "$identifier" = com.jetbrains.intellij.ce ] && [ "$version" = "${IDEA_VERSION:-2024.3.7.1}" ] || return 0
-    [ "$build" = IC-243.28141.41 ] && [ -s "$app/Contents/MacOS/idea" ] && [ -x "$app/Contents/MacOS/idea" ] || return 0
+    [ "$identifier" = com.jetbrains.intellij.ce ] && [ "$version" = "$IDEA_VERSION" ] || return 0
+    [ "$build" = "$IDEA_BUILD" ] && [ -s "$app/Contents/MacOS/idea" ] && [ -x "$app/Contents/MacOS/idea" ] || return 0
     PROBE_IDEA_STATE=installed
     return 0
 }

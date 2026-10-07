@@ -10,8 +10,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "2024.3.7.1"
-BUILD = "IC-243.28141.41"
+VERSION = "2025.3.6.1"
+BUILD = "IC-253.33813.55"
 APP_NAME = "IntelliJ IDEA CE.app"
 
 
@@ -148,7 +148,7 @@ class IdeaInstallTests(unittest.TestCase):
         self.assert_clean()
 
     def test_old_different_build_and_incomplete_existing_apps_are_preserved(self):
-        for changes in ({"CFBundleShortVersionString": "2024.2"}, {"CFBundleVersion": "IC-old"},
+        for changes in ({"CFBundleShortVersionString": "2024.3.7.1", "CFBundleVersion": "IC-243.28141.41"}, {"CFBundleVersion": "IC-old"},
                         {"CFBundleIdentifier": "com.jetbrains.intellij"}, {"CFBundleExecutable": "missing"}):
             with self.subTest(changes=changes):
                 if self.target.exists():

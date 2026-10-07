@@ -39,7 +39,7 @@ func ActionsFor(page string) []Action {
 	case "cleanup":
 		return []Action{
 			{ID: "cleanup-preview", Title: "预览卸载清单", Description: "只读取安装和配置，不删除文件。", Args: []string{"scripts/run-cleanup.sh", "--dry-run"}},
-			{ID: "cleanup-run", Title: "进入安全卸载流程", Description: "下一步在终端选择 IDEA 范围、核对删除清单并输入 DELETE。前端工具不在该卸载范围。", Args: []string{"scripts/run-cleanup.sh"}, Interactive: true},
+			{ID: "cleanup-run", Title: "进入安全卸载流程", Description: "删除 IDEA 时默认同时删除用户配置、SDK 登记和用户插件，可选择保留；核对清单后输入 DELETE。前端工具不在该卸载范围。", Args: []string{"scripts/run-cleanup.sh"}, Interactive: true},
 		}
 	default:
 		return []Action{

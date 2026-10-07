@@ -4,7 +4,6 @@ import argparse
 import dataclasses
 import functools
 import hashlib
-import http.client
 import http.server
 import io
 import ipaddress
@@ -14,15 +13,11 @@ from pathlib import Path, PureWindowsPath
 import re
 import shutil
 import socket
-import ssl
 import stat
 import sys
 import tarfile
 import tempfile
-import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import zipfile
 
 if __package__:
@@ -32,6 +27,7 @@ if __package__:
     from .lan import DiscoveryError, discover_ipv4_addresses
     from .runtime_artifacts import ensure_runtimes
     from .publication import make_release, read_release
+    from .network_download import DownloadError, download_file
 else:
     from cleanup_artifact import validate_cleanup_artifact
     from tui_artifact import (BINARIES as TUI_BINARIES, FILES as TUI_FILES,
@@ -39,6 +35,7 @@ else:
     from lan import DiscoveryError, discover_ipv4_addresses
     from runtime_artifacts import ensure_runtimes
     from publication import make_release, read_release
+    from network_download import DownloadError, download_file
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = "# id\tgroup\tversion\tarch\tpath\turl\tsha256"
@@ -219,37 +216,15 @@ def publish_new(source, destination):
         os.rename(str(source), str(destination))
 
 
-class HttpOnlyRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, request, response, code, message, headers, url):
-        http_url(url)
-        return super().redirect_request(request, response, code, message, headers, url)
-
-
 def download(url, target):
-    opener = urllib.request.build_opener(HttpOnlyRedirect())
-    for attempt in range(3):
-        try:
-            request = urllib.request.Request(url, headers={"User-Agent": "team-dev-env-resource/1"})
-            with opener.open(request, timeout=30) as response, target.open("wb") as output:
-                http_url(response.geturl())
-                expected, received = response.headers.get("Content-Length"), 0
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk)
-                    received += len(chunk)
-                if expected is not None and received != int(expected):
-                    raise http.client.IncompleteRead(b"", int(expected) - received)
-            return
-        except urllib.error.HTTPError as error:
-            if error.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
-                raise UserError("下载失败：HTTP %s，%s" % (error.code, url))
-        except (urllib.error.URLError, TimeoutError, http.client.IncompleteRead, ConnectionError) as error:
-            if isinstance(getattr(error, "reason", None), ssl.SSLCertVerificationError) or attempt == 2:
-                raise UserError("下载失败：%s（%s）" % (url, error))
-        print("连接中断，正在重试下载…", flush=True)
-        time.sleep(1)
+    http_url(url)
+    try:
+        # SDK archives may be large; retain their existing socket timeout without
+        # imposing the runtime ZIP's five-minute total limit. prepare() validates
+        # the completed resource SHA-256 before publishing it.
+        download_file(url, target, timeout=30, report=lambda message: print(message, flush=True))
+    except DownloadError as error:
+        raise UserError("下载失败：%s" % error) from error
 
 
 def verify_resource(item, storage):
@@ -672,7 +647,8 @@ def start(args, settings):
 def prepare_runtimes(args, settings):
     base_url = getattr(args, "runtime_base_url", None) or settings.get("runtime_base_url")
     result = ensure_runtimes(ROOT, base_url=base_url,
-                             offline=getattr(args, "offline", False), report=print)
+                             offline=getattr(args, "offline", False),
+                             report=lambda message: print(message, flush=True))
     print("运行文件已就绪：%s（%s）" % (result["release"],
           "已下载并校验" if result["downloaded"] else "复用本地校验结果"), flush=True)
     return result

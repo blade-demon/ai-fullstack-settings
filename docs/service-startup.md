@@ -52,6 +52,7 @@ python3 server/manage.py prepare --dry-run
 | 版本低于 3.8，或仍指向旧 Python | 检查打印出的解释器路径，使用新安装的解释器绝对路径执行脚本 |
 | Windows 输入 `python` 打开 Microsoft Store | 优先使用 `py -3`；若使用 `python`，检查应用执行别名与 PATH 是否指向已安装的解释器 |
 | macOS 下载资源时报 `CERTIFICATE_VERIFY_FAILED` | 确认已完成对应版本的 `Install Certificates.command`；企业代理证书由团队 IT 配置 |
+| 使用代理时下载报 `UNEXPECTED_EOF_WHILE_READING` 或连接重置 | 更新源码后重试；下载器会重新连接，必要时通过系统 curl 恢复。检查代理软件的 HTTP/Mixed 地址与系统设置，或使用运行文件内网镜像；不关闭证书校验 |
 
 内网服务器无法访问官网时，可在可联网电脑下载对应的完整 `.exe` / `.pkg` 安装包，再传到服务器安装；Mac 的证书初始化还需可用网络或团队配置的证书环境。Python 安装包不包含在本项目的成员启动包或资源清单中。
 

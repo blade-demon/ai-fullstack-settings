@@ -21,6 +21,12 @@ python3 server/manage.py prepare-runtimes --offline
 
 首次缺少运行文件时，服务器需要能访问锁定的 GitHub Release 或团队镜像；已校验且与当前源码匹配的本地缓存无需联网。`--offline` 只用于 `prepare-runtimes`，文件缺失、损坏或过期时返回失败。完全离线执行 `start` 还需要 24 项 SDK、软件和插件安装资源已准备齐全，可用 `python3 server/manage.py prepare --verify` 预检。
 
+出现 `SSL: UNEXPECTED_EOF_WHILE_READING`、超时、连接重置或传输中断时，下载器最多重新连接三次；仍未恢复且系统有 `curl` 时，再通过系统 curl 下载；curl 对可恢复的网络中断也最多尝试三次，并从原始地址重新获取下载链接。运行文件和 SDK 下载共用此处理。curl 是可选的恢复工具，不需要安装额外 Python 包，也不影响已有缓存的离线复用。
+
+恢复下载继续采用当前系统或环境代理；curl 在每次重定向后重新计算代理和绕过规则，优先使用对应协议代理，其次使用 `ALL_PROXY`。代理用户名和密码不写入错误日志。证书验证失败、HTTPS 降级跳转、完整文件摘要错误或超出固定大小都会停止，不会通过重试或关闭证书校验接受错误文件。
+
+若使用 Clash 等代理软件仍失败，检查其 HTTP/Mixed 代理地址、端口与当前系统设置是否一致。访问 HTTPS 网站不代表 HTTP 代理本身需要写成 `https://`；应采用代理软件提供的实际地址，不猜测端口。也可使用下方受同一版本锁校验的内网镜像。
+
 `start` 成功绑定端口后，先补齐运行文件，再处理 SDK 等安装资源；`preview` 同样先补齐运行文件，但只校验已有安装资源，不下载缺失 SDK。`package` 始终只校验和打包，不联网。运行文件固定保存在仓库 `resources/tui/` 和 `resources/cleanup/`，不随 `--resources-dir` 改变。
 
 **`git pull` 更新源码，不等于更新发布目录。** 日常更新应停止自己管理的旧服务，再运行原 `start`。端口占用时，本次没有更新安装包，已有地址可能仍提供旧版本；脚本不会结束占用进程或修改旧发布目录。完整启动与版本确认见[服务启动指南](../service-startup.md)。

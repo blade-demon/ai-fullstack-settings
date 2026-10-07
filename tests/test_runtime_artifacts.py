@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import ssl
 import stat
 import struct
 import subprocess
@@ -17,6 +18,8 @@ import unittest
 from unittest import mock
 import warnings
 import zipfile
+import urllib.error
+import urllib.request
 
 try:
     from .runtime_fixture import FILES, archive_fixture, lock_fixture, runtime_fixture
@@ -100,6 +103,26 @@ class RuntimeArtifactTests(unittest.TestCase):
         self.assertEqual({name: (self.repo / name).read_bytes() for name in FILES}, self.payloads)
         self.assertEqual(self.module.validate_local_runtimes(self.repo)["source_sha256"],
                          self.lock["source_sha256"])
+
+    def test_tls_eof_retry_recovers_the_full_runtime_installation(self):
+        self.remove_runtimes()
+        original_open = urllib.request.OpenerDirector.open
+        attempts = []
+
+        def interrupted_once(opener, request, *args, **kwargs):
+            attempts.append(request.full_url)
+            if len(attempts) == 1:
+                raise urllib.error.URLError(ssl.SSLEOFError(
+                    8, "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol"))
+            return original_open(opener, request, *args, **kwargs)
+
+        with serve(self.archive) as mirror, \
+                mock.patch.object(urllib.request.OpenerDirector, "open", interrupted_once), \
+                mock.patch("time.sleep", return_value=None):
+            result = self.fetch(base_url=mirror)
+        self.assertTrue(result["downloaded"])
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual({name: (self.repo / name).read_bytes() for name in FILES}, self.payloads)
 
     def test_custom_repository_generated_lock_downloads_through_explicit_mirror(self):
         script = MODULE.parents[1] / "tools/release-runtimes.py"

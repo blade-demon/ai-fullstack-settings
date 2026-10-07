@@ -12,17 +12,17 @@ import re
 import shutil
 import stat
 import tempfile
-import time
 import urllib.parse
-import urllib.request
 import zipfile
 import zlib
 
 try:
     from . import cleanup_artifact, tui_artifact
+    from .network_download import download_file
 except ImportError:
     import cleanup_artifact
     import tui_artifact
+    from network_download import download_file
 
 
 FILES = (
@@ -190,31 +190,10 @@ def _download_url(lock, base_url):
     return base_url.rstrip("/") + "/" + ARCHIVE_NAME
 
 
-def _download(url, destination, expected):
-    request = urllib.request.Request(url, headers={"User-Agent": "team-dev-env-runtime-fetch/1",
-                                                   "Accept-Encoding": "identity"})
-    digest, size = hashlib.sha256(), 0
-    deadline = time.monotonic() + DOWNLOAD_DEADLINE
-    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response, destination.open("wb") as output:
-        final_scheme = urllib.parse.urlsplit(response.geturl()).scheme
-        if final_scheme not in ("http", "https") or url.startswith("https:") and final_scheme != "https":
-            raise RuntimeArtifactError("运行文件下载被重定向到不安全的 URL。")
-        length = response.headers.get("Content-Length")
-        if length is not None and (not length.isdigit() or int(length) != expected["size"]):
-            raise RuntimeArtifactError("运行文件下载大小与锁文件不一致。")
-        while True:
-            if time.monotonic() > deadline:
-                raise RuntimeArtifactError("运行文件下载超时；请检查网络或使用内网镜像。")
-            chunk = response.read(min(CHUNK_SIZE, expected["size"] - size + 1))
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > expected["size"]:
-                raise RuntimeArtifactError("运行文件下载超过锁文件大小。")
-            digest.update(chunk)
-            output.write(chunk)
-    if size != expected["size"] or digest.hexdigest() != expected["sha256"]:
-        raise RuntimeArtifactError("运行文件归档 SHA-256 或大小校验失败；未修改现有文件。")
+def _download(url, destination, expected, report=print):
+    download_file(url, destination, expected_sha256=expected["sha256"],
+                  expected_size=expected["size"], timeout=DOWNLOAD_TIMEOUT,
+                  total_timeout=DOWNLOAD_DEADLINE, report=report)
 
 
 def _unpack(archive_path, candidate, entries):
@@ -326,7 +305,7 @@ def ensure_runtimes(root, base_url=None, offline=False, report=print):
         report("正在获取匹配当前源码的运行文件：%s" % lock["release"])
         work = Path(tempfile.mkdtemp(prefix=".runtime-stage-", dir=str(root)))
         archive, candidate = work / ARCHIVE_NAME, work / "candidate"
-        _download(url, archive, lock["archive"])
+        _download(url, archive, lock["archive"], report=report)
         _unpack(archive, candidate, lock["files"])
         _validate_payloads({name: _read_file(candidate / name) for name in FILES}, source_hashes, cleanup_source)
         _publish(root, work, candidate, source_hashes)

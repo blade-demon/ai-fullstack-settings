@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -612,6 +613,30 @@ class ServerTests(unittest.TestCase):
         target.write_bytes(b"bad")
         self.assertNotEqual(self.cli("prepare", "--verify").returncode, 0)
         self.assertEqual(target.read_bytes(), b"bad")
+
+    def test_sdk_download_recovers_tls_eof_with_system_curl_and_still_checks_hash(self):
+        curl = shutil.which("curl")
+        if not curl:
+            self.skipTest("system curl is optional")
+        source, address = self.fixture_server()
+        payload = b"SDK downloaded through the system curl"
+        (source / "artifact.bin").write_bytes(payload)
+        digest = hashlib.sha256(payload).hexdigest()
+        self.catalog([("sdk", "runtime", "1", "any", "runtime/tls.bin",
+                       address + "/artifact.bin", digest)])
+        self.env["PATH"] = str(Path(curl).parent)
+        failure = urllib.error.URLError(ssl.SSLEOFError(8, "UNEXPECTED_EOF_WHILE_READING"))
+        with mock.patch.object(urllib.request.OpenerDirector, "open", side_effect=failure) as attempts, \
+                mock.patch("urllib.request.getproxies", return_value={}), \
+                mock.patch("urllib.request.proxy_bypass", return_value=True), \
+                mock.patch("time.sleep", return_value=None):
+            status, output = self.start_once(["prepare"])
+        self.assertEqual(status, 0, output)
+        self.assertEqual(attempts.call_count, 3)
+        self.assertIn("curl", output)
+        target = self.repo / "resources/runtime/tls.bin"
+        self.assertEqual(target.read_bytes(), payload)
+        self.assertEqual(target.with_name(target.name + ".sha256").read_text().split()[0], digest)
 
     def test_prepare_rejects_hash_mismatch_without_final_asset_or_receipt(self):
         source, address = self.fixture_server()

@@ -63,9 +63,10 @@ case "$gradle_mode" in
     unconfigured)
         [ -n "${GRADLE_HOME:-}" ] && [ -s "$GRADLE_HOME/bin/gradle" ] && [ -x "$GRADLE_HOME/bin/gradle" ] &&
             [ -s "$GRADLE_HOME/lib/gradle-launcher-$expected_version.jar" ] || die 'GRADLE_HOME 缺少指定版本的完整 Gradle 分发'
-        if [ "$expected_version" = 4.5.1 ]; then
-            [ "${GRADLE_4_5_1_HOME:-}" = "$GRADLE_HOME" ] || die 'GRADLE_4_5_1_HOME 与 GRADLE_HOME 不一致'
-        fi
+        case "$expected_version" in
+            4.5.1) [ "${GRADLE_4_5_1_HOME:-}" = "$GRADLE_HOME" ] || die 'GRADLE_4_5_1_HOME 与 GRADLE_HOME 不一致' ;;
+            6.8) [ "${GRADLE_6_8_HOME:-}" = "$GRADLE_HOME" ] || die 'GRADLE_6_8_HOME 与 GRADLE_HOME 不一致' ;;
+        esac
         gradle_command="$GRADLE_HOME/bin/gradle"
         ;;
 esac

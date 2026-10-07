@@ -11,10 +11,11 @@ probe_managed_configuration() {
         while IFS= read -r -d '' value; do values+=("$value"); done < <(
             /usr/bin/env -i HOME="$HOME" PATH='/usr/bin:/bin:/usr/sbin:/sbin' /bin/bash --noprofile --norc -c '
                 source "$1" >/dev/null 2>&1 || exit 1
+                gradle_alias="$2"
                 printf "%s\0" "${JAVA_HOME:-}" "${JAVA_8_HOME:-}" "${JRE_HOME:-}" \
-                    "${GRADLE_HOME:-}" "${GRADLE_4_5_1_HOME:-}" "${GRADLE_USER_HOME:-}" "${PATH:-}" \
+                    "${GRADLE_HOME:-}" "${!gradle_alias-}" "${GRADLE_USER_HOME:-}" "${PATH:-}" \
                     "$(command -v java 2>/dev/null || true)" "$(command -v gradle 2>/dev/null || true)"
-            ' probe "$ENV_FILE"
+            ' probe "$ENV_FILE" "$(gradle_alias_name)"
         )
         if [ "${#values[@]}" -eq 9 ]; then
             PROBE_CONFIG_JAVA_HOME="${values[0]}"; PROBE_CONFIG_JAVA_8_HOME="${values[1]}"; PROBE_CONFIG_JRE_HOME="${values[2]}"
@@ -28,7 +29,7 @@ probe_managed_configuration() {
                 version="$(_probe_distribution_version "$PROBE_CONFIG_GRADLE_HOME")" || version=''
                 if [ "$version" = "$expected" ] && [ "$PROBE_CONFIG_GRADLE_COMMAND" -ef "$PROBE_CONFIG_GRADLE_HOME/bin/gradle" ]; then
                     case "$PROBE_CONFIG_GRADLE_USER_HOME" in
-                        /*) if [ "$expected" != 4.5.1 ] || [ "$PROBE_CONFIG_GRADLE_ALIAS" -ef "$PROBE_CONFIG_GRADLE_HOME" ]; then PROBE_GRADLE_CONFIG=ready; fi ;;
+                        /*) if [ "$PROBE_CONFIG_GRADLE_ALIAS" -ef "$PROBE_CONFIG_GRADLE_HOME" ]; then PROBE_GRADLE_CONFIG=ready; fi ;;
                     esac
                 fi
             fi
@@ -50,9 +51,7 @@ verify_profile_configuration() {
         [ "${values[3]}" -ef "$PROBE_CONFIG_GRADLE_HOME" ] &&
             [ "${values[5]}" = "$PROBE_CONFIG_GRADLE_USER_HOME" ] &&
             [ "${values[8]}" -ef "$PROBE_CONFIG_GRADLE_HOME/bin/gradle" ] || return 1
-        if [ "${GRADLE_VERSION:-4.5.1}" = 4.5.1 ]; then
-            [ "${values[4]}" -ef "$PROBE_CONFIG_GRADLE_HOME" ] || return 1
-        fi
+        [ "${values[4]}" -ef "$PROBE_CONFIG_GRADLE_HOME" ] || return 1
     fi
     return 0
 }

@@ -1,8 +1,8 @@
 # 运行环境与桌面工具的官方资源来源
 
-核对日期：2026-10-06。目标平台为 macOS Apple Silicon（arm64/aarch64）和 Intel（x64/x86_64）。JDK 固定为 Java 8，Gradle 固定为 4.5.1。本文只核对官方网页、元数据、小型校验文件与安装包的 HTTP HEAD 响应；**本次研究没有下载、安装或运行任何大型安装包**。下载后的完整文件仍须另行计算 SHA-256。
+首次核对日期：2026-10-06；2026-10-07 补充 Gradle 6.8。目标平台为 macOS Apple Silicon（arm64/aarch64）和 Intel（x64/x86_64）。JDK 固定为 Java 8，Gradle 资源包括 4.5.1、6.8，分别固定到下文所列版本。本文只核对官方网页、元数据、小型校验文件与既有安装包的 HTTP HEAD 响应；**本次研究没有下载、安装或运行任何大型安装包**。下载后的完整文件仍须另行计算 SHA-256。
 
-所有安装包链接均由官方 API、官方归档目录或官方发布说明取得，并已跟随重定向确认最终 HEAD 状态为 200。不要把 GitHub 最终生成的带时效签名 URL 存进清单；使用本文固定版本入口。
+所有安装包链接均由官方 API、官方归档目录或官方发布说明取得。2026-10-06 登记的资源已跟随重定向确认最终 HEAD 状态为 200；2026-10-07 新增资源仅核对官方元数据与校验值，未重新下载或检查安装包 HEAD。不要把 GitHub 最终生成的带时效签名 URL 存进清单；使用本文固定版本入口。
 
 ## JDK 8：Azul Zulu CA
 
@@ -25,7 +25,17 @@ Azul 当前支持矩阵对这两种 macOS 架构列出 **macOS 14+**；这属于
 
 SHA-256：`3e2ea0d8b96605b7c528768f646e0975bd9822f06df1f04a64fd279b1a17805e`。已对照 [官方校验文件](https://services.gradle.org/distributions/gradle-4.5.1-bin.zip.sha256)和 [官方历史校验清单](https://gradle.org/release-checksums/)。保存为 `resources/runtime/gradle/gradle-4.5.1-bin.zip`，供两种架构共用。
 
-[4.5.1 安装文档](https://docs.gradle.org/4.5.1/userguide/installation.html)要求 Java 7 或更高版本；本项目按既定约定固定使用 JDK 8。不能把旧文档的最低版本描述理解为支持任意新 JDK。[Gradle 6.9 发布说明](https://docs.gradle.org/6.9/release-notes.html#native-support-for-apple-silicon)才明确加入完整的 Apple Silicon 原生功能支持，并说明早期版本使用 ARM JDK 时部分原生功能不可用。因此，4.5.1 的同一 ZIP 可作为两架构候选资源，但 **JDK 8 ARM + Gradle 4.5.1 + 业务项目** 的运行组合必须实测；取得安装包和 SHA-256 不等于完成构建验证。Gradle 4.5.1 保持不变，不自动升级。
+[4.5.1 安装文档](https://docs.gradle.org/4.5.1/userguide/installation.html)要求最低 Java 7，已对照 [v4.5.1 官方文档源码](https://github.com/gradle/gradle/blob/v4.5.1/subprojects/docs/src/docs/userguide/installation.adoc)。结合[官方 Java 运行兼容矩阵](https://docs.gradle.org/current/userguide/compatibility.html#java_runtime)中 Java 9 从 Gradle 4.3 支持、Java 10 从 4.7 支持，可确定 **4.5.1 的受支持 Java 运行范围为 7–9**；本项目使用 JDK 8。不能把旧文档的最低版本描述理解为支持任意新 JDK。[Gradle 6.9 发布说明](https://docs.gradle.org/6.9/release-notes.html#native-support-for-apple-silicon)才明确加入完整的 Apple Silicon 原生功能支持，并说明早期版本使用 ARM JDK 时部分原生功能不可用。因此，4.5.1 的同一 ZIP 可作为两架构候选资源，但 **JDK 8 ARM + Gradle 4.5.1 + 业务项目** 的运行组合必须实测；取得安装包和 SHA-256 不等于完成构建验证。Gradle 4.5.1 保持独立资源，不自动升级。
+
+## Gradle 6.8
+
+固定为 **6.8**，不替换为 6.8.1、6.8.2 或 6.8.3。官方下载：[gradle-6.8-bin.zip](https://services.gradle.org/distributions/gradle-6.8-bin.zip)，保存为 `resources/runtime/gradle/gradle-6.8-bin.zip`，供两种架构共用。
+
+SHA-256：`e2774e6fb77c43657decde25542dea710aafd78c4022d19b196e7e78d79d8c6c`。已同时对照[官方校验文件](https://services.gradle.org/distributions/gradle-6.8-bin.zip.sha256)与[官方历史校验清单的 6.8 条目](https://gradle.org/release-checksums/)。本次没有下载 ZIP 或核对 HEAD 大小。
+
+[v6.8.0 官方兼容文档源码](https://github.com/gradle/gradle/blob/v6.8.0/subprojects/docs/src/docs/userguide/compatibility.adoc)明确限定 **Java 8–15**，不支持 Java 16 及之后版本；该源码标签对应发布版本 6.8。结合[当前官方兼容矩阵](https://docs.gradle.org/current/userguide/compatibility.html#java_runtime)，**JDK 8 在 Gradle 4.5.1 与 6.8 的受支持 Java 运行范围内**。本项目两版 Gradle 均使用 JDK 8。
+
+Gradle 6.8 同样早于完整支持 Apple Silicon 的 6.9；使用 ARM JDK 时，部分原生功能会被禁用。保留用户指定的 6.8，并在目标电脑验证构建，不因资源存在而宣称已完成运行兼容验证。来源：[6.9 的 Apple Silicon 原生支持说明](https://docs.gradle.org/6.9/release-notes.html#native-support-for-apple-silicon)。
 
 ## DBeaver Community 26.2.2
 
@@ -57,7 +67,7 @@ SHA-256 来源：[arm64 checksums.txt](https://desktop.docker.com/mac/main/arm64
 
 ## 可转入资源清单的结构化数据
 
-`verification` 只表示官方元数据、官方校验值与 HEAD 已核对；`downloaded` 均为本次研究任务的状态，不代表其他任务是否随后下载。`sha256` 是官方预期值，下载器需要重新计算实际文件摘要。Docker 必须保留 `download_policy: manual`。
+顶层 `checked_at` 与 `verification` 是既有资源的默认核对记录；新增资源通过条目内同名字段覆盖。`official_metadata_and_head` 表示官方元数据、官方校验值与 HEAD 已核对；`official_metadata_and_checksum` 表示只核对官方元数据与校验值。`downloaded` 均为本次研究任务的状态，不代表其他任务是否随后下载。`sha256` 是官方预期值，下载器需要重新计算实际文件摘要。Docker 必须保留 `download_policy: manual`。
 
 ```json
 {
@@ -100,6 +110,19 @@ SHA-256 来源：[arm64 checksums.txt](https://desktop.docker.com/mac/main/arm64
       "sha256": "3e2ea0d8b96605b7c528768f646e0975bd9822f06df1f04a64fd279b1a17805e",
       "size_bytes": 72424144,
       "checksum_url": "https://services.gradle.org/distributions/gradle-4.5.1-bin.zip.sha256",
+      "downloaded": false
+    },
+    {
+      "id": "gradle-6.8-bin",
+      "product": "Gradle",
+      "version": "6.8",
+      "os": "any",
+      "arch": "any",
+      "url": "https://services.gradle.org/distributions/gradle-6.8-bin.zip",
+      "sha256": "e2774e6fb77c43657decde25542dea710aafd78c4022d19b196e7e78d79d8c6c",
+      "checksum_url": "https://services.gradle.org/distributions/gradle-6.8-bin.zip.sha256",
+      "checked_at": "2026-10-07",
+      "verification": "official_metadata_and_checksum",
       "downloaded": false
     },
     {

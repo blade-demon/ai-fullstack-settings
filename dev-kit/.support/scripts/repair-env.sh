@@ -1,6 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 umask 077
+# 先读取版本选择，再计算安装目录与包路径；其他选项仍由下面的统一解析器检查。
+version_args=("$@")
+for ((version_index=0; version_index<${#version_args[@]}; version_index++)); do
+    case "${version_args[$version_index]}" in
+        --gradle-version)
+            if [ "$((version_index + 1))" -ge "${#version_args[@]}" ]; then
+                printf '错误：%s 后需要版本\n' "${version_args[$version_index]}" >&2; exit 1
+            fi
+            case "${version_args[$((version_index + 1))]}" in
+                4.5.1|6.8) ;;
+                *) printf '错误：Gradle 版本只能为 4.5.1 或 6.8\n' >&2; exit 1 ;;
+            esac
+            export GRADLE_VERSION="${version_args[$((version_index + 1))]}"
+            version_index=$((version_index + 1)) ;;
+    esac
+done
 source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)/common.sh"
 source "$REPO_ROOT/scripts/lib/audit.sh"
 scope=all; project=''; dry_run=false
@@ -11,15 +27,18 @@ while [ "$#" -gt 0 ]; do
             case "$2" in --*) die "$1 后需要值" ;; esac
             if [ "$1" = --scope ]; then scope="$2"; else project="$2"; fi
             shift 2 ;;
+        --gradle-version) shift 2 ;;
         --dry-run) dry_run=true; shift ;;
         --help|-h)
-            log '用法：repair-env.sh [--scope all|jdk|gradle|idea|plugins] [--project 项目] [--dry-run]'
+            log '用法：repair-env.sh [--scope all|jdk|gradle|idea|plugins] [--project 项目] [--gradle-version 4.5.1|6.8] [--dry-run]'
             log '扫描、修复、验证并保存历史；指定项目后必须通过 Gradle build 才报告成功。'
             exit 0 ;;
         *) die "未知参数：$1" ;;
     esac
 done
 case "$scope" in all|jdk|gradle|idea|plugins) ;; *) die "未知修复范围：$scope" ;; esac
+case "$GRADLE_VERSION" in 4.5.1|6.8) ;; *) die 'Gradle 版本只能为 4.5.1 或 6.8' ;; esac
+export GRADLE_VERSION
 validate_server
 if [ -n "$project" ]; then
     [ -d "$project" ] || die "项目目录不存在：$project"

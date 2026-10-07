@@ -77,10 +77,11 @@ _managed_env_profile_values() (
     /usr/bin/env -i HOME="$HOME" SHELL="$shell" PATH='/usr/bin:/bin:/usr/sbin:/sbin' \
         "$shell" "${shell_args[@]}" -c '
             . "$1" >/dev/null 2>&1 || exit 1
+            case "$2" in 6.8) gradle_alias="${GRADLE_6_8_HOME:-}" ;; *) gradle_alias="${GRADLE_4_5_1_HOME:-}" ;; esac
             builtin printf "%s\0" "${JAVA_HOME:-}" "${JAVA_8_HOME:-}" "${JRE_HOME:-}" \
-                "${GRADLE_HOME:-}" "${GRADLE_4_5_1_HOME:-}" "${GRADLE_USER_HOME:-}" "${PATH:-}" \
+                "${GRADLE_HOME:-}" "$gradle_alias" "${GRADLE_USER_HOME:-}" "${PATH:-}" \
                 "$(command -v java 2>/dev/null || true)" "$(command -v gradle 2>/dev/null || true)"
-        ' verify-profile "$profile" </dev/null > "$work/values" 2>/dev/null &
+        ' verify-profile "$profile" "$GRADLE_VERSION" </dev/null > "$work/values" 2>/dev/null &
     runner=$!
     (
         /bin/sleep 5
@@ -187,16 +188,31 @@ managed_env_write_jdk() {
     _managed_env_finish
 }
 
+# 保留已验证版本的别名，让切换后的新终端仍能找到另一套 SDK。
+managed_env_saved_value() {
+    [ -f "$ENV_FILE" ] || return 0
+    /usr/bin/env -i HOME="$HOME" PATH='/usr/bin:/bin:/usr/sbin:/sbin' /bin/bash -c '
+        source "$1" >/dev/null 2>&1 || exit 1
+        name="$2"; printf "%s" "${!name-}"
+    ' saved-value "$ENV_FILE" "$1"
+}
+
 managed_env_write_gradle() {
-    local gradle_home="$1" body
+    local gradle_home="$1" body other alias previous
     managed_env_prepare_paths
     require_absolute_path GRADLE_USER_HOME "$GRADLE_USER_HOME"
-    body="$(printf 'export GRADLE_HOME=%s\nexport GRADLE_USER_HOME=%s\n' \
-        "$(shell_quote "$gradle_home")" "$(shell_quote "$GRADLE_USER_HOME")")"
-    if [ "$GRADLE_VERSION" = 4.5.1 ]; then
-        body="$body
-export GRADLE_4_5_1_HOME=$(shell_quote "$gradle_home")"
-    fi
+    body="$(printf 'export GRADLE_HOME=%s\nexport GRADLE_USER_HOME=%s\nexport %s=%s\n' \
+        "$(shell_quote "$gradle_home")" "$(shell_quote "$GRADLE_USER_HOME")" \
+        "$(gradle_alias_name)" "$(shell_quote "$gradle_home")")"
+    for other in 4.5.1 6.8; do
+        [ "$other" != "$GRADLE_VERSION" ] || continue
+        alias="$(gradle_alias_name "$other")"
+        previous="$(managed_env_saved_value "$alias")" || previous=''
+        if [ -x "$previous/bin/gradle" ] && [ -s "$previous/lib/gradle-launcher-$other.jar" ]; then
+            body="$body
+export $alias=$(shell_quote "$previous")"
+        fi
+    done
     _managed_env_write_block "$GRADLE_ENV_FILE" "$body"
     _managed_env_finish
 }

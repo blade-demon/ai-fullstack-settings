@@ -38,7 +38,7 @@ cfd5f5dea4cfff7291219f143a53941f12f85fecb55f62d7f36ff61f0e2e8290  lombok-243.281
 dd76969715fb8d1d2e1f1fee4e9961c8f9b0d49f835a2c7a7d0c1e71709fae4c  Key_Promoter_X-2026.1.2.zip
 ```
 
-成员通过菜单 `6` 下载后，使用 IDEA 的 `Install Plugin from Disk` 安装原始 ZIP 并按提示重启；本次未对用户正在使用的 IDEA 执行安装或功能验收。
+成员可通过菜单 `5` 安装全部 IDEA 插件；需要手动安装时，由维护者通过 `download-tools.sh` 下载原始 ZIP，再使用 IDEA 的 `Install Plugin from Disk` 安装并按提示重启。本次来源核验未对用户正在使用的 IDEA 执行安装或功能验收。
 
 核验日期：2026-10-06。目标：macOS Apple Silicon / Intel，IntelliJ IDEA **Community Edition 2024.3.7.1，build `IC-243.28141.41`**。本文记录官方来源和静态兼容性；不表示已经在 IDEA 中安装并验收全部插件。
 

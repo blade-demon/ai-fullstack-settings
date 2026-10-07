@@ -29,7 +29,7 @@ if "$DRY_RUN"; then
     log '[预演] 检查完整 JDK 8（java、javac、jre）；本次不加载已生成环境或执行 SDK。'
     log "[预演] 通过固定 SHA-256 校验下载：$gradle_url"
     log "[预演] 安装/验证独立 Gradle：$GRADLE_INSTALL_DIR"
-    log '[预演] 配置 GRADLE_HOME、GRADLE_4_5_1_HOME、GRADLE_USER_HOME 与 Java/Gradle PATH。'
+    log "[预演] 配置 GRADLE_HOME、$(gradle_alias_name)、GRADLE_USER_HOME 与 Java/Gradle PATH；当前 Java 切换到 JDK 8。"
     if [ -n "$PROJECT_DIR" ]; then
         log "[预演] 在 ${PROJECT_DIR} 按 IDEA 分发选择执行 Gradle --no-daemon --console=plain ${GRADLE_BUILD_TASK}。"
     else
@@ -123,7 +123,10 @@ expected_user_home="$GRADLE_USER_HOME"
     source "$ENV_FILE"
     [ "${JAVA_HOME:-}" = "$java_home" ] && [ "${JAVA_8_HOME:-}" = "$java_home" ] && [ "${JRE_HOME:-}" = "$java_home/jre" ] &&
         [ "${GRADLE_HOME:-}" = "$gradle_home" ] && [ "${GRADLE_USER_HOME:-}" = "$expected_user_home" ] && is_jdk8 "$JAVA_HOME" || exit 1
-    if [ "$GRADLE_VERSION" = 4.5.1 ]; then [ "${GRADLE_4_5_1_HOME:-}" = "$gradle_home" ] || exit 1; fi
+    case "$GRADLE_VERSION" in
+        4.5.1) [ "${GRADLE_4_5_1_HOME:-}" = "$gradle_home" ] || exit 1 ;;
+        6.8) [ "${GRADLE_6_8_HOME:-}" = "$gradle_home" ] || exit 1 ;;
+    esac
     [ "$(command -v java)" = "$java_home/bin/java" ] && [ "$(command -v gradle)" = "$gradle_home/bin/gradle" ]
 ) || die '写入后加载环境验证失败，请检查受管环境文件中的自定义设置'
 if [ -n "$PROJECT_DIR" ]; then

@@ -4,7 +4,7 @@ Lombok、Spring、MySQL Connector/J 和 MyBatis 等依赖由真实业务项目�
 
 导入项目前请确认：
 
-- 项目提供完整 Gradle Wrapper，使用团队约定的 Gradle 4.5.1。
+- 项目使用团队约定的 Gradle 版本；一键安装基线为 4.5.1，6.8 需按项目要求单独选择。使用 Wrapper 时应提供完整 Wrapper，安装新 SDK 不会自动升级项目配置。
 - Spring / Spring Boot、Lombok、MyBatis 和数据库驱动版本符合 JDK 8 与现有项目要求。
 - 能访问项目声明的依赖仓库；Gradle 分发包服务器仅提供 Gradle 本体，不自动代理 Maven 依赖。
 - 数据库连接配置指向实际开发库，驱动与服务端版本匹配。

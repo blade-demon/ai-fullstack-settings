@@ -113,7 +113,7 @@ elif [ "${groups[$selected]}" = plugins ]; then
 else
     case "$resource_id" in
         idea-*)
-            log "IDEA 安装到当前用户目录：$HOME/Applications。可返回主菜单选择 8 自动安装。"
+            log "IDEA 安装到当前用户目录：$HOME/Applications。可返回主菜单选择 4 自动安装。"
             log '手动安装时，请复制 DMG 中的应用到个人 Applications，勿使用镜像内指向系统目录的 Applications 快捷方式。'
             ;;
         *) log '在 Finder 中打开上面的 DMG，按软件自身的安装提示操作。' ;;

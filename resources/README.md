@@ -15,11 +15,11 @@ bash tools/prepare-resources.sh
 bash tools/prepare-resources.sh --verify
 ```
 
-当前清单共 13 项，完整下载约 2.53 GB，包含两种 Mac 架构的 JDK 8、IDEA 2024 社区版、DBeaver，以及通用 Gradle 和六个免费插件。Docker 不在下载清单中。
+当前清单共 14 项，包含两种 Mac 架构的 JDK 8、IDEA 2024 社区版、DBeaver，以及通用 Gradle 4.5.1 / 6.8 和六个免费插件。完整下载大小以实际文件为准。Docker 不在下载清单中。
 
 ## 已准备的文件
 
-2026-10-06 已下载以下 13 个原始文件。下载完成不代表已安装或通过业务项目运行验收。
+2026-10-06 已下载以下 13 个原始文件。新增 Gradle 6.8 本次仅登记到清单，目标文件为 `runtime/gradle/gradle-6.8-bin.zip`，尚未下载；需运行准备与校验命令后再分发。下载完成不代表已安装或通过业务项目运行验收。
 
 | 软件 / 插件 | 版本 | 文件 |
 | --- | --- | --- |
@@ -39,7 +39,7 @@ resources/
 ├── catalog.tsv
 ├── runtime/
 │   ├── jdk/                 # JDK 8，两种 Mac 架构
-│   └── gradle/              # Gradle 4.5.1
+│   └── gradle/              # Gradle 4.5.1、6.8（新增待下载）
 ├── software/
 │   ├── idea/                # IDEA 2024.3.7.1 Community DMG
 │   └── dbeaver/             # DBeaver Community 26.2.2 DMG

@@ -1,6 +1,6 @@
 # 修复历史与结果 review
 
-成员在主菜单选择 `10`，可以查看每次修复的结果和记录位置。默认保存到 `~/Library/Logs/team-java-env/history/`，每次操作单独建目录；维护者可用 `REPAIR_HISTORY_DIR` 指定其他绝对路径。
+每次修复的结果默认保存到 `~/Library/Logs/team-java-env/history/`，每次操作单独建目录。成员可打开操作结果中显示的目录查看记录；维护者也可运行 `bash dev-kit/.support/scripts/history.sh` 查看历史，或用 `REPAIR_HISTORY_DIR` 指定其他绝对路径。
 
 | 文件 | 用途 |
 | --- | --- |
@@ -26,6 +26,6 @@ IDEA 项目预检只读读取项目 XML 和 SDK 登记表；待配置阶段以�
 
 有项目的 SDK / IDEA 修复还会在预检前执行 SDK 名称同步，记录 `jdk.table.xml`、项目 SDK、Gradle JVM 和模块引用的前后快照。可分享差异仅显示相关 SDK 字段，原始文件仍在本机私有快照中；名称冲突或配置不安全会记录失败并阻止后续构建。
 
-终端构建使用受管 JDK 8，按 IDEA 的 Wrapper 或 LOCAL 实际目录验证 Gradle 4.5.1；无 IDEA 项目配置时使用受管独立 Gradle 并提示待导入，未知配置会失败。默认执行 `build`，不跳过测试；仅安装完成或版本输出正常均不足以通过，脚本同时检查构建退出码和 `BUILD SUCCESSFUL`。
+终端构建使用受管 JDK 8，按 IDEA 的 Wrapper 或 LOCAL 实际目录验证所选 Gradle 版本（默认 4.5.1，可用 `--gradle-version 6.8` 指定 6.8）；无 IDEA 项目配置时使用受管独立 Gradle 并提示待导入，未知配置会失败。默认执行 `build`，不跳过测试；仅安装完成或版本输出正常均不足以通过，脚本同时检查构建退出码和 `BUILD SUCCESSFUL`。
 
 review 时先查看 `report.md`，再核对 `config-changes.diff` 和失败阶段日志。原始配置备份可能包含个人设置，仅供本机查看；分享排障信息时选择必要内容。历史目录使用私有权限，脚本不会自动上传记录，也不会自动回滚开发者后续修改。

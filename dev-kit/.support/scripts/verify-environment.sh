@@ -29,7 +29,7 @@ case "$scope" in
         ' verify "$ENV_FILE" 2>&1)" || { printf '%s\n' "$version_output"; die 'Gradle 无法实际运行'; }
         actual="$(printf '%s\n' "$version_output" | awk '/^Gradle[ \t]+/ {sub(/\r$/, ""); if (NF==2) print $2}')"
         [ "$actual" = "$GRADLE_VERSION" ] || die "Gradle 实际版本错误：${actual:-未知}"
-        log "[验证通过] Gradle ${actual}、GRADLE_HOME、GRADLE_4_5_1_HOME、GRADLE_USER_HOME 和 PATH。"
+        log "[验证通过] Gradle ${actual}、GRADLE_HOME、$(gradle_alias_name)、GRADLE_USER_HOME 和 PATH。"
         ;;
 esac
 case "$scope" in

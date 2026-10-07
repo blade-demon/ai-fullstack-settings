@@ -1,5 +1,6 @@
 """成员菜单集成：真实入口/扫描/JDK修复；完整修复用进程替身记录调用边界。"""
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -22,7 +23,9 @@ class MemberTests(unittest.TestCase):
         self.bin.mkdir()
         self.picker_record = self.base / "picker-called"
         self.repair_record = self.base / "repair-arguments"
-        self.set_picker(cancel=True)
+        picker = self.bin / "osascript"
+        picker.write_text('#!/bin/sh\nprintf "called\\n" >> "$PICKER_RECORD"\nexit 1\n')
+        picker.chmod(0o755)
         self.jdk = self.home / "existing jdk8"
         (self.jdk / "bin").mkdir(parents=True)
         (self.jdk / "jre").mkdir()
@@ -34,19 +37,6 @@ class MemberTests(unittest.TestCase):
                     "SHELL": "/bin/zsh", "LC_ALL": "C.UTF-8", "JDK_INSTALL_DIR": str(self.jdk),
                     "JDK_AUTO_DETECT": "false", "PICKER_RECORD": str(self.picker_record),
                     "REPAIR_RECORD": str(self.repair_record)}
-
-    def set_picker(self, *, cancel=False, error=False, cancel_after_first=False):
-        picker = self.bin / "osascript"
-        if error:
-            body = "echo 'AppleEvent timed out. (-1712)' >&2\nexit 1\n"
-        elif cancel:
-            body = "echo 'User canceled. (-128)' >&2\nexit 1\n"
-        else:
-            body = 'printf "%s\\n" "$PICKED_PROJECT"\n'
-        condition = ('if [ -f "$PICKER_RECORD" ]; then echo "User canceled. (-128)" >&2; exit 1; fi\n'
-                     if cancel_after_first else "")
-        picker.write_text('#!/bin/sh\n' + condition + 'printf "called\\n" >> "$PICKER_RECORD"\n' + body)
-        picker.chmod(0o755)
 
     def stub_repair(self):
         # 菜单本身仍真实执行，替身只隔离完整SDK/IDE安装与构建的子进程边界。
@@ -82,6 +72,12 @@ class MemberTests(unittest.TestCase):
         self.assertIn(str(self.jdk), result.stdout)
         self.assertIn("Gradle", result.stdout)
         self.assertEqual(list(self.home.iterdir()), [self.jdk])
+        options = [line for line in result.stdout.splitlines() if re.match(r"^\d+\. ", line)]
+        self.assertEqual([line.split(".", 1)[0] for line in options], ["1", "2", "3", "4", "5", "0"])
+        for option, label in zip(options, ("全部", "JDK", "Gradle", "IDEA", "插件", "退出")):
+            self.assertIn(label, option)
+        self.assertNotIn("当前构建验证项目", result.stdout)
+        self.assertNotIn("MySQL", result.stdout)
 
     def test_entry_dry_run_uses_packaged_server_without_writing(self):
         (self.support / "config/team.sh").write_text('SERVER_ADDR="${SERVER_ADDR:-team.example:9090}"\n')
@@ -92,7 +88,7 @@ class MemberTests(unittest.TestCase):
         self.assertFalse((self.home / "Library/Logs/team-java-env/history").exists())
 
     def test_jdk_menu_repairs_complete_environment_and_records_history(self):
-        result = self.run_entry(menu=True, input_text="2\n3\n0\n")
+        result = self.run_entry(menu=True, input_text="2\n0\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.home / ".zshrc").exists())
         self.assertTrue((self.home / ".config/java-dev/jdk.sh").exists())
@@ -105,69 +101,59 @@ class MemberTests(unittest.TestCase):
         self.assertIn("COMPONENT_VERIFIED", (records[0] / "result.tsv").read_text())
         self.assertTrue((records[0] / "report.md").exists())
 
-    def test_all_repair_without_project_does_not_open_picker(self):
+    def test_install_menu_dispatches_each_scope_without_opening_picker(self):
         self.stub_repair()
-        result = self.run_entry(menu=True, input_text="1\n0\n")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.repair_arguments(), ["--scope", "all"])
-        self.assertFalse(self.picker_record.exists())
-        self.assertIn("未选择项目", result.stdout)
+        cases = [
+            ("1", ["--scope", "all", "--gradle-version", "4.5.1"]),
+            ("", ["--scope", "all", "--gradle-version", "4.5.1"]),
+            ("2", ["--scope", "jdk"]),
+            ("3\n1", ["--scope", "gradle", "--gradle-version", "4.5.1"]),
+            ("3\n3.2", ["--scope", "gradle", "--gradle-version", "6.8"]),
+            ("3.1", ["--scope", "gradle", "--gradle-version", "4.5.1"]),
+            ("3.2", ["--scope", "gradle", "--gradle-version", "6.8"]),
+            ("4", ["--scope", "idea"]), ("5", ["--scope", "plugins"]),
+        ]
+        for choice, expected in cases:
+            with self.subTest(choice=choice):
+                result = self.run_entry(menu=True, input_text=f"{choice}\n0\n")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.repair_arguments(), expected)
+                self.assertFalse(self.picker_record.exists())
 
-    def test_cancel_check_picker_returns_to_menu_without_installing(self):
+    def test_version_submenus_cancel_invalid_input_and_eof_without_installing(self):
         self.stub_repair()
-        result = self.run_entry(menu=True, input_text="3\n0\n")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("未更换项目", result.stdout)
-        self.assertFalse(self.repair_record.exists())
-        self.assertFalse((self.home / ".zshrc").exists())
+        for typed in ("3\n0\n0\n", "3\n", "3\n\n99\n0\n0\n"):
+            with self.subTest(typed=typed):
+                result = self.run_entry(menu=True, input_text=typed)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.repair_record.exists())
 
-    def test_folder_picker_error_preserves_diagnostic(self):
-        self.set_picker(error=True)
-        result = self.run_entry(menu=True, input_text="3\n0\n")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("-1712", result.stdout)
-        self.assertNotIn("已取消选择", result.stdout)
-        logs = list((self.home / "Library/Logs/team-java-env").glob("*.log"))
-        self.assertTrue(any("-1712" in log.read_text() for log in logs))
-
-    def test_menu_three_selects_project_and_menu_one_forwards_it_to_repair(self):
-        project = self.project()
-        self.set_picker()
+    def test_removed_choices_return_to_menu_without_installing(self):
         self.stub_repair()
-        result = self.run_entry(menu=True, input_text="3\n1\n0\n", extra={"PICKED_PROJECT": str(project)})
+        result = self.run_entry(menu=True, input_text="6\n7\n8\n9\n10\n0\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.repair_arguments(), ["--scope", "all", "--project", str(project)])
-        self.assertEqual(self.picker_record.read_text().splitlines(), ["called"])
-        self.assertFalse((project / "gradlew").exists())
+        self.assertEqual(result.stdout.count("请输入 0 到 5 之间的编号"), 5)
+        self.assertFalse(self.repair_record.exists())
+        self.assertFalse(self.picker_record.exists())
         self.assertFalse((self.home / ".zshrc").exists())
 
-    def test_gradle_menu_forwards_selected_build_project_to_repair(self):
-        project = self.project("独立 Gradle 项目's")
-        self.set_picker()
-        self.stub_repair()
-        result = self.run_entry(menu=True, input_text="7\n0\n", extra={"PICKED_PROJECT": str(project)})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.repair_arguments(), ["--scope", "gradle", "--project", str(project)])
-        self.assertFalse((project / "gradlew").exists())
-        self.assertFalse((self.home / ".zshrc").exists())
+    def test_gradle_version_cli_sets_package_before_derived_defaults(self):
+        result = self.run_entry("--scope", "gradle", "--gradle-version", "6.8", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("gradle-6.8-bin.zip", result.stdout)
+        for version in ("", "--dry-run", "9.0"):
+            result = self.run_entry("--scope", "gradle", "--gradle-version", version, "--dry-run")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((self.home / ".zshrc").exists())
 
-    def test_gradle_menu_initial_cancel_still_repairs_sdk_without_project(self):
-        self.stub_repair()
-        result = self.run_entry(menu=True, input_text="7\n0\n")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("未选择新项目", result.stdout)
-        self.assertEqual(self.repair_arguments(), ["--scope", "gradle"])
-
-    def test_gradle_picker_cancel_preserves_previously_selected_project(self):
+    def test_command_line_still_forwards_project_to_repair(self):
         project = self.project()
-        self.set_picker(cancel_after_first=True)
         self.stub_repair()
-        result = self.run_entry(menu=True, input_text="3\n7\n0\n", extra={"PICKED_PROJECT": str(project)})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.repair_arguments(), ["--scope", "gradle", "--project", str(project)])
-        self.assertIn("未选择新项目", result.stdout)
+        result = self.run_entry("--project", str(project), "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.repair_arguments(), ["--project", str(project), "--dry-run"])
 
-    def test_check_menu_does_not_modify_project_or_run_wrapper(self):
+    def test_command_line_check_does_not_modify_project_or_run_wrapper(self):
         project = self.project("只检查项目")
         wrapper = project / "gradle/wrapper"
         wrapper.mkdir(parents=True)
@@ -179,10 +165,11 @@ class MemberTests(unittest.TestCase):
         launcher.write_text('#!/bin/sh\ntouch "$WRAPPER_AUDIT"\nexit 99\n')
         launcher.chmod(0o644)
         marker = self.base / "wrapper-was-run"
-        self.set_picker()
-        result = self.run_entry(menu=True, input_text="3\n0\n", extra={
-            "PICKED_PROJECT": str(project), "WRAPPER_AUDIT": str(marker)})
-        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run(["/bin/bash", str(self.support / "scripts/check-env.sh"),
+                                 "--project", str(project)],
+                                env={**self.env, "WRAPPER_AUDIT": str(marker)},
+                                text=True, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("[待构建验证]", result.stdout)
         self.assertEqual(props.read_text(), original)
         self.assertEqual(launcher.stat().st_mode & 0o777, 0o644)
@@ -190,10 +177,10 @@ class MemberTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertFalse((self.home / ".zshrc").exists())
 
-    def test_failed_check_returns_to_menu_and_eof_exits(self):
-        result = self.run_entry(menu=True, input_text="3\n", extra={"JDK_INSTALL_DIR": str(self.home / "missing")})
+    def test_incomplete_environment_still_opens_menu_and_eof_exits(self):
+        result = self.run_entry(menu=True, input_text="", extra={"JDK_INSTALL_DIR": str(self.home / "missing")})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("日志", result.stdout)
+        self.assertIn("输入编号", result.stdout)
         self.assertFalse((self.home / ".zshrc").exists())
 
     def test_failed_repair_stays_in_menu_and_preserves_exit_code(self):

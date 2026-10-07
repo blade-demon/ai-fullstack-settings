@@ -48,6 +48,20 @@ class EnvironmentVerificationTests(unittest.TestCase):
     def run_script(self, script, *args):
         return subprocess.run(['/bin/bash',str(self.support/'scripts'/script),*args],env=self.env,text=True,capture_output=True,timeout=15)
 
+    def test_startup_scan_recognizes_active_gradle68_and_its_alias(self):
+        target = self.base / 'gradle-6.8'
+        self.gradle.rename(target)
+        (target / 'lib/gradle-launcher-4.5.1.jar').rename(target / 'lib/gradle-launcher-6.8.jar')
+        result = subprocess.run(['/bin/bash', '-c',
+                                 'source "$1/scripts/lib/common.sh"; source "$1/scripts/lib/managed-env.sh"; managed_env_write_gradle "$2"',
+                                 'setup', str(self.support), str(target)],
+                                env={**self.env, 'GRADLE_VERSION': '6.8'}, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        result = self.run_script('check-env.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('[已安装] 独立 Gradle 6.8', result.stdout)
+        self.assertIn('[配置完整] GRADLE_6_8_HOME=', result.stdout)
+
     def idea_project(self, sdk='fixture-jdk-8', jvm='#PROJECT', home=None, distribution=None):
         self.project = self.base / "业务项目's"
         idea = self.project / '.idea'; idea.mkdir(parents=True)

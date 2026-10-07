@@ -1,15 +1,22 @@
 #!/bin/bash
 set -euo pipefail
+scan_gradle_explicit="${GRADLE_VERSION:-}"
 source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)/common.sh"
 source "$REPO_ROOT/scripts/lib/environment.sh"
 source "$REPO_ROOT/scripts/lib/managed-env.sh"
 source "$REPO_ROOT/scripts/lib/idea-project.sh"
 parse_args "$@"
 if "$SHOW_HELP"; then
-    log '用法：check-env.sh [--project 项目路径]；扫描JDK8、Gradle4.5.1、IDEA和完整环境配置，不执行构建。'
+    log '用法：check-env.sh [--project 项目路径]；扫描 JDK 8、当前 Gradle（4.5.1 / 6.8）、IDEA 和完整环境配置，不执行构建。'
     exit 0
 fi
 "$DRY_RUN" && die '环境扫描本身只读，无需 --dry-run'
+# 未指定目标版本时，菜单启动扫描跟随已配置的 Gradle，避免将 6.8 误报为缺失。
+if [ -z "$scan_gradle_explicit" ]; then
+    scan_gradle_home="$(managed_env_saved_value GRADLE_HOME)" || scan_gradle_home=''
+    scan_gradle_version="$(_probe_distribution_version "$scan_gradle_home")" || scan_gradle_version=''
+    case "$scan_gradle_version" in 4.5.1|6.8) GRADLE_VERSION="$scan_gradle_version" ;; esac
+fi
 probe_jdk8; probe_managed_configuration; probe_idea
 failed=0
 log '当前系统环境配置：'
@@ -24,7 +31,7 @@ else log '[待修复] JAVA_HOME、JAVA_8_HOME、JRE_HOME 或 Java PATH 不完整
 if [ "$PROBE_GRADLE_CONFIG" = ready ]; then
     log "[已安装] 独立 Gradle ${GRADLE_VERSION}：$PROBE_CONFIG_GRADLE_HOME"
     log "[配置完整] GRADLE_HOME=$PROBE_CONFIG_GRADLE_HOME"
-    log "[配置完整] GRADLE_4_5_1_HOME=$PROBE_CONFIG_GRADLE_ALIAS"
+    log "[配置完整] $(gradle_alias_name)=$PROBE_CONFIG_GRADLE_ALIAS"
     log "[配置完整] GRADLE_USER_HOME=${PROBE_CONFIG_GRADLE_USER_HOME}；gradle PATH 已指向目标版本。"
 else
     log "[待修复] 独立 Gradle ${GRADLE_VERSION} 或 GRADLE_HOME、版本别名、用户缓存目录、PATH 不完整。"
@@ -52,5 +59,5 @@ if [ -n "$PROJECT_DIR" ]; then
 else log '[未选择项目] 本次未执行构建，不能据此宣称业务项目通过。'; fi
 log '[验证边界] 扫描不运行 Gradle 构建或启动 IDEA；签名、运行时、插件与项目构建由修复后的验证步骤确认。'
 if [ "$failed" -ne 0 ]; then log '[一键修复] 检测到缺失配置，可选择菜单 1；每次修复均保存可 review 的历史。'
-else log '[后续验证] 软件及配置静态检查齐全；可选择菜单 1 执行完整验证和项目构建。'; fi
+else log '[后续验证] 软件及配置静态检查齐全；可选择菜单 1 执行完整环境验证。项目构建需通过命令行指定 --project。'; fi
 exit "$failed"

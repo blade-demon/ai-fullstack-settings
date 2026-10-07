@@ -101,6 +101,12 @@ is_jdk8() {
         [[ "$javac_version" =~ javac[[:space:]]1\.8\. ]]
 }
 
+# 为各版本保留独立环境变量别名。
+gradle_alias_name() {
+    local version="${1:-$GRADLE_VERSION}"
+    printf 'GRADLE_%s_HOME\n' "${version//./_}"
+}
+
 # IDEA XML 的统一只读安全入口：先以已知编码解码检查，再交给 XML 解析器。
 # --nonet 不禁止本地外部实体；不能让解析器先解码未检查的 UTF-7/EBCDIC 等内容。
 safe_xml_valid() (

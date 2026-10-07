@@ -1,6 +1,7 @@
 Java 开发环境修复与验证（macOS）
 
-目标：JDK 8、独立 Gradle 4.5.1、IDEA 2024.3.7.1 社区版和六个插件。
+一键安装基线：JDK 8、独立 Gradle 4.5.1、IDEA 2024.3.7.1 社区版和六个插件。
+Gradle 单独安装还可选择 6.8。
 成员不必安装 Python、Homebrew 或 Git，不必填写内网服务器地址。
 
 一、首次使用
@@ -10,38 +11,32 @@ Java 开发环境修复与验证（macOS）
    使用完整工具备用 ZIP 时，解压后双击 team-dev-env 内的同名入口。
    请保留完整文件夹，隐藏的 .support 是工具的一部分。
 
-2. 有业务项目时，先选菜单 3，在目录选择器中选中项目根目录。
-   根目录须有 build.gradle 或 build.gradle.kts。本地 Gradle 不要求 Wrapper；
-   IDEA 选择 Wrapper 时，项目需有完整可执行的 Wrapper。
-   本工具目录不是 Java 业务项目。取消选择不会开始安装或构建。
-
-3. 保存工作并正常退出 IDEA，然后选菜单 1 一键修复。
-   它处理 JDK、独立 Gradle、IDEA 和全部六个插件，复用已验证的同版安装，
-   修复完整环境变量；已导入的所选项目会统一 JDK 8 登记与引用名称，再做最终验证。
-   名称默认 azul-1.8，可由维护者通过 IDEA_JDK_NAME 配置。
+2. 保存工作并正常退出 IDEA，然后选菜单 1 一键安装并配置全部环境。
+   它固定处理 JDK 8、独立 Gradle 4.5.1、IDEA 和全部六个插件，复用已验证的同版安装，
+   配置完整环境变量，再做最终环境验证。
    工具不自动杀掉 IDEA，也不自动打开它。
 
-4. 已选择项目：按 IDEA 的 Wrapper 或 LOCAL 实际目录执行终端 build，默认包含测试。
-   尚无 IDEA 项目配置时使用受管独立 Gradle，并提示待导入；未知分发配置会失败。
-   只有退出码为 0 且输出含 BUILD SUCCESSFUL 才能报告构建通过。
-   IDEA 待配置时，SDK 与终端构建通过仍会报告 PROJECT_BUILD_VERIFIED_IDEA_PENDING，
-   总体退出码为 0，但仍需完成 IDEA 设置；SUCCEEDED 也不代表 GUI 同步成功。
-   未选择项目：可以修复和验证环境，但结果明确为“未执行项目构建”。
+3. 查看环境验证结果和显示的历史目录。
+   菜单不选择业务项目，也不执行项目构建，结果明确为“未执行项目构建”。
    单独的版本命令通过、文件复制完成，都不能代替项目构建成功。
+   新开终端加载环境，在 IDEA 中导入实际业务项目并配置 SDK、Gradle 后完成同步。
 
 二、菜单
 
-1  一键修复全部环境与六个插件；有项目时完成实际构建验证。
-2  修复 JDK 8 和完整 JDK 环境变量。
-3  选择或切换业务项目，扫描当前环境。
-4  启动本地 MySQL；先安装并打开 Docker，按提示输入本地开发密码。
-5  停止 MySQL，保留已有数据。
-6  仅下载开发软件或插件，不自动安装。
-7  修复独立 Gradle 4.5.1；已选项目时强制实际构建。
-8  修复个人应用目录中的 IDEA。
-9  安装并验证全部六个 IDEA 插件；执行前请退出 IDEA。
-10 查看修复历史。
+1  一键安装 JDK、Gradle 并配置环境，包含 IDEA 和全部六个插件。
+   固定使用 JDK 8 + Gradle 4.5.1。
+2  安装并配置 JDK 8。
+3  安装并配置 Gradle：3.1 Gradle 4.5.1；3.2 Gradle 6.8。
+4  安装 IDEA 软件；菜单会显示当前用户 $HOME/Applications 的实际路径。
+5  安装推荐 IDEA 插件（全部六个）；执行前请退出 IDEA。
 0  退出。
+
+可在主菜单直接输入 3.1 / 3.2，或输入 3 进入 Gradle 版本选择。
+子菜单可输入 1 / 2 或完整编号选择版本，输入 0 返回；空行不开始安装。
+两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
+
+启动时保留只读环境预检，不下载、不安装、不构建。
+项目检查、仅下载、历史查看及可选 MySQL 服务由维护者通过命令行操作。
 
 三、安装位置与环境变量
 
@@ -49,8 +44,8 @@ JDK 默认下载目录：~/.local/share/java-dev/jdk8
 实际 JAVA_HOME 可能位于内部 Contents/Home，复用已有 JDK 时以结果为准。
 完整变量为 JAVA_HOME、JAVA_8_HOME、JRE_HOME；JRE_HOME 指向实际 jre 目录。
 
-独立 Gradle 默认目录：~/.local/share/java-dev/gradle-4.5.1
-完整变量为 GRADLE_HOME、GRADLE_4_5_1_HOME、GRADLE_USER_HOME。
+独立 Gradle 按版本保存：~/.local/share/java-dev/gradle-4.5.1、~/.local/share/java-dev/gradle-6.8
+GRADLE_HOME 指向最近选择的版本，保留已配置的 GRADLE_4_5_1_HOME、GRADLE_6_8_HOME。
 GRADLE_USER_HOME 默认 ~/.gradle，用于 Gradle 用户配置和缓存。
 独立 SDK 安装与 Wrapper 缓存分别管理；项目构建按 IDEA 分发选择实际命令。
 Wrapper 缓存通常在 ~/.gradle/wrapper/dists，不作为独立安装的 GRADLE_HOME。
@@ -73,21 +68,22 @@ IDEA 安装到：~/Applications/IntelliJ IDEA CE.app
 工具校验安装包、版本与应用内容；相同版本和构建号且完整时复用。
 其他已有目标保留并报错，不直接覆盖，不使用 sudo。
 
-菜单 1 和 9 默认安装验证全部六个固定插件：
+菜单 1 和 5 默认安装验证全部六个固定插件：
   Database Navigator、MyBatisX、GenerateAllSetter、GsonFormatPlus、Key Promoter X、Lombok。
 插件默认目录：
   ~/Library/Application Support/JetBrains/IdeaIC2024.3/plugins
 安装前保存工作并退出 IDEA；工具不会自动强制结束进程。
 完成后手动打开 IDEA，检查 Plugins 页面和实际功能。
 
-工具通过 macOS 的 xmllint 只读检查项目 .idea/misc.xml、.idea/gradle.xml，
+维护者通过命令行指定 --project 后，工具使用 macOS 的 xmllint 只读检查
+项目 .idea/misc.xml、.idea/gradle.xml，
 以及 IDEA_CONFIG_DIR/options/jdk.table.xml 中的 SDK 登记，成员无需 Python。
 IDEA_CONFIG_DIR 默认 ~/Library/Application Support/JetBrains/IdeaIC2024.3。
 检查关注 Project SDK、Gradle JVM 是否登记且有效 JDK 8，以及 LOCAL 的 Gradle 目录。
 待配置时打印实际 JDK/Gradle 路径与设置入口，不自动修改 IDEA 配置或启动 GUI。
 已选项目待配置时，环境扫描返回 1；修复预检以阶段退出码 2 记录并继续 SDK/构建验证。
 
-有项目的修复会在预检前统一 SDK 登记名称、Project SDK、Gradle JVM 和模块旧名称引用，
+维护者指定 --project 的修复会在预检前统一 SDK 登记名称、Project SDK、Gradle JVM 和模块旧名称引用，
 默认名称 azul-1.8。同目录的重复名称会合并，其他 JDK 与 Gradle 分发设置保留。
 执行前须完全退出 IDEA；首次修改备份 .bak，重复运行相同配置不再改写。
 名称冲突或配置无法安全解析时，停止并报告失败，不开始后续构建。
@@ -100,13 +96,14 @@ IDEA_CONFIG_DIR 默认 ~/Library/Application Support/JetBrains/IdeaIC2024.3。
   Gradle JVM：同一个 JDK 8，不直接使用 IDEA 自带运行时替代。
 完成后执行 Reload All Gradle Projects；静态配置可解析不代表 IDEA 已同步成功。
 
-菜单 6 仅下载，文件位于 ~/Downloads/team-java-env 的相应子目录。
+维护者可运行 .support/scripts/download-tools.sh 仅下载软件或插件，
+文件位于 ~/Downloads/team-java-env 的相应子目录。
 DBeaver 下载后打开 DMG 手动安装；插件手动安装可在 IDEA 的
 Settings → Plugins → 齿轮 → Install Plugin from Disk 中选择原始 ZIP，
 无需先解压。下载 ZIP 不等于插件已安装。
 
-Lombok 已包含在菜单 1 和 9 的自动安装中。单独手动安装步骤：
-1. 使用菜单 6，输入列表中 [lombok] 对应的数字序号，文件为：
+Lombok 已包含在菜单 1 和 5 的自动安装中。单独手动安装步骤：
+1. 由维护者在完整工具目录运行 bash .support/scripts/download-tools.sh --id lombok，文件为：
    ~/Downloads/team-java-env/plugins/idea/lombok-243.28141.18.zip
 2. 打开 IntelliJ IDEA → Settings → Plugins，点击齿轮 → Install Plugin from Disk。
 3. 选择上述原始 ZIP，点击 OK，按提示重启 IDEA。
@@ -121,7 +118,8 @@ IDE 插件版本与业务项目的 Lombok 库版本分别管理，项目仍需�
 每次开始修复后，无论成功或失败，都有独立历史：
   ~/Library/Logs/team-java-env/history/<本次记录>/
 
-菜单 10 可查看历史，也可在 Finder 的「前往 → 前往文件夹」中输入上述目录。
+在 Finder 的「前往 → 前往文件夹」中输入上述目录可查看历史。
+维护者也可在完整工具目录运行 bash .support/scripts/history.sh。
 重点文件：
   report.md             本次结果、阶段摘要与变更说明
   steps.tsv/result.tsv  阶段和最终状态、退出码、项目
@@ -132,7 +130,7 @@ IDE 插件版本与业务项目的 Lombok 库版本分别管理，项目仍需�
 
 还会保留前后扫描、文件摘要及插件逐项结果（若执行插件阶段）。
 预演 --dry-run 不安装、不构建，也不创建历史目录。
-失败时先看 report.md 与失败阶段日志；SDK 已装好而构建失败仍是失败。
+失败时先看 report.md 与失败阶段日志；维护者指定项目时，SDK 已装好而构建失败仍是失败。
 历史含配置快照，发给维护者前先检查密码、令牌等私密内容，不发送数据库密码。
 
 六、其他说明
@@ -142,7 +140,8 @@ IDE 插件版本与业务项目的 Lombok 库版本分别管理，项目仍需�
 若没有执行权限，重新下载并解压 ZIP，不要直接下载 .command。
 若下载失败或出现 404，请联系维护者确认服务器已启动、地址和文件路径正确。
 
-Docker 与业务项目由团队另行提供。安装包不包含业务依赖缓存、额外 JDBC 驱动
+业务项目由团队另行提供。可选 MySQL 服务仅供维护者通过命令行运行，需要 Docker。
+安装包不包含业务依赖缓存、额外 JDBC 驱动
 或 MySQL 镜像；实际 build 可能仍需访问内网依赖仓库。
 工具的模拟测试不等于你的业务项目已经构建成功，以本次真实构建结果为准。
 本次脚本更新未执行真实环境重装或 GUI 自动验收。

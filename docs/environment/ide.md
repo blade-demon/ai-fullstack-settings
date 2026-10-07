@@ -2,7 +2,7 @@
 
 团队基线为 **IntelliJ IDEA Community 2024.3.7.1**，应用安装在 **`~/Applications/IntelliJ IDEA CE.app`**。这是当前用户的个人应用目录，与系统 `/Applications` 不同；工具使用当前 `HOME`，不要求填写用户名或运行 `sudo`。
 
-菜单 `1` 一键修复默认包含 IDEA 和全部六个插件；菜单 `8` 单独修复 IDEA，菜单 `9` 安装并验证全部插件。菜单 `6` 保留仅下载功能，下载 ZIP 不等于插件已经安装。
+菜单 `1` 固定安装配置 JDK 8、Gradle 4.5.1、IDEA 和全部六个推荐插件；菜单 `4` 单独安装 IDEA，菜单 `5` 安装并验证全部六个推荐插件。仅下载功能保留为维护者命令行入口，下载 ZIP 不等于插件已经安装。
 
 ## 操作前退出 IDEA
 
@@ -12,7 +12,7 @@
 
 ## IDEA 应用安装
 
-菜单 `8` 按 Mac 架构从内网下载或复用 DMG，校验固定 SHA-256 后只读挂载。安装前检查社区版 bundle ID、短版本、构建号和可执行文件；复制到个人应用目录的临时位置后再次检查，最后保存到目标路径。
+菜单 `4` 显示当前用户 `$HOME/Applications` 的实际路径，并按 Mac 架构从内网下载或复用 DMG，校验固定 SHA-256 后只读挂载。安装前检查社区版 bundle ID、短版本、构建号和可执行文件；复制到个人应用目录的临时位置后再次检查，最后保存到目标路径。
 
 已有同版本、同构建号且完整的应用会复用；其他版本、不完整目标或符号链接会保留并报错，不直接覆盖。`~/Applications` 若是指向其他位置的符号链接，安装器也会拒绝，避免意外写入系统目录。
 
@@ -50,17 +50,17 @@
 操作步骤：
 
 1. 保存工作并退出 IDEA。
-2. 使用菜单 `1` 一键修复，或在 IDEA 已就绪时使用菜单 `9`。
-3. 检查插件逐项结果和整体结果；失败时从菜单 `10` 打开本次历史，查看对应日志和备份。
+2. 使用菜单 `1` 一键安装并配置全部环境，或在 IDEA 已就绪时使用菜单 `5`。
+3. 检查插件逐项结果和整体结果；失败时打开输出的本次历史目录，查看对应日志和备份。
 4. 手动启动 IDEA，在 Plugins 页面确认六个插件显示正常，再在真实项目中使用相关功能。
 
-只想下载或手动安装时，使用菜单 `6`。原始 ZIP 默认保存在 `~/Downloads/team-java-env/plugins/idea/`，可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选择 ZIP，按提示重启；手动磁盘安装不需要先解压 ZIP。自动安装与手动安装应使用同一组固定版本。
+只想下载或手动安装时，由维护者运行 `bash dev-kit/.support/scripts/download-tools.sh`，选择需要的插件。原始 ZIP 默认保存在 `~/Downloads/team-java-env/plugins/idea/`，可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选择 ZIP，按提示重启；手动磁盘安装不需要先解压 ZIP。自动安装与手动安装应使用同一组固定版本。下载命令需要已打包工具中的资源清单；在完整工具目录运行时，将脚本路径改为 `.support/scripts/download-tools.sh`。
 
 ## Lombok 安装与启用步骤
 
-菜单 `1` 和 `9` 已包含 Lombok；自动安装完成后，从第 4 步开始检查。需要单独手动安装时，按以下步骤操作：
+菜单 `1` 和 `5` 已包含 Lombok；自动安装完成后，从第 4 步开始检查。需要单独手动安装时，按以下步骤操作：
 
-1. 使用菜单 `6`，选择列表中 `[lombok]` 对应的数字序号，得到 `~/Downloads/team-java-env/plugins/idea/lombok-243.28141.18.zip`。
+1. 由维护者运行 `bash dev-kit/.support/scripts/download-tools.sh --id lombok`，得到 `~/Downloads/team-java-env/plugins/idea/lombok-243.28141.18.zip`。
 2. 打开 IDEA，在 macOS 顶部菜单选择 `IntelliJ IDEA → Settings… → Plugins`（旧版本设置菜单可能叫 `Preferences…`）。
 3. 点击 Plugins 页的齿轮，选择 `Install Plugin from Disk…`，选中上述原始 ZIP，点击 `OK`，按提示重启 IDEA。无需先解压 ZIP。[IDEA 官方安装说明](https://www.jetbrains.com/help/idea/managing-plugins.html)
 4. 进入 `Settings → Plugins → Installed`，搜索 `Lombok`，确认已启用；若显示 `Enable`，点击启用并按提示重启。
@@ -74,7 +74,7 @@ IDEA Lombok 插件用于编辑器识别，业务项目仍需在 `build.gradle` �
 SDK 配置完成后，在 IDEA 中检查：
 
 1. **项目 JDK**：确认 Project Structure 的 SDK 为 `IDEA_JDK_NAME`，默认 `azul-1.8`，并指向实际 `JAVA_HOME` 对应的 JDK 8。尚未导入的项目先完成导入，再运行名称同步。默认下载外层目录是 `~/.local/share/java-dev/jdk8`，真实 JDK Home 可能位于其内部 `Contents/Home`；复用已有 JDK 时路径也可能不同。
-2. **Gradle 分发**：在 `Settings → Build Tools → Gradle` 中确认项目使用 Wrapper 还是本地安装。选本地安装时，目录填实际 `GRADLE_HOME`，默认 `~/.local/share/java-dev/gradle-4.5.1`；选 Wrapper 时，项目需有完整可执行的 Wrapper，并使用团队要求的 Gradle 版本。
+2. **Gradle 分发**：在 `Settings → Build Tools → Gradle` 中确认项目使用 Wrapper 还是本地安装。选本地安装时，目录填实际 `GRADLE_HOME`，按所选版本为 `~/.local/share/java-dev/gradle-4.5.1` 或 `~/.local/share/java-dev/gradle-6.8`；选 Wrapper 时，项目需有完整可执行的 Wrapper，并使用团队要求的 Gradle 版本。
 3. **Gradle JVM**：确认使用同一个 `IDEA_JDK_NAME`。IDEA 自带运行时用于 IDE 本身，不等于项目或 Gradle 的 JDK。`Project SDK`、`JAVA_HOME` 是引用入口，仍可能显示在下拉列表中。
 4. **注解处理**：项目使用 Lombok 时，按上面的安装与启用步骤检查 annotation processing；Gradle 构建中的处理器依赖仍由业务项目维护。
 5. **项目导入与功能**：导入真实业务项目，执行 `Reload All Gradle Projects`，再核对依赖仓库、运行配置、数据库连接及插件实际功能。
@@ -83,7 +83,7 @@ SDK 配置完成后，在 IDEA 中检查：
 
 ## 只读项目预检
 
-扫描和修复会通过 macOS 的 `xmllint` 读取所选项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。成员无需安装 Python。
+维护者通过 `check-env.sh --project` 或 `repair-env.sh --project` 指定项目后，会使用 macOS 的 `xmllint` 读取项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2024.3`。成员无需安装 Python；菜单不选择或检查业务项目。
 
 预检检查 Project SDK、Gradle JVM 是否已登记且指向有效 JDK 8，以及 LOCAL 的 Gradle 目录等信息；待配置时打印实际 JDK/Gradle 路径和 IDEA 设置入口。它不会自动写入用户 IDEA 配置，也不会启动 GUI。自定义配置目录时，可由维护者设置 `IDEA_CONFIG_DIR` 后运行：
 
@@ -101,11 +101,11 @@ source "$HOME/.config/java-dev/env.sh"
 printf '%s\n' "$JAVA_HOME" "$JAVA_8_HOME" "$JRE_HOME" "$GRADLE_HOME" "$GRADLE_4_5_1_HOME"
 ```
 
-自定义过 `ENV_FILE` 时使用实际文件。IDEA 安装成功、插件安装验证通过和 SDK 版本通过，都不能替代项目构建；先菜单 `3` 选项目，再菜单 `1` 完成整体修复和构建，或使用[独立构建验证入口](gradle.md#维护者命令行)。
+自定义过 `ENV_FILE` 时使用实际文件。IDEA 安装成功、插件安装验证通过和 SDK 版本通过，都不能替代项目构建；由维护者使用 `repair-env.sh --project` 完成带项目的修复和构建，或使用[独立构建验证入口](gradle.md#维护者命令行)。
 
 ## 统一 JDK 8 登记与项目引用
 
-已导入 IDEA 的所选项目在一键修复或带项目的 JDK、Gradle、IDEA 修复中，使用 `IDEA_JDK_NAME`（默认 `azul-1.8`）统一名称：
+维护者通过 `repair-env.sh --project` 指定已导入 IDEA 的项目，并选择全部或 JDK、Gradle、IDEA 修复范围时，使用 `IDEA_JDK_NAME`（默认 `azul-1.8`）统一名称：
 
 - 在 `${IDEA_CONFIG_DIR}/options/jdk.table.xml` 中登记实际 JDK 8 Home，并将指向同一物理目录的其他名称合并。
 - 更新所选项目 `.idea/misc.xml` 的 Project SDK、`.idea/gradle.xml` 当前关联项目的 Gradle JVM，以及现有模块中引用被合并名称的显式 SDK 设置。
@@ -126,6 +126,6 @@ bash dev-kit/.support/scripts/runtime/config-idea-sdk.sh --project "/absolute/pa
 
 ## 历史与其他资源
 
-每次修复开始后，成功或失败均记录到 `~/Library/Logs/team-java-env/history/<本次记录>/`。`report.md` 汇总步骤，`steps.tsv` / `result.tsv` 记录状态，`config-changes.diff` 展示配置差异；插件阶段有逐项结果与必要的 `plugin-backups/`。菜单 `10` 查看历史，`--dry-run` 不创建历史。
+每次修复开始后，成功或失败均记录到 `~/Library/Logs/team-java-env/history/<本次记录>/`。`report.md` 汇总步骤，`steps.tsv` / `result.tsv` 记录状态，`config-changes.diff` 展示配置差异；插件阶段有逐项结果与必要的 `plugin-backups/`。可直接打开历史目录，或运行 `bash dev-kit/.support/scripts/history.sh` 查看记录；`--dry-run` 不创建历史。
 
-DBeaver 仍由菜单 `6` 下载 DMG 后手动安装。Database Navigator 或 DBeaver 首次连接数据库可能需要额外 JDBC 驱动；业务依赖、驱动、数据库连接和 MySQL 镜像不因 IDEA 安装完成而自动准备好。
+DBeaver 由维护者通过 `download-tools.sh` 选择并下载 DMG 后手动安装。Database Navigator 或 DBeaver 首次连接数据库可能需要额外 JDBC 驱动；业务依赖、驱动、数据库连接和 MySQL 镜像不因 IDEA 安装完成而自动准备好。

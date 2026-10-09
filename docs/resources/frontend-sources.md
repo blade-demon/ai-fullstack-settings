@@ -1,63 +1,64 @@
 # 前端运行环境与终端工具的官方资源来源
 
-核对日期：2026-10-07。目标平台为 macOS Intel（x64）与 Apple Silicon（arm64）。本次在原有 14 项资源之后新增 10 项，继续使用 `runtime`、`software`、`plugins` 三个分组；文件统一放在 `resources/frontend/`，完整下载地址和固定 SHA-256 见 [catalog.tsv](../../resources/catalog.tsv)。
+原有前端资源核对日期：2026-10-07；当前 Node 集合与文件摘要复核：2026-10-09。目标为 macOS Intel x64 / Apple Silicon arm64。当前 catalog 共 25 项，其中 frontend 路径 11 项；资源下载来源和固定摘要以 [catalog.tsv](../../resources/catalog.tsv) 为准。
 
-本次已从官方地址下载全部 10 个新增资源，计算完整文件 SHA-256 并检查归档内容；均已复制到 `resources/frontend/` 对应清单路径，并写入同名 `.sha256` 校验记录。五个 Node 包和 iTerm2 实际摘要均与官方值一致。没有安装到用户目录，也未启动这些工具；这份来源核对记录不代表完成目标电脑安装或业务项目验收。
+2026-10-09 重新读取六个现行 Node 原包，计算 SHA-256 与字节数，均匹配 catalog；新增 Node 10 x64 与 Node 22 双架构同时对照官方 SHASUMS256。资源已在源库，源库已有历史旁置记录保留；静态部署副本不另写 .sha256。本文没有执行用户安装或启动 SDK，不代表成员实机、业务构建或服务部署验收通过。
 
 ## 固定资源与路径
 
-下列路径相对于 `resources/`。`any` 代表当前两种 macOS 架构共用；iTerm2 是含 arm64、x86_64 的 Universal 应用，不表示可在其他操作系统运行。
+路径相对于 resources/，any 表示两种 Mac 架构共用，不表示支持其他系统。Node 16 不再列入新安装清单；旧文件与既有安装不因集合变化自动删除。
 
 | 资源 ID | 分组 | 固定版本 | 架构 | 保存路径 |
 | --- | --- | --- | --- | --- |
-| `nvm` | `runtime` | `0.40.8`（上游 tag `v0.40.8`） | `any` | `frontend/nvm/nvm.tar.gz` |
+| `nvm` | `runtime` | `0.40.8` | `any` | `frontend/nvm/nvm.tar.gz` |
 | `node14-macos-x64` | `runtime` | `14.21.3` | `x64` | `frontend/node/node-v14.21.3-darwin-x64.tar.gz` |
-| `node16-macos-arm64` | `runtime` | `16.20.2` | `arm64` | `frontend/node/node-v16.20.2-darwin-arm64.tar.gz` |
-| `node16-macos-x64` | `runtime` | `16.20.2` | `x64` | `frontend/node/node-v16.20.2-darwin-x64.tar.gz` |
 | `node18-macos-arm64` | `runtime` | `18.20.8` | `arm64` | `frontend/node/node-v18.20.8-darwin-arm64.tar.gz` |
 | `node18-macos-x64` | `runtime` | `18.20.8` | `x64` | `frontend/node/node-v18.20.8-darwin-x64.tar.gz` |
 | `iterm2` | `software` | `3.7.3` | `any` | `frontend/iterm2/iTerm2.zip` |
 | `oh-my-zsh` | `plugins` | `60c9a7a839b790cd905d0fd4419435124fd1bdc0` | `any` | `frontend/zsh/oh-my-zsh.tar.gz` |
-| `zsh-autosuggestions` | `plugins` | `0.7.1`（上游 tag `v0.7.1`） | `any` | `frontend/zsh/zsh-autosuggestions.tar.gz` |
+| `zsh-autosuggestions` | `plugins` | `0.7.1` | `any` | `frontend/zsh/zsh-autosuggestions.tar.gz` |
 | `zsh-syntax-highlighting` | `plugins` | `0.8.0` | `any` | `frontend/zsh/zsh-syntax-highlighting.tar.gz` |
+| `node10-macos-x64` | `runtime` | `10.24.1` | `x64` | `frontend/node/node-v10.24.1-darwin-x64.tar.gz` |
+| `node22-macos-arm64` | `runtime` | `22.23.3` | `arm64` | `frontend/node/node-v22.23.3-darwin-arm64.tar.gz` |
+| `node22-macos-x64` | `runtime` | `22.23.3` | `x64` | `frontend/node/node-v22.23.3-darwin-x64.tar.gz` |
 
-## Node 14 / 16 / 18 与 nvm
+## Node 10 / 14 / 18 / 22 与 nvm
 
-nvm 固定为官方 [v0.40.8 发布](https://github.com/nvm-sh/nvm/releases/tag/v0.40.8)的[源码 tar.gz](https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.8.tar.gz)。下载后的归档根目录为 `nvm-0.40.8`，包含 `nvm.sh`。它是 Shell 版本管理器，无需为两种 CPU 分别下载。使用源码归档不需要运行在线 `install.sh`。
+nvm 固定为官方 [v0.40.8](https://github.com/nvm-sh/nvm/releases/tag/v0.40.8)的[源码归档](https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.8.tar.gz)，根目录 nvm-0.40.8 含 nvm.sh；不运行在线 install.sh。Node 使用固定版本目录，不在成员安装时查询 latest。当前原包的 npm/package.json 内容为：
 
-Node 18 的最终补丁版核对为 **18.20.8**，与官方 [latest-v18.x 目录](https://nodejs.org/dist/latest-v18.x/)一致，清单采用固定版本目录。Node tar.gz 保持上游原始内容，内含各版本配套 npm；版本信息来自[官方发行索引](https://nodejs.org/dist/index.json)。
+| Node | 配套 npm | macOS 资源 |
+| --- | --- | --- |
+| 10.24.1 | 6.14.12 | x64 |
+| 14.21.3 | 6.14.18 | x64 |
+| 18.20.8 | 10.8.2 | arm64、x64 |
+| 22.23.3 | 10.9.9 | arm64、x64 |
 
-| Node | 包含的 npm | macOS 资源 | 官方维护结束日期 |
-| --- | --- | --- | --- |
-| 14.21.3 | 6.14.18 | x64 | 2023-04-30 |
-| 16.20.2 | 8.19.4 | arm64、x64 | 2023-09-11 |
-| 18.20.8 | 10.8.2 | arm64、x64 | 2025-04-30 |
+Node 10、14 无官方 Darwin arm64 包，Apple Silicon 要求已有可用 Rosetta；不回退源码编译或自动安装 Rosetta。依据为 [Node 10 固定归档](https://nodejs.org/download/release/v10.24.1/)、[Node 14 固定归档](https://nodejs.org/dist/v14.21.3/)和[nvm macOS 说明](https://github.com/nvm-sh/nvm/blob/v0.40.8/README.md#macos-troubleshooting)。18/22 按本机架构使用原包，具体系统兼容仍需目标电脑运行验证。
 
-这三条 Node 主版本线均已 **EOL**，用于复现团队现有项目环境；新项目应按项目要求选择仍受维护的版本。维护结束日期来自 [Node.js 官方发布计划](https://github.com/nodejs/Release/blob/main/schedule.json)，状态可对照[官方版本页面](https://nodejs.org/en/about/previous-releases)。
+维护者 --arch arm64 筛选不会包含 node10-macos-x64 / node14-macos-x64；Apple Silicon 要使用两版时另外准备对应 ID 或使用完整清单，不把 x64 包标成 any。安装前 Rosetta 检查和实际版本运行验证都不能由仅下载通过代替。
 
-**Node 14 没有官方 Darwin arm64 二进制包。** 本清单只提供官方 x64 包；Apple Silicon 使用该包需要系统已有可用 Rosetta。nvm 的[官方 Apple Silicon 说明](https://github.com/nvm-sh/nvm/blob/v0.40.8/README.md#macos-troubleshooting)说明 Darwin arm64 正式二进制从 Node 16 开始提供；[Node 14 官方归档](https://nodejs.org/dist/v14.21.3/)也只有 Darwin x64 包。本工具链不提供源码编译替代。Rosetta 的适用系统及安装方式以 [Apple 官方说明](https://support.apple.com/en-us/102527)为准。
-
-维护者若使用 `--arch arm64` 筛选准备资源，该筛选不会包含 `node14-macos-x64`；需要给 Apple Silicon 分发 Node 14 时，必须再单独准备这个 ID，或使用完整清单。架构字段不能为绕过筛选而将 x64 包标为 `any`。
-
-| Node 包 | SHA-256（官方值，已下载验证） | 实测字节数 |
+| Node 包 | SHA-256 | 2026-10-09 本地实测字节数 |
 | --- | --- | ---: |
-| [14.21.3 Darwin x64](https://nodejs.org/dist/v14.21.3/node-v14.21.3-darwin-x64.tar.gz) | `a024f0dd5a4c1f951b79959c3e991b30a5919a734ab3e197ae0ef439e5a538b5` | 32241321 |
-| [16.20.2 Darwin arm64](https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz) | `6a5c4108475871362d742b988566f3fe307f6a67ce14634eb3fbceb4f9eea88c` | 29989231 |
-| [16.20.2 Darwin x64](https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-x64.tar.gz) | `d7a46eaf2b57ffddeda16ece0d887feb2e31a91ad33f8774da553da0249dc4a6` | 31266877 |
-| [18.20.8 Darwin arm64](https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-arm64.tar.gz) | `bae4965d29d29bd32f96364eefbe3bca576a03e917ddbb70b9330d75f2cacd76` | 39866069 |
-| [18.20.8 Darwin x64](https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-x64.tar.gz) | `ed2554677188f4afc0d050ecd8bd56effb2572d6518f8da6d40321ede6698509` | 41055784 |
+| [node-v10.24.1-darwin-x64.tar.gz](https://nodejs.org/download/release/v10.24.1/node-v10.24.1-darwin-x64.tar.gz) | `8088968a896e17c21b98187f8083291df9c88d0baa100a6cb9553e53c4fb17f8` | 18839577 |
+| [node-v14.21.3-darwin-x64.tar.gz](https://nodejs.org/dist/v14.21.3/node-v14.21.3-darwin-x64.tar.gz) | `a024f0dd5a4c1f951b79959c3e991b30a5919a734ab3e197ae0ef439e5a538b5` | 32241321 |
+| [node-v18.20.8-darwin-arm64.tar.gz](https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-arm64.tar.gz) | `bae4965d29d29bd32f96364eefbe3bca576a03e917ddbb70b9330d75f2cacd76` | 39866069 |
+| [node-v18.20.8-darwin-x64.tar.gz](https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-x64.tar.gz) | `ed2554677188f4afc0d050ecd8bd56effb2572d6518f8da6d40321ede6698509` | 41055784 |
+| [node-v22.23.3-darwin-arm64.tar.gz](https://nodejs.org/download/release/v22.23.3/node-v22.23.3-darwin-arm64.tar.gz) | `23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53` | 49963763 |
+| [node-v22.23.3-darwin-x64.tar.gz](https://nodejs.org/download/release/v22.23.3/node-v22.23.3-darwin-x64.tar.gz) | `8a677b0219178efd6eb0e475457c4afb452b521a92f6e67845a73bd85727f2a8` | 51142049 |
 
-摘要分别来自固定版本的官方文件：[v14.21.3 SHASUMS256.txt](https://nodejs.org/dist/v14.21.3/SHASUMS256.txt)、[v16.20.2 SHASUMS256.txt](https://nodejs.org/dist/v16.20.2/SHASUMS256.txt)、[v18.20.8 SHASUMS256.txt](https://nodejs.org/dist/v18.20.8/SHASUMS256.txt)。本次下载摘要与这些值逐一匹配，实测大小与 HTTP HEAD 一致；未执行 PGP 签名验证。后续分发仍须重新计算包的 SHA-256。
+新增摘要已对照官方 [v10.24.1 SHASUMS256.txt](https://nodejs.org/download/release/v10.24.1/SHASUMS256.txt)、[v22.23.3 SHASUMS256.txt](https://nodejs.org/download/release/v22.23.3/SHASUMS256.txt)。14/18 沿用 2026-10-07 的官方核对记录：[v14.21.3](https://nodejs.org/dist/v14.21.3/SHASUMS256.txt)、[v18.20.8](https://nodejs.org/dist/v18.20.8/SHASUMS256.txt)；本次重新计算文件摘要一致，没有重复研究版本，也未做 PGP 签名验证。后续分发仍计算完整 SHA-256。
 
-五个 Node tar.gz 均只有三个符号链接：`bin/npm` → `../lib/node_modules/npm/bin/npm-cli.js`、`bin/npx` → `../lib/node_modules/npm/bin/npx-cli.js`、`bin/corepack` → `../lib/node_modules/corepack/dist/corepack.js`，没有硬链接。安装时需要保留这些指向归档内部的相对链接；不能仅因链接目标包含 `..` 就拒绝合法安装包。
+2026-10-09 读取归档成员确认：Node 10 只有 bin/npm、bin/npx 两个内部相对链接；14/18/22 另有 bin/corepack，共三个；均无硬链接。链接目标分别位于 lib/node_modules/npm/bin 与 corepack/dist，不应仅因相对目标含 .. 拒绝合法内部链接。
+
+公共 --node-version 支持 none/10/14/18/22/all，安装页、一键全部及省略该参数时默认选择并安装14.21.3。显式 all 才安装四版，首次或旧 default 失效时回退到14，已有有效 default 保留；none 不安装 Node、不改 default，单版（包括默认单14）设置所选默认。实际加载、nvm use 与 alias default 的区别见[前端指南](../environment/frontend.md)。
 
 ## iTerm2
 
-官方[稳定版下载页](https://iterm2.com/downloads.html)当前推荐 **3.7.3，macOS 13+**。清单固定到 [iTerm2-3_7_3.zip](https://iterm2.com/downloads/stable/iTerm2-3_7_3.zip)，保存为 `frontend/iterm2/iTerm2.zip`。
+2026-10-07 核对的官方[稳定版下载页](https://iterm2.com/downloads.html)提供 **3.7.3，macOS 13+**。清单固定到 [iTerm2-3_7_3.zip](https://iterm2.com/downloads/stable/iTerm2-3_7_3.zip)，保存为 `frontend/iterm2/iTerm2.zip`。
 
 本次下载文件为 **57887250 字节**；SHA-256 为 `eb7a166061e58602e3d4bdf69d92f2c8cf6a63feed002f6adc07128a71c8dc39`，与下载页 3.7.3 的 PGP 签名消息中公开的摘要一致。这里只对照摘要，未验证该 PGP 签名。
 
-归档内应用名为 `iTerm.app`，`Contents/Info.plist` 标记版本 `3.7.3`、最低系统 `13.0`；`Contents/MacOS/iTerm2` 的 Mach-O fat header 同时包含 x86_64 和 arm64。因此同一个 ZIP 可供两种 Mac 架构使用。低于 macOS 13 时应跳过此资源，不能因 Node 可用而推断这版 iTerm2 也可用。
+归档内应用名为 `iTerm.app`，`Contents/Info.plist` 标记版本 `3.7.3`、最低系统 `13.0`；`Contents/MacOS/iTerm2` 的 Mach-O fat header 同时包含 x86_64 和 arm64。因此同一个 ZIP 可供两种 Mac 架构使用。低于 macOS 13 时不可选择安装此资源；全量预检会提示调整范围，不能因 Node 可用而推断这版 iTerm2 也可用。
 
 ## Oh My Zsh 与常用插件
 

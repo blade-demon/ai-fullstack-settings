@@ -59,7 +59,7 @@ class UninstallInteractiveTests(unittest.TestCase):
     def idea(self, path, identifier="com.jetbrains.intellij.ce"):
         self.write(path / "Contents/MacOS/idea", "must not execute")
         (path / "Contents/Info.plist").write_bytes(plistlib.dumps({
-            "CFBundleIdentifier": identifier, "CFBundleExecutable": "idea"}))
+            "CFBundleIdentifier": identifier, "CFBundleExecutable": "idea", "CFBundleShortVersionString": "2024.3.7"}))
         return path
 
     def process_reader(self):
@@ -244,7 +244,7 @@ class UninstallInteractiveTests(unittest.TestCase):
         self.assert_preserved()
 
     def test_explicit_noninteractive_app_scope_quits_then_deletes(self):
-        status, output, errors = self.run_main(["--apply", "--yes", "--include-idea-apps"], tty=False)
+        status, output, errors = self.run_main(["--components", "jdk,gradle,idea", "--apply", "--yes", "--include-idea-apps"], tty=False)
         self.assertEqual(status, 0, output + errors)
         self.assertFalse(self.app.exists())
         self.assertFalse(self.sdk.exists())
@@ -254,7 +254,7 @@ class UninstallInteractiveTests(unittest.TestCase):
         self.assertEqual(self.prompts, [])
 
     def test_explicit_apply_yes_does_not_infer_idea_scope(self):
-        status, output, errors = self.run_main(["--apply", "--yes"], tty=False)
+        status, output, errors = self.run_main(["--components", "jdk,gradle", "--apply", "--yes"], tty=False)
         self.assertEqual(status, 0, output + errors)
         self.assertFalse(self.sdk.exists())
         self.assertTrue(self.app.exists())
@@ -270,9 +270,24 @@ class UninstallInteractiveTests(unittest.TestCase):
         self.assertTrue(self.plugin.exists())
         self.assertEqual(len(self.prompts), 1)
 
+    def test_explicit_jdk_component_terminal_goes_directly_to_delete_without_idea_question(self):
+        status, output, errors = self.run_main(["--components", "jdk"], answers=["DELETE"])
+        self.assertEqual(status, 0, output + errors)
+        self.assertFalse(self.sdk.exists())
+        self.assertTrue(self.app.exists())
+        self.assertTrue(self.config.exists())
+        self.assertEqual(len(self.prompts), 1)
+        self.assertIn('DELETE', self.prompts[0])
+        self.assertEqual(self.quit_events, [])
+
+    def test_noninteractive_apply_yes_without_components_is_usage_error(self):
+        status, output, errors = self.run_main(["--apply", "--yes"], tty=False)
+        self.assertEqual(status, 2, output + errors)
+        self.assert_preserved()
+
     def test_already_closed_app_is_deleted_without_sending_quit(self):
         self.processes = []
-        status, output, errors = self.run_main(["--apply", "--yes", "--include-idea-apps"], tty=False)
+        status, output, errors = self.run_main(["--components", "jdk,gradle,idea", "--apply", "--yes", "--include-idea-apps"], tty=False)
         self.assertEqual(status, 0, output + errors)
         self.assertFalse(self.app.exists())
         self.assertEqual(self.quit_events, [])
@@ -297,7 +312,7 @@ class UninstallInteractiveTests(unittest.TestCase):
     def test_system_scope_guard_runs_before_any_quit_request(self):
         system_app = self.idea(self.system_apps / "IntelliJ IDEA.app", "com.jetbrains.intellij")
         self.processes.append((222, system_app))
-        status, output, errors = self.run_main(["--apply", "--yes", "--include-idea-apps"], tty=False)
+        status, output, errors = self.run_main(["--components", "jdk,gradle,idea", "--apply", "--yes", "--include-idea-apps"], tty=False)
         self.assertEqual(status, 1)
         self.assertIn("--include-system", errors)
         self.assertEqual(self.quit_events, [])
@@ -345,7 +360,7 @@ class UninstallInteractiveTests(unittest.TestCase):
         def saved_on_quit(app, pid, executable=None):
             self.successful_quit(app, pid)
             self.write(self.config.parent.parent / "new-settings.xml", "IDE wrote on normal exit")
-        status, output, errors = self.run_main(["--apply", "--yes", "--include-idea"], tty=False,
+        status, output, errors = self.run_main(["--components", "jdk,gradle,idea", "--apply", "--yes", "--include-idea"], tty=False,
                                               quit_requester=saved_on_quit)
         self.assertEqual(status, 0, output + errors)
         self.assertFalse(self.app.exists())
@@ -381,8 +396,9 @@ class UninstallInteractiveTests(unittest.TestCase):
             self.successful_quit(app, pid)
             self.write(new_settings, "new version settings")
         status, output, errors = self.run_main(answers=["y", "", "DELETE"], quit_requester=new_on_quit)
-        self.assertEqual(status, 1, output + errors)
-        self.assert_preserved()
+        self.assertEqual(status, 0, output + errors)
+        self.assertFalse(self.app.exists())
+        self.assertFalse(self.config.exists())
         self.assertTrue(new_settings.exists())
         self.assertEqual(new_settings.read_text(), "new version settings")
 

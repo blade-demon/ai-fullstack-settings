@@ -1,68 +1,49 @@
 # Go 终端界面
 
-成员交互入口已迁移到 Go + Bubble Tea。界面包含 Java 环境、Gradle 版本、前端工具和安全卸载页面；使用方向键选择，Enter 查看并确认操作，Esc 返回。执行页显示明确的阶段状态与可滚动日志，不用等待时间伪造百分比。
+成员运行 `bash devtool-helper.sh` 打开 Go + Bubble Tea 首页；`install` / `uninstall` 直接进入同一安装页或六组件卸载页。npm 薄入口也只有 install/uninstall。交互统一使用 TUI，frontend 独立页面、数字菜单和 --plain 已移除。
 
-## 入口与操作
+## 选择、执行与结果
 
-| 入口 | 有交互终端时的默认行为 |
-| --- | --- |
-| `开始配置.command` | 打开主界面，先做 Java 只读检查 |
-| `开始配置.command --frontend` | 打开前端工具页面 |
-| `卸载环境.command` | 打开安全卸载页面，不运行已安装 SDK 做扫描 |
-| `npx` 包的 `install` / `frontend` / `uninstall` | 使用同一个下载入口，分别打开上述页面 |
+首页有“安装与配置”“卸载工具”“一键安装配置全部”。安装页与卸载页均展示 JDK、Gradle、nvm、IDEA、iTerm2、Oh My Zsh；方向键移动、空格勾选，安装页左右键切换版本。参数化组件和版本会预选到同一页面。
 
-- 菜单：↑↓ / j、k 选择，Enter 继续，Esc 返回，q 退出。
-- 确认页：Enter 确认后才启动操作，Esc 返回。
-- 执行页：↑↓、PgUp、PgDn 滚动日志，End 跟随输出；Esc 取消并等待任务退出，Ctrl+C 取消后退出界面。
-- 结果页：显示成功、失败或取消；失败时显示真实退出码，Enter / Esc 返回菜单。后台任务和卸载预览的完整日志保存在 `~/Library/Logs/team-java-env/tui/`。
-- 窗口不足 52 列 × 16 行时提示扩大窗口，并禁止不可见的确认操作。
+**安装页 Enter 直接预检并执行**，没有额外计划确认页。空选择不执行；当前页显示默认版本、目录、依赖补入及持久默认变化。预检失败保留选择并显示原因，不执行任何组件，也不静默省略选中项。一键全部按 Enter 连续执行 JDK 8 → Gradle 4.5.1 → nvm/Node 14.21.3 → iTerm2 → Oh My Zsh → IDEA/六个插件；安装页的 Node 默认选择14；其他单版或 all 仍可用左右键选择，显式 all 才安装四版。all 首次或旧 default 失效时回退到14，有效 default 保留；单版（包括默认单14）设所选默认，none 不改默认。部分选择及自动补入 JDK 依赖同样遵循相对顺序。
 
-取消会处理整个后台进程组，先请求中断，必要时逐步终止并等待后代退出。已经完成的安装保留，不承诺自动回滚全部组件。Go 程序在后台任务期间收到 HUP、TERM、INT，会完成清理后返回 129、143、130，不能将中断报告为成功。交互卸载期间，Ctrl+C 交给卸载器处理后返回结果页。自动化终止 npx 会话应使用 TERM；不要仅向处于交互保活状态的包装层 PID 发送 INT。
+卸载默认全不选，只静态扫描文件及来源，不运行 SDK。先选择组件和实例，Enter 进入所选范围的清单与 `DELETE` 确认；不是快捷全卸载。删除和配置范围由执行层过滤，IDEA 用户数据可保留。TUI 不自动附加 --apply/--yes，详细边界见[卸载指南](cleanup.md)。
 
-卸载页面提供只读预览。进入实际卸载时，界面暂时把终端交给现有卸载器。IDEA 软件默认不删除；选择删除后，继续询问是否保留用户配置、SDK 登记和用户插件，留空或回答 `n` / `no` 会一并删除，只有 `y` / `yes` 才保留。查看准确计划并输入 `DELETE` 后才执行，结束后返回 TUI 结果页；IDEA 缓存、日志和 Local History 默认保留。交互卸载的终端输出不另存为 TUI 日志；实际执行清理时，卸载器将计划、操作及结果写入 `~/Library/Logs/team-java-env/cleanup/<本次记录>/report.txt`，在确认前取消或无清理内容时不产生该记录。TUI 不附加 `--apply --yes`；当前前端工具仍不在 Java 卸载范围。
+执行页显示总组件条和当前阶段条：总进度按固定计划中验证完成的组件计算，Node 版本及插件是对应组件子任务。可信总大小的下载显示实际字节与百分比，未知大小或安装/配置阶段显示动态条；下载 100% 不代表组件完成。失败、依赖跳过、取消及待处理不计作完成，独立组件可继续，取消停止余下任务。
 
-IDEA 与 iTerm2 的菜单及确认页显示当前 `HOME` 展开的个人 Applications 目录，例如 `/Users/用户名/Applications`。实际安装脚本使用同一规则；不在主目录下重复添加 `Users/用户名`。
+- 执行页：↑↓、PgUp、PgDn 滚动日志，End 跟随；Esc 取消并等待任务退出，Ctrl+C 取消后退出。
+- 结果页：显示实际状态、失败退出码、日志和报告位置，Enter/Esc 返回。成功或复用后列出实际版本、有效默认、实际加载命令及 `gradle_use` / `nvm use` 指引，未安装版本不显示为可用。
+- 窗口过小会提示放大并禁止不可见的选择或确认。界面缺失/损坏须重新下载，不能退回旧文本菜单。
 
-## 普通命令行模式
+helper/TUI 不能改变父终端环境；“已写好新终端默认”与“验证进程已通过”不表示原终端已切换。新开终端或使用结果中的加载命令后，再切换已安装版本。只安装 nvm 时显示“本次未安装 Node”，按实际已有状态提供 nvm ls 与默认值。
 
-`--plain` 使用原来的文本菜单或命令行。已有明确参数保持兼容，不会被强制放进 TUI：
+取消处理后台进程组并等待退出，已完成安装保留。HUP/TERM/INT 退出为 129/143/130；交互卸载期间 Ctrl+C 交给卸载器后返回结果页。自动化终止 npx 会话使用 TERM，不只向交互保活包装 PID 发 INT。普通 CLI 不显示内部事件协议。
+
+TUI 完整日志保存在 `~/Library/Logs/team-java-env/tui/`，统一组件记录位于同一根目录的 `components/`；实际卸载在 `cleanup/<本次记录>/report.txt` 写计划和操作结果，确认前取消不创建清理记录。交互卸载终端输出不另存 TUI 日志。
+
+## 参数化 CLI
 
 ```bash
-bash 开始配置.command --plain
-bash 开始配置.command --frontend --component node --node-version 18
-bash 卸载环境.command --plain
-bash 卸载环境.command --dry-run
+bash devtool-helper.sh help install
+bash devtool-helper.sh --dry-run install --components all
+bash devtool-helper.sh install --components gradle --gradle-version all --dry-run
+bash devtool-helper.sh uninstall --components nvm,iterm2 --dry-run
 ```
 
-无 TTY 的流水线应传入明确操作参数。Go 程序本身在无 TTY 时会提示而非等待键盘；原非交互卸载默认仍仅预览。本次迁移也修复了 npx 和下载模板的终端取消处理，因此需重新 `npm pack` 并分发新包，同时让双击入口用户重新下载 `start.zip`。之后仅修改 TUI 或 Bash 执行层时，可只更新服务器的完整工具包；临时 npm 包仍未公开发布。
+本地 help 和动作前全局 --dry-run 不联网；动作后的 --help/--dry-run 下载工具后到业务执行层。无 TTY 的实际安装必须明确组件；非交互默认卸载只预览，真删要求明确 --components 加 --apply --yes。公共入口不接受底层 repair-env.sh 的 --project/--scope。
 
 ## 构建与分发
 
-Windows 或 macOS 下载服务器正常拉取仓库后，使用原来的 `python3 server/manage.py start` 即可，Windows 使用 `py -3`。有效本地产物会复用；缺失、损坏或过期时，根据 `resources/runtime-lock.json` 自动下载匹配的界面和卸载运行文件。首次缺少文件需访问 GitHub Release 或镜像，有效缓存可离线复用；下载服务器和成员都无需安装 Go，也无需手动复制四个文件。
+Windows/macOS 下载服务器使用 Python 3.8+ 的 `start`，优先复用有效的 `resources/tui/` / `resources/cleanup/`，缺失/损坏/过期时根据 runtime-lock 自动获取匹配运行文件；服务器和成员无需 Go，Windows 不执行 Mac 程序。
 
-以下构建步骤供修改界面源码的维护者使用。界面源码位于 `tui/`，锁定 Bubble Tea、Bubbles、Lip Gloss 及间接依赖，使用 Go 1.27.1 构建。构建工具设置 `CGO_ENABLED=0`，分别生成 macOS arm64 和 amd64 可执行文件，并收集 Go 和依赖的许可证。
+修改界面源码的维护者使用 Go 1.27.1，锁定 Bubble Tea、Bubbles、Lip Gloss 与间接依赖；构建工具设置 CGO_ENABLED=0，生成 darwin arm64/amd64，并收集许可证：
 
 ```bash
 python3 tools/build-tui.py --go /absolute/path/to/go
 python3 tools/build-tui.py --verify-only
 ```
 
-默认产物：
+产物为 `resources/tui/{team-dev-env-arm64,team-dev-env-amd64,manifest.json,THIRD_PARTY_NOTICES.txt}`。构建使用临时缓存，verify-only 只读无需 Go；源码、测试或依赖锁变化须重建。卸载工具另为 universal2。维护者显式生成一个运行文件 ZIP 与 schema 1 锁，上传配套 Release；常规成员发布则只有 helper、TAR、schema 2 release.json。完整步骤见[运行文件发布指南](runtime-release.md)。
 
-```text
-resources/tui/
-├── team-dev-env-arm64
-├── team-dev-env-amd64
-├── manifest.json
-└── THIRD_PARTY_NOTICES.txt
-```
-
-构建使用临时缓存，不要求将 Go 放入用户全局 PATH；`--verify-only` 只读校验，无需 Go。每次 Go 源码、测试或依赖锁变化后须重建。维护者在 Mac 上同时确认卸载产物有效，运行 `tools/release-runtimes.py` 生成确定性 ZIP 与锁文件，上传匹配的 GitHub Release，并将锁与源码配套提交。服务器随后自动获取成品，打包到 `.support/tui/`，在 Windows 上只校验文件，不运行 Mac 程序。发布命令、镜像和离线准备见[运行文件发布指南](runtime-release.md)；目前没有 CI 自动构建或上传。
-
-`python3 server/manage.py prepare-runtimes` 可单独补齐运行文件，`--offline` 仅校验本地且不写入。`package` 仍只校验和打包，文件过期或损坏时失败；不会隐式编译或联网。仅在预备离线服务器时，可把已校验的 TUI 和卸载七文件按原目录一起复制过去，再执行离线校验。
-
-拉取源码不会更新 `dist/server`。正式发布需重新完成 `start`，以输出的 `go-tui-<实际 TAR 摘要前 12 位>` 和 `/release.json` 核对当前服务；端口占用导致启动退出时，旧服务可能仍提供旧界面。
-
-成员入口按 CPU 架构选取程序，并重新校验摘要。若界面组件缺失或损坏，应重新下载完整包；明确需要使用旧文本模式时加 `--plain`。卸载运行包及原有资源准备流程见[卸载说明](cleanup.md)和[分发指南](../distribution.md)。
-
-安装执行层仍是已有 Bash 脚本；阶段信息通过显式协议传给 TUI，最终状态由实际退出码决定。日志里的终端控制序列不会直接写入界面，内存日志和阶段列表有上限，后台任务的完整日志保存在磁盘。
+`prepare-runtimes --offline` 只校验且不写入；`package` 只校验和打包，不隐式联网/编译。`git pull` 不更新服务，重新 start 并核对实际发布版本；端口占用退出时旧界面仍可能被托管。成员运行前按架构选择程序并检查摘要、manifest 和许可。当前文档不等于运行文件 Release 已上传或实机交互验收已通过。

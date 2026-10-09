@@ -4,9 +4,14 @@ set -euo pipefail
 umask 022
 source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 source "$REPO_ROOT/scripts/lib/frontend.sh"
-parse_args "$@"
+CHECK_ONLY=false
+ITERM_ARGUMENTS=()
+for argument in "$@"; do
+    case "$argument" in --check-only) CHECK_ONLY=true ;; *) ITERM_ARGUMENTS+=("$argument") ;; esac
+done
+parse_args ${ITERM_ARGUMENTS[@]+"${ITERM_ARGUMENTS[@]}"}
 if "$SHOW_HELP"; then
-    log "用法：install-iterm2.sh [--dry-run]；安装 iTerm2 到 ${USER_APPLICATIONS_DIR}/iTerm.app。"
+    log "用法：install-iterm2.sh [--dry-run|--check-only]；安装 iTerm2 到 ${USER_APPLICATIONS_DIR}/iTerm.app。"
     exit 0
 fi
 [ -z "$PROJECT_DIR" ] || die 'iTerm2 安装不接受 --project'
@@ -20,12 +25,12 @@ case "$MACOS_MAJOR" in ''|*[!0-9]*) die '无法识别 macOS 版本' ;; esac
 APPLICATIONS="${USER_APPLICATIONS_DIR}"
 TARGET="$APPLICATIONS/iTerm.app"
 frontend_check_directory "$TARGET"
-if "$DRY_RUN"; then
+if "$DRY_RUN" && ! "$CHECK_ONLY"; then
     log "[预演] 从内网下载并校验 iTerm2 ${EXPECTED_VERSION}，安装到 ${TARGET}。"
     log '[预演] 验证应用标识、版本、可执行文件和代码签名；相同版本复用，冲突保留。'
     exit 0
 fi
-for tool in tar plutil codesign mktemp; do require_command "$tool"; done
+for tool in tar plutil codesign mktemp shasum; do require_command "$tool"; done
 validate_app() {
     local app="$1" plist="$1/Contents/Info.plist" executable identifier version
     [ -d "$app" ] && [ ! -L "$app" ] && [ -f "$plist" ] && [ ! -L "$plist" ] || return 1
@@ -41,6 +46,10 @@ validate_app() {
 if [ -d "$TARGET" ]; then
     validate_app "$TARGET" || die "已有 iTerm 应用版本不符或验证失败，原应用已保留：$TARGET"
     log "复用已验证的 iTerm2 ${EXPECTED_VERSION}：$TARGET"
+    exit 0
+fi
+if "$CHECK_ONLY"; then
+    log "iTerm2 预检通过：macOS ${MACOS_VERSION}，目标 ${TARGET}（未下载或创建目录）。"
     exit 0
 fi
 frontend_fetch_resource iterm2
@@ -89,4 +98,19 @@ mkdir -p -- "$RECEIPT"
 if [ ! -e "$RECEIPT/.team-frontend-env-install.json" ]; then
     frontend_write_marker "$RECEIPT" iterm2 "$FR_VERSION" "$FR_ARCH" "$FR_PATH" "$FR_SHA"
 fi
+# 外置收据绑定本次实际发布对象；旧资源收据不能认领复用的应用。
+CODE_IDENTITY="$(codesign -d --verbose=4 "$TARGET" 2>&1 | awk -F= '$1=="CDHash" {print $2; found++} END {if(found!=1) exit 1}')" || die '无法记录 iTerm2 代码身份'
+case "$CODE_IDENTITY" in ''|*[!a-fA-F0-9]*) die 'iTerm2 代码身份格式无效' ;; esac
+[ "${#CODE_IDENTITY}" -eq 40 ] || [ "${#CODE_IDENTITY}" -eq 64 ] || die 'iTerm2 代码身份长度无效'
+APP_EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$TARGET/Contents/Info.plist")"
+INFO_SHA="$(shasum -a 256 "$TARGET/Contents/Info.plist" | awk '{print $1}')"
+EXECUTABLE_SHA="$(shasum -a 256 "$TARGET/Contents/MacOS/$APP_EXECUTABLE" | awk '{print $1}')"
+BOUND_RECEIPT="$(mktemp "$RECEIPT/.receipt.XXXXXXXX")"
+{
+    printf '{"schema":1,"tool":"team-frontend-env","kind":"iterm2","version":"%s","arch":"%s","archive":"%s","sha256":"%s","app_path":' "$FR_VERSION" "$FR_ARCH" "$FR_PATH" "$FR_SHA"
+    json_quote "$TARGET"
+    printf ',"bundle_identifier":"com.googlecode.iterm2","bundle_version":"%s","code_identity":"%s","info_sha256":"%s","executable_sha256":"%s"}\n' "$EXPECTED_VERSION" "$CODE_IDENTITY" "$INFO_SHA" "$EXECUTABLE_SHA"
+} > "$BOUND_RECEIPT"
+frontend_check_file "$RECEIPT/.team-frontend-env-install.json"
+mv -f -- "$BOUND_RECEIPT" "$RECEIPT/.team-frontend-env-install.json"
 log "iTerm2 ${EXPECTED_VERSION} 已安装：${TARGET}（未启动）"

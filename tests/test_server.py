@@ -1,5 +1,6 @@
 """Cross-platform server contracts; only temporary payloads and loopback ports."""
 import functools
+import argparse
 import contextlib
 import hashlib
 import http.server
@@ -158,6 +159,9 @@ class ServerTests(unittest.TestCase):
                 status = error.code
         return status, output.getvalue()
 
+    def test_publication_contract_has_exactly_three_files(self):
+        self.assertEqual(manage.PUBLISHED, ("devtool-helper.sh", "dev-env/team-dev-env.tar.gz", "release.json"))
+
     def test_start_automatically_packages_lan_address_and_reuses_resources(self):
         self.resources()
         target = self.repo / "resources/runtime/jdk.bin"
@@ -167,13 +171,12 @@ class ServerTests(unittest.TestCase):
             ["start", "--port", str(port), "--output", str(self.output)], ["192.168.50.8"])
         self.assertEqual(status, 0, output)
         address = "192.168.50.8:%s" % port
-        with zipfile.ZipFile(self.output / "start.zip") as archive:
-            self.assertIn(address, archive.read("开始配置.command").decode())
+        self.assertIn(address, (self.output / "devtool-helper.sh").read_text())
         with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
             self.assertIn(address, archive.extractfile("team-dev-env/.support/config/team.sh").read().decode())
-        self.assertEqual((self.output / "resources/runtime/jdk.bin").read_bytes(), b"jdk\x00\r\n")
+        self.assertFalse((self.output / "resources").exists())
         self.assertEqual(target.stat().st_mtime_ns, before)
-        self.assertIn("http://" + address + "/start.zip", output)
+        self.assertIn("http://" + address + "/devtool-helper.sh", output)
 
     def test_start_prepares_missing_runtimes_before_packaging(self):
         self.resources()
@@ -224,8 +227,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 0, output)
         for name, expected in payloads.items():
             self.assertEqual((self.repo / name).read_bytes(), expected)
-        with zipfile.ZipFile(self.output / "start.zip") as startup:
-            self.assertEqual(set(startup.namelist()), {"开始配置.command", "卸载环境.command"})
+        self.assertTrue((self.output / "devtool-helper.sh").is_file())
         with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as bundle:
             self.assertIn("team-dev-env/.support/tui/team-dev-env-arm64", bundle.getnames())
             self.assertIn("team-dev-env/.support/scripts/run-tui.sh", bundle.getnames())
@@ -259,7 +261,7 @@ class ServerTests(unittest.TestCase):
         archive = self.output / "dev-env/team-dev-env.tar.gz"
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         self.assertIn(digest[:12], release["version"])
-        self.assertEqual(release["artifacts"]["dev-env/team-dev-env.tar.gz"]["sha256"], digest)
+        self.assertEqual(release["bundle"]["sha256"], digest)
         self.assertEqual(release["runtime_sources"]["tui"],
                          json.loads((self.tui / "manifest.json").read_text())["source_sha256"])
 
@@ -290,7 +292,7 @@ class ServerTests(unittest.TestCase):
             "output": str(self.output)}))
         status, output = self.start_once([], ["10.10.0.6"])
         self.assertEqual(status, 0, output)
-        self.assertIn("10.10.0.6:%s" % port, (self.output / "start.command").read_text())
+        self.assertIn("10.10.0.6:%s" % port, (self.output / "devtool-helper.sh").read_text())
 
     def test_start_ambiguous_addresses_require_selection_and_support_interactive_choice(self):
         self.resources()
@@ -302,7 +304,7 @@ class ServerTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         status, output = self.start_once(arguments, candidates, InteractiveInput("2\n"))
         self.assertEqual(status, 0, output)
-        self.assertIn("192.168.50.8:", (self.output / "start.command").read_text())
+        self.assertIn("192.168.50.8:", (self.output / "devtool-helper.sh").read_text())
 
     def test_start_without_address_or_with_invalid_selection_does_not_publish(self):
         for candidates, stdin in [([], None), (["10.0.0.2", "10.0.1.2"], InteractiveInput("99\n")),
@@ -316,7 +318,7 @@ class ServerTests(unittest.TestCase):
     def test_start_occupied_port_preserves_publication_and_does_not_download(self):
         self.resources()
         self.assert_ok(self.package("--with-resources"))
-        previous = (self.output / "start.zip").read_bytes()
+        previous = (self.output / "devtool-helper.sh").read_bytes()
         missing = self.repo / "resources/runtime/jdk.bin"
         missing.unlink()
         with socket.socket() as listener:
@@ -331,7 +333,7 @@ class ServerTests(unittest.TestCase):
         self.assertIn("本次没有更新安装包", output)
         self.assertIn("旧版本", output)
         self.assertFalse(missing.exists())
-        self.assertEqual((self.output / "start.zip").read_bytes(), previous)
+        self.assertEqual((self.output / "devtool-helper.sh").read_bytes(), previous)
 
     def test_start_rejects_mismatched_port_and_https_before_publication(self):
         for options in [["--server", "team.example:8088", "--port", "8089"],
@@ -358,7 +360,7 @@ class ServerTests(unittest.TestCase):
                     self.env["SERVER_ADDR"] = "team.example:8080"
                 status, output = self.start_once(["start", "--port", str(port), "--output", str(self.output)])
                 self.assertEqual(status, 0, output)
-                self.assertIn("team.example:%s" % port, (self.output / "start.command").read_text())
+                self.assertIn("team.example:%s" % port, (self.output / "devtool-helper.sh").read_text())
 
     def test_start_downloads_into_custom_resource_directory_and_serves_publication(self):
         source, address = self.fixture_server()
@@ -381,15 +383,14 @@ class ServerTests(unittest.TestCase):
         deadline = time.monotonic() + 8
         while True:
             try:
-                with opener.open("http://127.0.0.1:%s/start.zip" % port, timeout=0.3) as response:
+                with opener.open("http://127.0.0.1:%s/devtool-helper.sh" % port, timeout=0.3) as response:
                     data = response.read()
                 break
             except (urllib.error.URLError, TimeoutError):
                 if time.monotonic() >= deadline or process.poll() is not None:
                     self.fail(log.read_text(encoding="utf-8"))
                 time.sleep(0.03)
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            self.assertIn("127.0.0.1:%s" % port, archive.read("开始配置.command").decode())
+        self.assertIn("127.0.0.1:%s" % port, data.decode())
         with opener.open("http://127.0.0.1:%s/resources/runtime/artifact.bin" % port) as response:
             self.assertEqual(response.read(), payload)
         self.assertEqual((storage / "runtime/artifact.bin").read_bytes(), payload)
@@ -398,7 +399,7 @@ class ServerTests(unittest.TestCase):
     def test_start_corrupt_resource_preserves_old_publication_and_releases_port(self):
         self.resources()
         self.assert_ok(self.package("--with-resources"))
-        previous = (self.output / "start.zip").read_bytes()
+        previous = (self.output / "devtool-helper.sh").read_bytes()
         target = self.repo / "resources/runtime/jdk.bin"
         target.write_bytes(b"corrupt")
         port = self.free_port()
@@ -407,35 +408,30 @@ class ServerTests(unittest.TestCase):
         self.assertNotEqual(status, 0)
         self.assertIn("SHA-256", output)
         self.assertEqual(target.read_bytes(), b"corrupt")
-        self.assertEqual((self.output / "start.zip").read_bytes(), previous)
+        self.assertEqual((self.output / "devtool-helper.sh").read_bytes(), previous)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", port))
 
     def test_package_without_shell_normalizes_text_and_preserves_unix_archive_modes(self):
-        template = self.repo / "tools/start.command.in"
+        template = self.repo / "tools/devtool-helper.sh.in"
         template.write_bytes(template.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
         self.assert_ok(self.package())
         self.assertFalse((self.base / "home/MUST_NOT_EXIST").exists())
-        launcher = (self.output / "start.command").read_bytes()
+        launcher = (self.output / "devtool-helper.sh").read_bytes()
         self.assertIn(b"config.example:8088", launcher)
         self.assertNotIn(b"\r", launcher)
         archive_path = self.output / "dev-env/team-dev-env.tar.gz"
-        self.assertEqual(archive_path.with_name(archive_path.name + ".sha256")
-                         .read_text().split()[0], hashlib.sha256(archive_path.read_bytes()).hexdigest())
+        self.assertEqual(json.loads((self.output / "release.json").read_text())["bundle"]["sha256"],
+                         hashlib.sha256(archive_path.read_bytes()).hexdigest())
         with tarfile.open(archive_path) as archive:
             for member in archive.getmembers():
                 self.assertTrue(member.isfile() or member.isdir())
                 if (member.isfile() and member.name != "team-dev-env/.support/cleanup/cleanup-macos"
                         and not member.name.startswith("team-dev-env/.support/tui/team-dev-env-")):
                     self.assertNotIn(b"\r", archive.extractfile(member).read())
-            self.assertEqual(archive.getmember("team-dev-env/开始配置.command").mode, 0o755)
-            self.assertEqual(archive.getmember("team-dev-env/.support/menu.sh").mode, 0o755)
-        with zipfile.ZipFile(self.output / "start.zip") as archive:
-            entry = archive.getinfo("开始配置.command")
-            self.assertEqual(entry.create_system, 3)
-            self.assertEqual((entry.external_attr >> 16) & 0o777, 0o755)
-            self.assertTrue(entry.flag_bits & 0x800)
-            self.assertEqual(archive.read(entry), launcher)
+            self.assertEqual(archive.getmember("team-dev-env/.support/scripts/run-tool.sh").mode, 0o755)
+            self.assertEqual(archive.getmember("team-dev-env/.support/scripts/repair-env.sh").mode, 0o755)
+        self.assertEqual((self.output / "devtool-helper.sh").stat().st_mode & 0o777, 0o755)
 
     def test_package_embeds_verified_universal_cleanup_without_running_it(self):
         self.assert_ok(self.package())
@@ -448,9 +444,6 @@ class ServerTests(unittest.TestCase):
             for name in ("manifest.json", "THIRD_PARTY_NOTICES.txt"):
                 self.assertEqual(archive.getmember(prefix + name).mode, 0o644)
             self.assertFalse(any(name.endswith(".py") for name in archive.getnames()))
-        with zipfile.ZipFile(self.output / "team-dev-env.zip") as archive:
-            self.assertEqual(archive.read(prefix + "cleanup-macos"), payload)
-            self.assertEqual((archive.getinfo(prefix + "cleanup-macos").external_attr >> 16) & 0o777, 0o755)
 
     def test_invalid_cleanup_preserves_every_published_file(self):
         self.assert_ok(self.package())
@@ -515,13 +508,10 @@ class ServerTests(unittest.TestCase):
         self.assert_ok(self.package())
         prefix = "team-dev-env/.support/tui/"
         with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
-            with zipfile.ZipFile(self.output / "team-dev-env.zip") as zipped:
-                for name in ("team-dev-env-arm64", "team-dev-env-amd64", "manifest.json", "THIRD_PARTY_NOTICES.txt"):
-                    mode = 0o755 if name.startswith("team-dev-env-") else 0o644
-                    self.assertEqual(archive.extractfile(prefix + name).read(), (self.tui / name).read_bytes())
-                    self.assertEqual(archive.getmember(prefix + name).mode, mode)
-                    self.assertEqual(zipped.read(prefix + name), (self.tui / name).read_bytes())
-                    self.assertEqual((zipped.getinfo(prefix + name).external_attr >> 16) & 0o777, mode)
+            for name in ("team-dev-env-arm64", "team-dev-env-amd64", "manifest.json", "THIRD_PARTY_NOTICES.txt"):
+                mode = 0o755 if name.startswith("team-dev-env-") else 0o644
+                self.assertEqual(archive.extractfile(prefix + name).read(), (self.tui / name).read_bytes())
+                self.assertEqual(archive.getmember(prefix + name).mode, mode)
 
     def test_invalid_tui_preserves_all_published_files(self):
         self.assert_ok(self.package())
@@ -668,7 +658,7 @@ class ServerTests(unittest.TestCase):
         config.write_text(json.dumps({"output": r"dist\发布", "server": "json.example:80",
                                       "scheme": "https"}), encoding="utf-8")
         self.assert_ok(self.cli("package"))
-        target = self.repo / "dist/发布/start.command"
+        target = self.repo / "dist/发布/devtool-helper.sh"
         self.assertIn("json.example:80", target.read_text(encoding="utf-8"))
         self.assert_ok(self.cli("package", env={"SERVER_ADDR": "env.example:81"}))
         self.assertIn("env.example:81", target.read_text(encoding="utf-8"))
@@ -677,23 +667,23 @@ class ServerTests(unittest.TestCase):
 
     def test_source_and_destination_symlinks_preserve_existing_publication(self):
         self.assert_ok(self.package())
-        previous = (self.output / "start.zip").read_bytes()
-        target = self.repo / "dev-kit/.support/menu.sh"
+        previous = (self.output / "devtool-helper.sh").read_bytes()
+        target = self.repo / "dev-kit/.support/scripts/run-tool.sh"
         target.unlink()
         target.symlink_to(self.base / "outside")
         (self.base / "outside").write_text("private")
         self.assertNotEqual(self.package().returncode, 0)
-        self.assertEqual((self.output / "start.zip").read_bytes(), previous)
+        self.assertEqual((self.output / "devtool-helper.sh").read_bytes(), previous)
         target.unlink()
         target.write_text("fixture")
         redirect = self.base / "redirect"
         redirect.symlink_to(self.output, target_is_directory=True)
         self.assertNotEqual(self.package("--output", str(redirect) + "/").returncode, 0)
-        self.assertEqual((self.output / "start.zip").read_bytes(), previous)
+        self.assertEqual((self.output / "devtool-helper.sh").read_bytes(), previous)
 
     def test_preview_occupied_port_does_not_repackage(self):
         self.assert_ok(self.package())
-        before = (self.output / "start.zip").read_bytes()
+        before = (self.output / "devtool-helper.sh").read_bytes()
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             listener.listen()
@@ -701,7 +691,7 @@ class ServerTests(unittest.TestCase):
                               "--output", str(self.output))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("端口已被占用", result.stdout)
-        self.assertEqual((self.output / "start.zip").read_bytes(), before)
+        self.assertEqual((self.output / "devtool-helper.sh").read_bytes(), before)
 
     def test_serve_from_unrelated_cwd_serves_only_selected_root_read_only(self):
         self.assert_ok(self.package())
@@ -724,8 +714,8 @@ class ServerTests(unittest.TestCase):
         deadline = time.monotonic() + 8
         while True:
             try:
-                with opener.open(address + "/start.zip", timeout=0.5) as response:
-                    self.assertEqual(response.read(), (self.output / "start.zip").read_bytes())
+                with opener.open(address + "/devtool-helper.sh", timeout=0.5) as response:
+                    self.assertEqual(response.read(), (self.output / "devtool-helper.sh").read_bytes())
                     self.assertIn("no-store", response.headers.get("Cache-Control", ""))
                 break
             except (urllib.error.URLError, TimeoutError):
@@ -736,18 +726,30 @@ class ServerTests(unittest.TestCase):
             release = json.loads(response.read().decode("utf-8"))
             self.assertEqual(release["interface"], "go-tui")
             self.assertIn("no-store", response.headers.get("Cache-Control", ""))
-        cached = urllib.request.Request(address + "/start.zip", headers={
+        cached = urllib.request.Request(address + "/devtool-helper.sh", headers={
             "If-Modified-Since": "Wed, 07 Oct 2099 05:25:22 GMT"})
         with opener.open(cached) as response:
             self.assertEqual(response.status, 200)
-            self.assertEqual(response.read(), (self.output / "start.zip").read_bytes())
-        for path, status in [("/wrong-root/start.zip", 404), ("/linked.txt", 403), ("/nested/", 403),
-                             ("/%2e%2e/secret.txt", 403)]:
+            self.assertEqual(response.read(), (self.output / "devtool-helper.sh").read_bytes())
+        (self.output / "late.txt").write_text("private after startup")
+        for path, status in [("/", 404), ("/late.txt", 404), ("/wrong-root/devtool-helper.sh", 404), ("/linked.txt", 404), ("/nested/", 404),
+                             ("/%2e%2e/secret.txt", 404)]:
             with self.subTest(path=path):
                 with self.assertRaises(urllib.error.HTTPError) as error:
                     opener.open(address + path)
                 self.assertEqual(error.exception.code, status)
                 error.exception.close()
+        for path in ('/start.zip', '/uninstall.command', '/start.command', '/team-dev-env.zip',
+                     '/dev-env/team-dev-env.tar.gz.sha256', '/%73tart.zip?download=1', '/late.txt?q=1', '/nested/'):
+            for method in ('GET', 'HEAD'):
+                with self.subTest(path=path, method=method):
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        opener.open(urllib.request.Request(address + path, method=method))
+                    self.assertEqual(error.exception.code, 404)
+                    error.exception.close()
+        with opener.open(address + '/devtool-helper.sh?v=current') as response:
+            self.assertIn('devtool-helper.sh', response.headers.get('Content-Disposition', ''))
+            self.assertIn('no-store', response.headers.get('Cache-Control', ''))
         with self.assertRaises(urllib.error.HTTPError) as error:
             opener.open(urllib.request.Request(address + "/new.txt", data=b"write", method="PUT"))
         self.assertIn(error.exception.code, (405, 501))
@@ -758,6 +760,115 @@ class ServerTests(unittest.TestCase):
         result = self.cli("serve", "--directory", str(self.repo), "--port", "12345")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("打包", result.stdout)
+
+    def test_retired_files_are_removed_only_after_successful_publication(self):
+        self.assert_ok(self.package())
+        for name in manage.RETIRED:
+            target = self.output / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"legacy")
+        unknown = self.output / "unknown.zip"
+        unknown.write_bytes(b"keep")
+        (self.repo / "dev-kit/.support/scripts/repair-env.sh").unlink()
+        self.assertNotEqual(self.package().returncode, 0)
+        for name in manage.RETIRED:
+            self.assertEqual((self.output / name).read_bytes(), b"legacy")
+        (self.repo / "dev-kit/.support/scripts/repair-env.sh").write_text("# restored\n")
+        self.assert_ok(self.package())
+        self.assertTrue(all(not (self.output / name).exists() for name in manage.RETIRED))
+        self.assertEqual(unknown.read_bytes(), b"keep")
+
+    def test_retired_links_special_targets_and_cleanup_failure_are_errors(self):
+        self.assert_ok(self.package())
+        before = {name: (self.output / name).read_bytes() for name in manage.PUBLISHED}
+        external = self.base / "external"
+        external.write_bytes(b"private")
+        old = self.output / "start.zip"
+        old.symlink_to(external)
+        self.assertNotEqual(self.package().returncode, 0)
+        self.assertEqual({name: (self.output / name).read_bytes() for name in manage.PUBLISHED}, before)
+        self.assertEqual(external.read_bytes(), b"private")
+        old.unlink()
+        old.mkdir()
+        self.assertNotEqual(self.package().returncode, 0)
+        old.rmdir()
+        old.write_bytes(b"legacy")
+        real_unlink = Path.unlink
+        def refuse(target, *args, **kwargs):
+            if target == old: raise OSError("injected legacy cleanup failure")
+            return real_unlink(target, *args, **kwargs)
+        args = argparse.Namespace(output=str(self.output), resources_dir=None,
+                                  server="changed.example:8000", scheme="http", with_resources=False)
+        with mock.patch.object(manage, "ROOT", self.repo), mock.patch.object(Path, "unlink", refuse):
+            with self.assertRaisesRegex(manage.UserError, "清理失败"):
+                manage.package(args, {})
+        self.assertEqual(old.read_bytes(), b"legacy")
+        status, output = self.start_once(['serve', '--directory', str(self.output), '--port', str(self.free_port())])
+        self.assertNotEqual(status, 0)
+        self.assertIn('退场', output)
+
+    def test_release_rejects_old_extra_duplicate_and_invalid_numeric_fields(self):
+        self.assert_ok(self.package())
+        path = self.output / 'release.json'
+        original = json.loads(path.read_text())
+        for mutation in ('schema', 'artifacts', 'float', 'boolean', 'path', 'extra', 'duplicate'):
+            release = json.loads(json.dumps(original))
+            if mutation == 'schema': release['schema'] = 1
+            elif mutation == 'artifacts': release['artifacts'] = {}
+            elif mutation == 'float': release['bundle']['size'] = float(release['bundle']['size'])
+            elif mutation == 'boolean': release['bundle']['size'] = True
+            elif mutation == 'path': release['bundle']['path'] = '../other'
+            elif mutation == 'extra': release['launcher']['extra'] = 'x'
+            content = json.dumps(release)
+            if mutation == 'duplicate': content = content.replace('"schema": 2', '"schema": 2, "schema": 2')
+            path.write_text(content)
+            with self.subTest(mutation=mutation):
+                status, output = self.start_once(['serve', '--directory', str(self.output), '--port', str(self.free_port())])
+                self.assertNotEqual(status, 0, output)
+
+    def test_resource_routes_use_embedded_manifest_and_directory_precedence(self):
+        self.resources()
+        self.assert_ok(self.package())
+        source = self.repo / 'resources'
+        # Current source catalog cannot widen the historical publication scope.
+        (source / 'catalog.tsv').write_text('invalid current catalog')
+        (source / 'unknown.bin').write_bytes(b'private')
+        with mock.patch.object(manage, 'ROOT', self.repo):
+            routes = manage.publication_routes(self.output)
+            self.assertEqual(routes['resources/runtime/jdk.bin'], source / 'runtime/jdk.bin')
+            self.assertNotIn('resources/unknown.bin', routes)
+            deployed = self.output / 'resources'
+            shutil.copytree(source, deployed)
+            routes = manage.publication_routes(self.output, settings={'resources_dir': str(self.base / 'missing')})
+            self.assertEqual(routes['resources/runtime/jdk.bin'], deployed / 'runtime/jdk.bin')
+            explicit = self.base / 'explicit'
+            shutil.copytree(source, explicit)
+            routes = manage.publication_routes(self.output, str(explicit))
+            self.assertEqual(routes['resources/runtime/jdk.bin'], explicit / 'runtime/jdk.bin')
+            (explicit / 'runtime/jdk.bin').write_bytes(b'corrupt')
+            with self.assertRaisesRegex(manage.UserError, 'SHA-256'):
+                manage.publication_routes(self.output, str(explicit))
+
+    def test_preview_default_is_temporary_and_explicit_output_is_retained(self):
+        self.resources()
+        formal = self.repo / 'dist/server'
+        formal.mkdir(parents=True)
+        (formal / 'keep').write_bytes(b'formal')
+        seen = []
+        def inspect(server):
+            directory = Path(server.RequestHandlerClass.keywords['directory'])
+            seen.append(directory)
+            self.assertTrue((directory / 'devtool-helper.sh').is_file())
+            self.assertFalse((directory / 'resources').exists())
+        with mock.patch.object(manage, 'ROOT', self.repo), mock.patch.object(manage.DownloadServer, 'serve_forever', inspect):
+            args = manage.make_parser().parse_args(['preview', '--port', str(self.free_port())])
+            manage.serve(args, {'output': str(formal)}, preview=True)
+            self.assertFalse(seen[-1].exists())
+            args = manage.make_parser().parse_args(['preview', '--port', str(self.free_port()), '--output', str(self.output)])
+            manage.serve(args, {}, preview=True)
+            self.assertTrue(seen[-1].is_dir())
+        self.assertEqual((formal / 'keep').read_bytes(), b'formal')
+
 
 
 if __name__ == "__main__":

@@ -149,9 +149,7 @@ def release_runtimes(root, output, lock_path, repository=REPOSITORY, verify_only
         "files": {name: {"sha256": hashlib.sha256(payload).hexdigest(), "size": len(payload)}
                   for name, payload in sorted(payloads.items())},
     }
-    files = {output / ARCHIVE: archive,
-             output / (ARCHIVE + ".sha256"): (digest + "  " + ARCHIVE + "\n").encode("ascii"),
-             output / "release-notes.md": release_notes(lock)}
+    files = {output / ARCHIVE: archive}
     if lock_path in files:
         raise ValueError("锁文件路径不能与发布文件重叠。")
     files[lock_path] = (json.dumps(lock, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
@@ -186,7 +184,7 @@ def release_runtimes(root, output, lock_path, repository=REPOSITORY, verify_only
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="校验并生成固定版本的 macOS 运行文件发布包（无需 Go，不上传）")
-    parser.add_argument("--output", type=Path, default=ROOT / "dist/runtime-release", help="ZIP、摘要和发布说明输出目录")
+    parser.add_argument("--output", type=Path, default=ROOT / "dist/runtime-release", help="运行文件 ZIP 输出目录")
     parser.add_argument("--lock", type=Path, default=ROOT / "resources/runtime-lock.json", help="仓库运行文件锁路径")
     parser.add_argument("--repository", default=REPOSITORY, help="GitHub 仓库 owner/repo")
     parser.add_argument("--verify-only", action="store_true", help="只校验现有发布包、锁和本地源码，不写入任何文件")

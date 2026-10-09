@@ -1,4 +1,4 @@
-"""成员菜单集成：真实入口/扫描/JDK修复；完整修复用进程替身记录调用边界。"""
+"""成员统一入口及维护者命令行；仅隔离目录内执行。"""
 from pathlib import Path
 import re
 import shutil
@@ -55,109 +55,51 @@ class MemberTests(unittest.TestCase):
         return path
 
     def run_entry(self, *args, input_text="", menu=False, extra=None):
-        path = self.support / "menu.sh" if menu else self.kit / "开始配置.command"
+        path = self.support / "scripts/run-tool.sh"
+        args=("install", *args)
         return subprocess.run(["/bin/bash", str(path), *args], cwd=self.base, input=input_text,
                               env={**self.env, **(extra or {})}, text=True, capture_output=True, timeout=20)
 
     def test_no_terminal_shows_usage_without_installing(self):
         result = self.run_entry()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--dry-run", result.stdout)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--components", result.stderr)
         self.assertFalse((self.home / ".zshrc").exists())
 
-    def test_menu_checks_jdk_and_gradle_before_first_choice_without_installing(self):
-        result = self.run_entry(menu=True, input_text="0\n")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertLess(result.stdout.index("环境预检"), result.stdout.index("输入编号"))
-        self.assertIn(str(self.jdk), result.stdout)
-        self.assertIn("Gradle", result.stdout)
-        self.assertEqual(list(self.home.iterdir()), [self.jdk])
-        options = [line for line in result.stdout.splitlines() if re.match(r"^\d+\. ", line)]
-        self.assertEqual([line.split(".", 1)[0] for line in options], ["1", "2", "3", "4", "5", "6", "0"])
-        for option, label in zip(options, ("全部", "JDK", "Gradle", "IDEA", "插件", "前端", "退出")):
-            self.assertIn(label, option)
-        self.assertNotIn("当前构建验证项目", result.stdout)
-        self.assertNotIn("MySQL", result.stdout)
 
     def test_entry_dry_run_uses_packaged_server_without_writing(self):
         (self.support / "config/team.sh").write_text('SERVER_ADDR="${SERVER_ADDR:-team.example:9090}"\n')
-        result = self.run_entry("--dry-run")
+        result = self.run_entry("--components", "jdk", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("http://team.example:9090/", result.stdout)
         self.assertFalse((self.home / ".zshrc").exists())
         self.assertFalse((self.home / "Library/Logs/team-java-env/history").exists())
 
-    def test_jdk_menu_repairs_complete_environment_and_records_history(self):
-        result = self.run_entry(menu=True, input_text="2\n0\n")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.home / ".zshrc").exists())
-        self.assertTrue((self.home / ".config/java-dev/jdk.sh").exists())
-        self.assertIn("JAVA_8_HOME", result.stdout)
-        self.assertIn("JRE_HOME", result.stdout)
-        logs = list((self.home / "Library/Logs/team-java-env").glob("*.log"))
-        self.assertTrue(logs)
-        records = list((self.home / "Library/Logs/team-java-env/history").iterdir())
-        self.assertEqual(len(records), 1)
-        self.assertIn("COMPONENT_VERIFIED", (records[0] / "result.tsv").read_text())
-        self.assertTrue((records[0] / "report.md").exists())
+    def test_jdk_component_configures_existing_sdk_and_records_result(self):
+        result=self.run_entry('--components','jdk')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertTrue((self.home/'.zshrc').exists())
+        self.assertTrue((self.home/'.config/java-dev/jdk.sh').exists())
+        records=list(self.home.glob('Library/Logs/team-java-env/components/*/result.tsv'))
+        self.assertEqual(len(records),1)
+        self.assertIn('SUCCEEDED',records[0].read_text())
 
-    def test_install_menu_dispatches_each_scope_without_opening_picker(self):
-        self.stub_repair()
-        cases = [
-            ("1", ["--scope", "all", "--gradle-version", "4.5.1"]),
-            ("", ["--scope", "all", "--gradle-version", "4.5.1"]),
-            ("2", ["--scope", "jdk"]),
-            ("3\n1", ["--scope", "gradle", "--gradle-version", "4.5.1"]),
-            ("3\n3.2", ["--scope", "gradle", "--gradle-version", "6.8"]),
-            ("3.1", ["--scope", "gradle", "--gradle-version", "4.5.1"]),
-            ("3.2", ["--scope", "gradle", "--gradle-version", "6.8"]),
-            ("4", ["--scope", "idea"]), ("5", ["--scope", "plugins"]),
-        ]
-        for choice, expected in cases:
-            with self.subTest(choice=choice):
-                result = self.run_entry(menu=True, input_text=f"{choice}\n0\n")
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(self.repair_arguments(), expected)
-                self.assertFalse(self.picker_record.exists())
-
-    def test_install_menu_destination_does_not_follow_external_idea_scan_path(self):
-        external = self.base / "existing IDE/IntelliJ IDEA CE.app"
-        result = self.run_entry(menu=True, input_text="0\n", extra={"IDEA_APP": str(external)})
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        install_line = next(line for line in result.stdout.splitlines() if line.startswith("4. "))
-        self.assertIn(str(self.home / "Applications"), install_line)
-        self.assertNotIn(str(external.parent), install_line)
-
-    def test_version_submenus_cancel_invalid_input_and_eof_without_installing(self):
-        self.stub_repair()
-        for typed in ("3\n0\n0\n", "3\n", "3\n\n99\n0\n0\n"):
-            with self.subTest(typed=typed):
-                result = self.run_entry(menu=True, input_text=typed)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertFalse(self.repair_record.exists())
-
-    def test_removed_choices_return_to_menu_without_installing(self):
-        self.stub_repair()
-        result = self.run_entry(menu=True, input_text="7\n8\n9\n10\n0\n")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count("请输入 0 到 6 之间的编号"), 4)
-        self.assertFalse(self.repair_record.exists())
-        self.assertFalse(self.picker_record.exists())
-        self.assertFalse((self.home / ".zshrc").exists())
+    def run_maintenance(self,*args):
+        return subprocess.run(['/bin/bash',str(self.support/'install_env.sh'),*args],cwd=self.base,env=self.env,text=True,capture_output=True,timeout=20)
 
     def test_gradle_version_cli_sets_package_before_derived_defaults(self):
-        result = self.run_entry("--scope", "gradle", "--gradle-version", "6.8", "--dry-run")
+        result = self.run_maintenance("--scope", "gradle", "--gradle-version", "6.8", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("gradle-6.8-bin.zip", result.stdout)
         for version in ("", "--dry-run", "9.0"):
-            result = self.run_entry("--scope", "gradle", "--gradle-version", version, "--dry-run")
+            result = self.run_maintenance("--scope", "gradle", "--gradle-version", version, "--dry-run")
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((self.home / ".zshrc").exists())
 
     def test_command_line_still_forwards_project_to_repair(self):
         project = self.project()
         self.stub_repair()
-        result = self.run_entry("--project", str(project), "--dry-run")
+        result = self.run_maintenance("--project", str(project), "--dry-run")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.repair_arguments(), ["--project", str(project), "--dry-run"])
 
@@ -185,18 +127,7 @@ class MemberTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertFalse((self.home / ".zshrc").exists())
 
-    def test_incomplete_environment_still_opens_menu_and_eof_exits(self):
-        result = self.run_entry(menu=True, input_text="", extra={"JDK_INSTALL_DIR": str(self.home / "missing")})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("输入编号", result.stdout)
-        self.assertFalse((self.home / ".zshrc").exists())
 
-    def test_failed_repair_stays_in_menu_and_preserves_exit_code(self):
-        self.stub_repair()
-        result = self.run_entry(menu=True, input_text="1\n0\n", extra={"REPAIR_EXIT": "43"})
-        self.assertEqual(result.returncode, 43, result.stdout + result.stderr)
-        self.assertIn("本次操作未完成", result.stdout)
-        self.assertGreaterEqual(result.stdout.count("输入编号"), 2)
 
     def test_existing_java_home_is_reused_without_download(self):
         # 不可达地址确保没有意外进入 JDK 下载；后一次从保存配置复用。

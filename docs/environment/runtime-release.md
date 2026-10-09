@@ -19,7 +19,7 @@ python3 server/manage.py prepare-runtimes
 python3 server/manage.py prepare-runtimes --offline
 ```
 
-首次缺少运行文件时，服务器需要能访问锁定的 GitHub Release 或团队镜像；已校验且与当前源码匹配的本地缓存无需联网。`--offline` 只用于 `prepare-runtimes`，文件缺失、损坏或过期时返回失败。完全离线执行 `start` 还需要 24 项 SDK、软件和插件安装资源已准备齐全，可用 `python3 server/manage.py prepare --verify` 预检。
+首次缺少运行文件时，服务器需要能访问锁定的 GitHub Release 或团队镜像；已校验且与当前源码匹配的本地缓存无需联网。`--offline` 只用于 `prepare-runtimes`，文件缺失、损坏或过期时返回失败。完全离线执行 `start` 还需要 25 项 SDK、软件和插件安装资源已准备齐全，可用 `python3 server/manage.py prepare --verify` 预检。
 
 出现 `SSL: UNEXPECTED_EOF_WHILE_READING`、超时、连接重置或传输中断时，下载器最多重新连接三次；仍未恢复且系统有 `curl` 时，再通过系统 curl 下载；curl 对可恢复的网络中断也最多尝试三次，并从原始地址重新获取下载链接。运行文件和 SDK 下载共用此处理。curl 是可选的恢复工具，不需要安装额外 Python 包，也不影响已有缓存的离线复用。
 
@@ -98,34 +98,46 @@ python3 tools/release-runtimes.py --verify-only
 
 ```text
 dist/runtime-release/
-├── team-dev-env-runtimes.zip
-├── team-dev-env-runtimes.zip.sha256
-└── release-notes.md
+└── team-dev-env-runtimes.zip
 resources/runtime-lock.json
 ```
 
-锁的 `schema` 为 `1`，包含两个源码 SHA-256、ZIP 的 URL / SHA-256 / 字节数，以及七个成员各自的 SHA-256 / 字节数。运行文件版本为 `runtimes-<ZIP SHA-256 前 16 位>`，同一组文件重复生成结果一致；默认下载地址位于 `blade-demon/ai-fullstack-settings` 的同名 GitHub Release。
+显式运行文件发布只生成一个 ZIP 和配套源码锁，不生成 ZIP.sha256 或 release-notes.md；摘要和大小统一在锁中。锁的 `schema` 为 `1`，包含两个源码 SHA-256、ZIP 的 URL / SHA-256 / 字节数，以及七个成员各自的 SHA-256 / 字节数。运行文件版本为 `runtimes-<ZIP SHA-256 前 16 位>`，同一组文件重复生成结果一致；默认下载地址位于 `blade-demon/ai-fullstack-settings` 的同名 GitHub Release。
 
 `--output` 可指定发布文件输出目录，`--lock` 可指定锁路径，`--repository owner/repo` 可指定自己的 GitHub 仓库。使用自定义路径或仓库后，`--verify-only` 须使用同一组参数；它只校验既有包、锁与本地源码，不写入文件。实际部署仍读取仓库中的 `resources/runtime-lock.json`。
 
 ### 3. 提交配套源码和锁，上传匹配 Release
 
-检查生成的中文发布说明、锁及源码变更，将相关源码与 `resources/runtime-lock.json` 作为同一变更提交并正常推送到发布仓库。生成的二进制和 ZIP 不直接提交到 Git。确认当前提交包含本次配套源码与锁后，在已登录且具有仓库发布权限的 GitHub CLI 环境执行：
+检查锁及源码变更，并在上传时临时生成中文发布正文，将相关源码与 `resources/runtime-lock.json` 作为同一变更提交并正常推送到发布仓库。生成的二进制和 ZIP 不直接提交到 Git。确认当前提交包含本次配套源码与锁后，在已登录且具有仓库发布权限的 GitHub CLI 环境执行：
 
 ```bash
 release_id="$(python3 -c 'import json; print(json.load(open("resources/runtime-lock.json", encoding="utf-8"))["release"])')"
 release_commit="$(git rev-parse HEAD)"
-
+# Release 正文临时生成；不是长期发布产物
+runtime_notes="$(mktemp "${TMPDIR:-/tmp}/team-runtime-notes.XXXXXXXX")"
+python3 - "$runtime_notes" <<'PYNOTES'
+import importlib.util
+import json
+from pathlib import Path
+import sys
+spec = importlib.util.spec_from_file_location("runtime_release", "tools/release-runtimes.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+lock = json.loads(Path("resources/runtime-lock.json").read_text(encoding="utf-8"))
+Path(sys.argv[1]).write_bytes(module.release_notes(lock))
+PYNOTES
+# 先核对临时正文，再执行上传
+cat "$runtime_notes"
 gh release create "$release_id" \
   dist/runtime-release/team-dev-env-runtimes.zip \
-  dist/runtime-release/team-dev-env-runtimes.zip.sha256 \
   --repo blade-demon/ai-fullstack-settings \
   --target "$release_commit" \
   --title "$release_id" \
-  --notes-file dist/runtime-release/release-notes.md
+  --notes-file "$runtime_notes"
+rm -f -- "$runtime_notes"
 ```
 
-Release 名称必须取自本次生成的锁，不手填猜测版本；`--target` 指向已推送的配套提交。若使用 `--repository`，上面的 `--repo` 也要保持一致。该命令上传 ZIP、摘要文件，并把生成的中文说明作为 Release 正文。
+Release 名称必须取自本次生成的锁，不手填猜测版本；`--target` 指向已推送的配套提交。若使用 `--repository`，上面的 `--repo` 也要保持一致。该命令只上传一个 ZIP，把工具 release_notes(lock) 生成的临时说明作为 Release 正文；不上传旁置摘要或说明文件。
 
 同名版本已经存在时，先核对远端资产与锁是否完全一致；一致则复用，不重新创建或覆盖资产。不一致时停止并检查来源，不能通过重写标签或替换同名版本资产修补。让下载服务器拉取该变更前，应完成对应 Release 上传并确认锁中 URL 可下载，否则首次缺少运行文件的启动会失败。
 
@@ -135,6 +147,6 @@ Release 名称必须取自本次生成的锁，不手填猜测版本；`--target
 
 运行文件 Release 的 `runtimes-…` 用于下载预构建程序；成员下载目录使用另一个实际发布版本：`go-tui-<dev-env/team-dev-env.tar.gz 的 SHA-256 前 12 位>`。
 
-`start` 完成三阶段后显示这个 Go TUI 版本、`start.zip?v=版本` 和 `/release.json` 链接。`release.json` 记录 `interface=go-tui`、发布时间、两个运行文件源码摘要和六个成员发布文件的 SHA-256 / 大小。`serve` 启动前验证这份信息与实际文件，拒绝缺少新版清单的旧包或损坏包；完整有效的历史包仍可托管，显示其自身版本，不冒充最新源码。
+`start` 完成三阶段后显示这个 Go TUI 版本、`devtool-helper.sh?v=版本` 和 `/release.json` 链接。成员常规发布只有 devtool-helper.sh、dev-env/team-dev-env.tar.gz、release.json 三个文件。release.json 使用 **schema 2**，记录 interface=go-tui、发布时间、server、runtime_sources，以及 launcher/bundle 的 path/size/sha256；没有旧 artifacts 或旁置 TAR 摘要。它与 schema 1 的 runtime-lock 分别管理，不能混用。`serve` 启动前验证这份信息与实际文件，拒绝旧 schema、损坏及固定退场文件残留；完整有效的 schema 2 历史包仍可托管，显示其自身版本，不冒充最新源码。
 
 因此，更新后应核对本次就绪输出与 HTTP `/release.json`，再给成员新的下载链接。仅看 `git pull` 成功、某个端口仍能访问，或已有文件仍在磁盘上，都不能证明新版已发布。

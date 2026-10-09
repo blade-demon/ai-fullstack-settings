@@ -13,10 +13,17 @@ ROOT = Path(__file__).resolve().parents[1]
 NVM = r'''nvm() {
   case "$1" in
     --version) echo 0.40.8 ;;
+    version)
+      local version="$2"
+      [ "$version" != default ] || version="$(cat "$NVM_DIR/alias/default")"
+      if [ "$version" = system ]; then command -v node >/dev/null || return 3
+      else [ -x "$NVM_DIR/versions/node/$version/bin/node" ] || return 3; fi
+      echo "$version" ;;
     use)
       shift; [ "${1-}" != --silent ] || shift
       local version="$1"
       [ "$version" != default ] || version="$(cat "$NVM_DIR/alias/default")"
+      if [ "$version" = system ]; then command -v node >/dev/null; return $?; fi
       [ -x "$NVM_DIR/versions/node/$version/bin/node" ] || return 3
       export PATH="$NVM_DIR/versions/node/$version/bin:$PATH" ;;
     ls) [ -x "$NVM_DIR/versions/node/$2/bin/node" ] || return 3; echo "$2" ;;
@@ -63,7 +70,7 @@ cp "$WEB/$relative" "$output"
                          [("nvm-0.40.8/nvm.sh", NVM, 0o644),
                           ("nvm-0.40.8/nvm-exec", "#!/bin/sh\nexec \"$@\"\n", 0o755),
                           ("nvm-0.40.8/bash_completion", "# completion\n", 0o644)])
-        for version, arches in (("14.21.3", ("x64",)), ("16.20.2", ("x64", "arm64")), ("18.20.8", ("x64", "arm64"))):
+        for version, arches in (("10.24.1", ("x64",)), ("14.21.3", ("x64",)), ("22.23.3", ("x64", "arm64")), ("18.20.8", ("x64", "arm64"))):
             for arch in arches:
                 self.node_archive(version, arch)
         self.write_catalog()
@@ -115,11 +122,47 @@ cp "$WEB/$relative" "$output"
     def assert_ok(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_source_marker_records_snapshot_files_without_claiming_external_content(self):
+        target = self.base / 'snapshot'
+        target.mkdir()
+        (target / 'loader.sh').write_text('original')
+        (target / 'empty').mkdir()
+        (target / 'link').symlink_to('loader.sh')
+        result = self.helper('frontend_write_marker "$1" nvm 0.40.8 any nvm.tar.gz ' + 'a' * 64, str(target))
+        self.assert_ok(result)
+        marker = json.loads((target / '.team-frontend-env-install.json').read_text())
+        self.assertEqual(marker.get('files'), {'loader.sh': hashlib.sha256(b'original').hexdigest()})
+        self.assertEqual(marker.get('links'), {'link':'loader.sh'})
+        self.assertIn('empty', marker.get('directories', []))
+
+    def test_nvm_only_installs_manager_without_node_or_default(self):
+        self.assert_ok(self.run_script('--version', 'none'))
+        self.assertTrue((self.home / '.nvm/nvm.sh').is_file())
+        self.assertFalse((self.home / '.nvm/alias/default').exists())
+        self.assertEqual(list((self.home / '.nvm/versions/node').iterdir()), [])
+        self.assertNotIn('rosetta', self.calls.read_text())
+
+    def test_omitted_version_installs_only_node14_and_loads_it_by_default(self):
+        self.assert_ok(self.run_script())
+        versions = self.home / '.nvm/versions/node'
+        self.assertEqual(sorted(p.name for p in versions.iterdir()), ['v14.21.3'])
+        self.assertEqual((self.home / '.nvm/alias/default').read_text().strip(), 'v14.21.3')
+        result = subprocess.run(['/bin/bash', '-c', '. "$HOME/.zshrc"; node --version'],
+                                env=self.env, text=True, capture_output=True)
+        self.assert_ok(result)
+        self.assertEqual(result.stdout.strip(), 'v14.21.3')
+
+    def test_removed16_is_rejected_before_writes(self):
+        result = self.run_script('--version', '16')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls.exists())
+        self.assertEqual(list(self.home.iterdir()), [])
+
     def test_dry_run_reports_native_and_rosetta_plan_without_any_write_or_sdk(self):
-        result = self.run_script("--dry-run", extra={"MACHINE": "arm64"})
+        result = self.run_script("--version", "all", "--dry-run", extra={"MACHINE": "arm64"})
         self.assert_ok(result)
         self.assertIn("node-v14.21.3-darwin-x64", result.stdout)
-        self.assertIn("node-v16.20.2-darwin-arm64", result.stdout)
+        self.assertIn("node-v22.23.3-darwin-arm64", result.stdout)
         self.assertIn("Rosetta", result.stdout)
         self.assertFalse(self.calls.exists())
         self.assertEqual(list(self.home.iterdir()), [])
@@ -142,14 +185,14 @@ cp "$WEB/$relative" "$output"
         self.assertIn("SHA-256", result.stderr)
         self.assertEqual(cached.read_bytes(), b"changed archive")
 
-    def test_fresh_all_installs_versions_default18_and_keeps_java_profile(self):
+    def test_fresh_all_installs_versions_default14_and_keeps_java_profile(self):
         profile = self.home / ".zshrc"
         original = "export JAVA_HOME='/a/jdk'\n# >>> team-java-env managed >>>\nexport JAVA_8_HOME='/a/jdk'\n# <<< team-java-env managed <<<\n"
         profile.write_text(original)
-        self.assert_ok(self.run_script())
+        self.assert_ok(self.run_script('--version', 'all'))
         self.assertIn(original, profile.read_text())
-        self.assertEqual((self.home / ".nvm/alias/default").read_text().strip(), "v18.20.8")
-        for version in ("14.21.3", "16.20.2", "18.20.8"):
+        self.assertEqual((self.home / ".nvm/alias/default").read_text().strip(), "v14.21.3")
+        for version in ("10.24.1", "14.21.3", "18.20.8", "22.23.3"):
             root = self.home / f".nvm/versions/node/v{version}"
             self.assertTrue((root / "bin/node").is_file())
             self.assertEqual(json.loads((root / ".team-frontend-env-install.json").read_text())["tool"], "team-frontend-env")
@@ -160,21 +203,21 @@ cp "$WEB/$relative" "$output"
             result = subprocess.run([shell, "-f", "-c", '. "$HOME/.zshrc"; node --version; printf "%s\\n" "$JAVA_HOME"'],
                                     env=self.env, capture_output=True, text=True)
             self.assert_ok(result)
-            self.assertEqual(result.stdout.splitlines(), ["v18.20.8", "/a/jdk"])
+            self.assertEqual(result.stdout.splitlines(), ["v14.21.3", "/a/jdk"])
         before = profile.stat().st_mtime_ns
-        self.assert_ok(self.run_script())
+        self.assert_ok(self.run_script('--version', 'all'))
         self.assertEqual(before, profile.stat().st_mtime_ns)
         self.assertTrue(any(self.home.glob(".zshrc*.bak*")))
 
-    def test_arm_all_checks_rosetta_before_install_and_uses_native_16_18(self):
-        result = self.run_script(extra={"MACHINE": "arm64", "ROSETTA": "false"})
+    def test_arm_all_checks_rosetta_before_install_and_uses_native_18_22(self):
+        result = self.run_script('--version', 'all', extra={"MACHINE": "arm64", "ROSETTA": "false"})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Rosetta", result.stderr)
         self.assertFalse((self.home / ".nvm").exists())
         self.assertEqual(self.calls.read_text(), "rosetta\n")
-        self.assert_ok(self.run_script(extra={"MACHINE": "arm64"}))
+        self.assert_ok(self.run_script('--version', 'all', extra={"MACHINE": "arm64"}))
         logs = self.calls.read_text()
-        for expected in ("node-14.21.3-x64", "node-16.20.2-arm64", "node-18.20.8-arm64"):
+        for expected in ("node-10.24.1-x64", "node-14.21.3-x64", "node-18.20.8-arm64", "node-22.23.3-arm64"):
             self.assertIn(expected, logs)
 
     def test_single_native18_does_not_require_rosetta(self):
@@ -185,7 +228,7 @@ cp "$WEB/$relative" "$output"
     def test_bad_hash_prevents_every_install_and_profile_write(self):
         self.rows[-1][-1] = "0" * 64
         self.write_catalog()
-        result = self.run_script(extra={"MACHINE": "arm64"})
+        result = self.run_script('--version', 'all', extra={"MACHINE": "arm64"})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SHA-256", result.stderr)
         self.assertFalse((self.home / ".nvm").exists())
@@ -194,7 +237,7 @@ cp "$WEB/$relative" "$output"
     def test_wrong_node_version_prevents_publish(self):
         self.node_archive("18.20.8", "x64", actual="20.0.0")
         self.write_catalog()
-        result = self.run_script()
+        result = self.run_script('--version', '18')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("版本", result.stderr)
         self.assertFalse((self.home / ".nvm").exists())
@@ -214,13 +257,14 @@ cp "$WEB/$relative" "$output"
         (root / "alias").mkdir(parents=True)
         (root / "nvm.sh").write_text(NVM.replace("0.40.8", "0.39.7"))
         (root / "alias/default").write_text("system\n")
+        self.executable(self.bin / "node", '#!/bin/sh\necho v16.20.2\n')
         before = (root / "nvm.sh").read_bytes()
-        self.assert_ok(self.run_script())
+        self.assert_ok(self.run_script('--version', 'all'))
         self.assertEqual(before, (root / "nvm.sh").read_bytes())
         self.assertEqual((root / "alias/default").read_text(), "system\n")
         self.assertFalse((root / ".team-frontend-env-install.json").exists())
-        self.assert_ok(self.run_script("--version", "16"))
-        self.assertEqual((root / "alias/default").read_text().strip(), "v16.20.2")
+        self.assert_ok(self.run_script("--version", "22"))
+        self.assertEqual((root / "alias/default").read_text().strip(), "v22.23.3")
 
     def test_existing_wrong_version_and_symlink_directory_are_preserved(self):
         self.assert_ok(self.run_script("--version", "18"))
@@ -296,6 +340,42 @@ cp "$WEB/$relative" "$output"
         profile.symlink_to(outside)
         self.assertNotEqual(self.helper('frontend_update_zsh_block nvm hi').returncode, 0)
         self.assertEqual(outside.read_text(), "keep")
+
+    def test_all_recovers_invalid_default14_and_profile_loads(self):
+        self.assert_ok(self.run_script('--version', 'none'))
+        alias = self.home / '.nvm/alias/default'
+        alias.parent.mkdir(exist_ok=True)
+        alias.write_text('v16.20.2\n')
+        self.assert_ok(self.run_script('--version', 'all'))
+        self.assertEqual(alias.read_text().strip(), 'v14.21.3')
+        result = subprocess.run(['/bin/bash', '-c', '. "$HOME/.zshrc"; node --version'],
+                                env=self.env, text=True, capture_output=True)
+        self.assert_ok(result)
+        self.assertEqual(result.stdout.strip(), 'v14.21.3')
+
+    def test_none_preserves_invalid_default_without_requiring_node(self):
+        self.assert_ok(self.run_script('--version', 'none'))
+        alias = self.home / '.nvm/alias/default'
+        alias.parent.mkdir(exist_ok=True)
+        alias.write_text('v16.20.2\n')
+        self.assert_ok(self.run_script('--version', 'none'))
+        self.assertEqual(alias.read_text(), 'v16.20.2\n')
+
+    def test_all_invalid_default_to_future22_still_recovers14(self):
+        self.assert_ok(self.run_script('--version', 'none'))
+        alias = self.home / '.nvm/alias/default'; alias.parent.mkdir(exist_ok=True)
+        alias.write_text('v22.23.3\n')
+        self.assert_ok(self.run_script('--version', 'all'))
+        self.assertEqual(alias.read_text().strip(), 'v14.21.3')
+
+    def test_all_keeps_valid_historical16(self):
+        self.assert_ok(self.run_script('--version', 'none'))
+        root = self.home / '.nvm/versions/node/v16.20.2'
+        (root / 'bin').mkdir(parents=True)
+        self.executable(root / 'bin/node', '#!/bin/sh\necho v16.20.2\n')
+        alias = self.home / '.nvm/alias/default'; alias.parent.mkdir(exist_ok=True); alias.write_text('v16.20.2\n')
+        self.assert_ok(self.run_script('--version', 'all'))
+        self.assertEqual(alias.read_text(), 'v16.20.2\n')
 
 
 if __name__ == "__main__":

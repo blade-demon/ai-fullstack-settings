@@ -89,7 +89,7 @@ Database Navigator 的 Java、JSON、Maven、调试器等扩展依赖均为可�
 
 ## 插件本地摘要与验收边界
 
-上述 Marketplace 更新元数据未提供独立 SHA-256，下载清单中的插件摘要字段仍为 `-`，下载流程生成同名 `.sha256` 本地记录。2026-10-07 对现有五个原始包和新下载 Lombok 计算得到以下值；**这是本地文件摘要，不是官方独立发布的摘要**：
+上述 Marketplace 更新元数据未提供独立 SHA-256。下载清单中五个原始插件的摘要字段仍为 `-`，下载流程生成同名 `.sha256` 本地记录；Lombok 已锁定经核验的本地摘要。2026-10-07 对现有五个原始包和新下载 Lombok 计算得到以下值；**这是本地文件摘要，不是官方独立发布的摘要**：
 
 ```text
 ca5420425544a5a87b3f95a06766ba9e57d04ed404f5b2e187cb7c24b75f77a9  DBN-4.1.0.3.zip
@@ -100,7 +100,7 @@ dd76969715fb8d1d2e1f1fee4e9961c8f9b0d49f835a2c7a7d0c1e71709fae4c  Key_Promoter_X
 051776507843b46cc1764e733cee8b806df8139db81553420f2ff6751f4087a0  lombok-253.28294.251.zip
 ```
 
-成员可使用菜单 `5` 安装全部固定插件，或从 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 选择原始 ZIP，无需预先解压。按提示重启后，仍须在真实项目中验证数据库连接、Mapper/XML 跳转、setter 和 JSON 代码生成、快捷键提示与 Lombok 识别。
+成员可在 `devtool-helper.sh install` 的安装页选择 `idea` 组件，安装或复用 IDEA 后安装全部固定插件，或从 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 选择原始 ZIP，无需预先解压。按提示重启后，仍须在真实项目中验证数据库连接、Mapper/XML 跳转、setter 和 JSON 代码生成、快捷键提示与 Lombok 识别。
 
 本轮来源核验覆盖官方发行元数据、固定下载地址、摘要及插件声明范围；不宣称已启动真实 IDEA、完成插件功能验收或完成 Gradle GUI 同步。保留原始安装包及其中的许可证，实际安装结果和项目构建结果分别记录。
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)/common.sh"
 component=all
-node_version=all
+node_version=14
 preview=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -13,13 +13,13 @@ while [ "$#" -gt 0 ]; do
             shift 2 ;;
         --dry-run) preview=true; shift ;;
         --help|-h)
-            log '用法：frontend-env.sh [--component all|node|iterm2|zsh] [--node-version 14|16|18|all] [--dry-run]'
+            log '用法：frontend-env.sh [--component all|node|iterm2|zsh] [--node-version none|10|14|18|22|all] [--dry-run]'
             log '独立安装前端环境；不改变 Java 一键安装范围。'; exit 0 ;;
         *) die "未知参数：$1" ;;
     esac
 done
 case "$component" in all|node|iterm2|zsh) ;; *) die '无效的前端组件' ;; esac
-case "$node_version" in all|14|16|18) ;; *) die 'Node 版本请选择 14、16、18 或 all' ;; esac
+case "$node_version" in all|none|10|14|18|22) ;; *) die 'Node 版本请选择 none、10、14、18、22 或 all' ;; esac
 
 run_dir=''
 failure=0

@@ -139,6 +139,22 @@ class GradleInstallTests(unittest.TestCase):
     def assert_ok(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_check_only_allows_planned_missing_jdk_without_writes(self):
+        result = self.run_script('--check-only', extra={'JDK_INSTALL_DIR': str(self.home / 'future-jdk'),
+                                                       'JAVA_HOME': '', 'GRADLE_JDK_PLANNED': '1', 'GRADLE_SHA256': self.sha})
+        self.assert_ok(result)
+        self.assertIn('待本计划提供 JDK', result.stdout)
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_check_only_rejects_existing_runtime_version_conflict_without_writes(self):
+        self.seed_install()
+        result = self.run_script('--check-only', extra={'FIXTURE_VERSION': '6.8'})
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('版本不匹配', result.stderr)
+        self.assertFalse(self.env_file.exists())
+        self.assertFalse((self.home / '.zshrc').exists())
+        self.assertFalse((self.home / '.gradle').exists())
+
     def test_existing_same_version_repairs_complete_environment_without_project(self):
         self.seed_install()
         inode = self.target.stat().st_ino

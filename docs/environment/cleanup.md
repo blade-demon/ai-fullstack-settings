@@ -1,32 +1,45 @@
-# 卸载 JDK、Gradle 与 IDEA
+# 六组件安全卸载
 
-`tools/uninstall-java-gradle.sh` 用于在 macOS 测试电脑上删除能确认由本工具安装的 JDK、Gradle，并清理本工具的受管环境配置。交互运行时先询问是否删除检测到的 IDEA 软件，默认不删除；选择删除后，默认一并删除专属配置、SDK 登记和用户插件，只有在保留提示中明确回答 `y` / `yes` 才保留。命令行 `--include-idea` 同时删除应用、专属配置和用户插件；`--include-idea-apps` 保持仅删除应用的原语义。成员使用分发包中的独立「卸载环境.command」，它执行自带运行时的同一份卸载实现，无需预装 Python。维护者直接使用此源码入口时才需要 **Python 3.8+**；安装菜单不增加卸载选项。
+成员运行 **`bash devtool-helper.sh uninstall`**，同一入口提供 JDK、Gradle、nvm/Node、IDEA、iTerm2、Oh My Zsh 的组件及实例选择。无需 Python，包内 universal2 运行时执行同一卸载实现。维护者源码入口 `tools/uninstall-java-gradle.sh` 保留旧名字，需要 Python 3.8+；名字不代表只支持 Java。
 
-本项目通过 tar 归档安装 JDK、ZIP 安装 Gradle、DMG 安装 IDEA。JDK/Gradle 的删除依据是安装根目录中的有效来源标记 `.team-java-env-install.json`：`schema` 为 `1`、`tool` 为 `team-java-env`、`kind` 分别为 `jdk` 或 `gradle`，并且目录结构通过相应 SDK 校验。IDEA 应用继续按静态应用标识识别。
+## 成员选择、预览与确认
 
-只有今后本工具新下载、校验并发布的 SDK 才写入来源标记。复用已有或外部 SDK 时不添加标记；旧版安装即使位于默认 `~/.local/share/java-dev` 下，只要没有有效标记也会保留。目录名、版本号、`JAVA_HOME` 或其他环境引用都不能代替来源证明。
+卸载页默认全部不选，方向键移动、空格选组件，进入实例页后选择具体可删除对象。页面列出来源、路径、配置影响、用户内容保留和阻断原因；Enter 进入最终清单，输入 `DELETE` 才执行。空选择不删除，没有一键全卸载。TUI/helper/npm 不自动添加 --apply/--yes，不自动提权。
 
-真实交互终端默认进入清理引导；非交互默认和显式 `--dry-run` 只预览。脚本不执行已安装的 Java/Gradle/IDEA 二进制，也不加载用户环境文件或 Shell 配置。先保存工作，核对展示的路径和范围；最终输入 `DELETE` 确认后，才请求正常退出所选 IDEA。若有未保存内容、用户取消退出、系统拒绝自动化请求或退出超时，会停止全部清理并保留软件，提示手动退出后重试；不会强制结束 IDEA。
+扫描只读、静态检查文件与收据，不运行已安装 Java/Gradle/Node/IDEA 或加载用户 Shell 文件。组件范围在扫描、计划、配置修改和删除前过滤；只选 jdk 不删 gradle/idea，只选某一版本或应用不附带清理其他实例。实例 ID 绑定路径、对象身份、来源和应用标识，确认后重扫发现替换或变化会拒绝原选择，不扩大范围。
 
-**清理工具直接删除或清理所选内容，不备份 JDK/Gradle 配置、IDEA 应用、配置或插件，也不自动回滚。** 外部 SDK、原有 Shell 变量与 PATH 引用、用户的版本管理选择以及 Gradle 用户配置和缓存都会保留。
+IDEA 组件选择可保留用户配置、SDK 登记和用户插件，公共所选组件的保留提示默认为保留；需要清理时明确选择并核对具体关联。最终确认后才请求所选 IDEA 正常退出；未保存内容、拒绝退出、超时等会停止清理，不强制杀进程。iTerm2 不自动退出，正在运行或作为当前终端宿主时需从其他终端重试。
 
-## 成员双击卸载
-
-从新版 `start.zip` 解压后，双击「卸载环境.command」：入口会下载并校验最新工具，打开 Go TUI 安全卸载页面。选择只读预览，或进入保留原 DELETE 确认的清理引导；卸载页不会启动 SDK 运行探测。完整工具 ZIP 中也包含同名入口，可直接双击；须保留同目录的隐藏 `.support`。
-
-先保存工作，再按提示选择是否删除 IDEA 软件。选择删除后，会询问“是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]”：留空或回答 `n` / `no` 会一并删除，回答 `y` / `yes` 才保留。核对完整删除清单，输入 `DELETE` 后才执行；取消不执行删除。Go TUI 会恢复结果页；普通模式的结果留在终端窗口，按回车后关闭。业务项目、外部 SDK 和 Gradle 用户配置及缓存继续保留；IDEA 缓存、日志和 Local History 也默认保留。无来源标记的旧 SDK 安装不会仅凭目录名删除。
-
-当前新安装基线为 IDEA Community Open Source 2025.3.6.1，默认配置目录为 `IdeaIC2025.3`。2024 已从有效下载清单移除；已有 2024 应用不会被安装器覆盖，先在此核对范围并确认卸载，再安装 2025。需要留存旧设置时，在保留提示中明确回答 `y` / `yes`；保留旧目录不会自动完成新版本的配置迁移。
-
-两个 Gradle 版本（4.5.1、6.8）均按来源标记识别，不需要分别下载卸载工具。每次卸载只保存操作记录，不建立软件或配置备份，具体边界见下文。
-
-在完整工具目录中，仅预览可执行：
+**清理永久删除所选范围，不建立软件或配置备份，不自动回滚。** 实际操作记录不能恢复软件、插件或用户数据；请先查看只读计划。已有安装/修复备份和历史保留，不因迁移删除。
 
 ```bash
-bash 卸载环境.command --dry-run
+bash devtool-helper.sh uninstall --components jdk,gradle --dry-run
+bash devtool-helper.sh uninstall --components nvm,iterm2,oh-my-zsh --dry-run
+bash devtool-helper.sh uninstall --components idea --include-idea-apps --dry-run
 ```
 
-已有用户要重新下载一次 `start.zip` 才能获得新入口；服务器地址不变时，每次启动都会获取最新发布工具。已下载并解压的完整工具包是快照，更新需重新下载。若提示卸载工具缺失、校验失败或清单无效，重新下载完整工具，不要单独移动或替换内部可执行文件。
+无交互终端默认只预览，真删要求明确 --components 并同时指定 --apply --yes；否则返回用法错误，不把默认预览提升成全量删除。help/global 启动器预演无需联网，动作后 --dry-run 下载工具再显示业务清单。
+
+## 来源与组件边界
+
+| 组件 | 可确认对象与清理边界 |
+| --- | --- |
+| JDK | 有效 `.team-java-env-install.json` 且 SDK 结构通过校验；外部或无标记旧安装保留，不按 JAVA_HOME/目录名认领 |
+| Gradle | 独立受管版本按标记识别；只清所选版本、登记及默认引用；其他版本、JDK、用户缓存保留 |
+| nvm/Node | 管理器与每个 Node 分别认领；可信来源快照下处理受管对象，外部版本、用户别名和未知内容保留 |
+| IDEA | 静态读取具体应用标识及 product-info/版本选择器；仅清理与所选应用明确关联且不共享的数据，应用内 JBR 不是独立 JDK 候选 |
+| iTerm2 | 可信外置收据绑定绝对路径、Bundle ID、版本、CDHash、Info.plist/执行文件摘要；不足证据或替换应用保留 |
+| Oh My Zsh | 框架与外部插件分别认领，快照检查新增/修改内容；保留用户主题、外置 ZSH_CUSTOM、系统 zsh/Git/CLT |
+
+JDK/Gradle 标记 schema=1、tool=team-java-env、kind 为 jdk/gradle；只在本工具新下载、校验并发布安装时写入，复用外部 SDK 不补标记。受管安装符号链接及链接祖先不授权删除；宽泛用户父目录不能因一个标记变成可删范围。删目录前重新检查整个目录树及身份，新增嵌套文件、修改或来源变化会阻止执行。
+
+Gradle 当前模块登记、gradle_use 与 `GRADLE_DEFAULT_FILE` 按具体版本处理；最后一版清理仅移除生成函数及默认加载，受管区块里的用户设置仍保留。默认路径从明确环境及模块静态读取，不执行配置。默认引用失效不自动改为另一个版本，保留版本可新开终端加载后用 gradle_use --list 核对并显式设置。`~/.gradle`、GRADLE_USER_HOME、Wrapper/业务依赖缓存、gradle.properties、init 脚本及业务项目 .gradle/Wrapper 永久不在本工具删除范围。
+
+受管 Node 的全局 npm 包随对应版本删除，具体影响列在计划；历史 Node 16 等发现不受新安装白名单限制，只有明确选中相应实例才处理。用户别名/外部 Node/未知内容存在时保留 nvm 管理器和加载配置；静态跟踪 alias 链，只清理失效且受管的 default。nvm、框架和插件的 files/links/directories 来源快照用于判断用户修改，不完整证据保留对象。
+
+nvm/Oh My Zsh 加载区块按来源记录中的实际 profile 清理，支持 Bash、Zsh、ZDOTDIR、自定义 SHELL_PROFILE/NVM_DIR/ZSH，包括带引号路径。框架保留而受管插件删除时，同步清理生成插件列表，保留框架可继续加载；不删除用户配置文件或未知配置。
+
+iTerm2 保留偏好、历史及会话；最终确认后复核签名，运行中阻止删除，不为了卸载自动关闭当前终端。IDEA 默认保留缓存、日志和 Local History；--remove-caches 只有明确纳入 IDEA 配置清理才处理相应版本目录，会永久删除 Local History，不影响 Gradle 缓存。其他 IDEA 版本、共享/关联不明配置及其他 JetBrains 产品保留。
 
 ## 维护者构建成员卸载工具
 
@@ -52,7 +65,7 @@ resources/cleanup/
 └── THIRD_PARTY_NOTICES.txt
 ```
 
-维护者确认 Go TUI 产物也与当前源码匹配后，运行 `tools/release-runtimes.py` 生成包含两套运行文件的 ZIP 与锁，上传匹配的 GitHub Release，并将 `resources/runtime-lock.json` 随源码提交；详见[运行文件发布步骤](runtime-release.md)。目前没有 CI 自动构建或上传。二进制是生成产物，不直接通过 Git 分发，也不在 `resources/catalog.tsv` 的 24 项软件下载清单中；Git 保存的是下载地址、摘要、大小及源码摘要的锁。服务器会核对这些信息及双架构，不会在 Windows 上运行 Mac 工具。
+维护者确认 Go TUI 产物也与当前源码匹配后，运行 `tools/release-runtimes.py` 生成包含两套运行文件的 ZIP 与锁，上传匹配的 GitHub Release，并将 `resources/runtime-lock.json` 随源码提交；详见[运行文件发布步骤](runtime-release.md)。目前没有 CI 自动构建或上传。二进制是生成产物，不直接通过 Git 分发，也不在 `resources/catalog.tsv` 的 25 项软件下载清单中；Git 保存的是下载地址、摘要、大小及源码摘要的锁。服务器会核对这些信息及双架构，不会在 Windows 上运行 Mac 工具。
 
 `source_sha256` 使用 UTF-8（忽略 BOM）、统一 LF 换行后的源码，避免 Windows 的 CRLF 导致错误判为过期。修改卸载源码后须重新构建并更新对应发布锁。`start` 或 `prepare-runtimes` 可自动补齐失效缓存；`prepare-runtimes --offline` 只读校验，不联网或写入。`package` 仍只使用本地产物，缺失、损坏或源码摘要不符时停止，不会联网或发布无法使用的卸载入口。成员执行前还会核对包内可执行文件摘要。
 
@@ -60,101 +73,51 @@ resources/cleanup/
 
 构建采用 PyInstaller 的本地签名处理，不代表已取得 Developer ID 签名或 Apple 公证；首开及企业设备策略仍需遵循团队的 macOS 分发规则。[PyInstaller 打包说明](https://pyinstaller.org/en/stable/operating-mode.html)
 
-## 维护者源码预览与执行
+## 维护者源码计划与执行
 
-在仓库根目录运行：
+公共组件与实例参数也可用于源码入口；在仓库根目录运行：
 
 ```bash
-# 在交互终端中进入引导，选择是否删除 IDEA，再核对并确认完整计划
-bash tools/uninstall-java-gradle.sh
+# 只读计划；不退出应用或创建操作记录
+bash tools/uninstall-java-gradle.sh --components jdk,gradle --dry-run
+bash tools/uninstall-java-gradle.sh --components nvm,iterm2,oh-my-zsh --dry-run
+bash tools/uninstall-java-gradle.sh --components all --plan-json
 
-# 只预览；不询问、不退出 IDEA、不卸载或改配置
-bash tools/uninstall-java-gradle.sh --dry-run
+# 用上次计划中的真实实例 ID 选择，不使用示例 ID 执行
+bash tools/uninstall-java-gradle.sh --components gradle --instances 'gradle:实际ID' --dry-run
 
-# 执行所选范围；显示计划后必须输入 DELETE 确认
-bash tools/uninstall-java-gradle.sh --apply
+# 交互执行有清单及 DELETE
+bash tools/uninstall-java-gradle.sh --components jdk,gradle --apply
+bash tools/uninstall-java-gradle.sh --components idea --include-idea-apps --apply
+bash tools/uninstall-java-gradle.sh --components idea --include-idea --remove-caches --dry-run
 
-# 额外只删除 IDEA 软件，保留用户配置、SDK 登记和插件
-bash tools/uninstall-java-gradle.sh --include-idea-apps --apply
-
-# 纳入带有效来源标记的系统 JDK；Gradle 用户配置和缓存仍保留
-bash tools/uninstall-java-gradle.sh --include-system --dry-run
-bash tools/uninstall-java-gradle.sh --include-system --apply
-
-# 同时预览并清理 IDEA 全版本应用、专属配置和插件
-bash tools/uninstall-java-gradle.sh --include-idea --dry-run
-bash tools/uninstall-java-gradle.sh --include-idea --apply
-
-# 同时纳入系统 IDEA、IDEA 缓存/Local History/日志
-bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-caches --dry-run
-bash tools/uninstall-java-gradle.sh --include-idea --include-system --remove-caches --apply
+# 已核对范围的隔离自动化才显式使用此免输入方式
+bash tools/uninstall-java-gradle.sh --components jdk,gradle --apply --yes
 ```
 
-交互引导有两次范围选择：第一问“是否删除上述 IDEA 软件？[y/N]”默认不删除，留空或回答 `n` / `no` 时保留 IDEA 应用和设置；回答 `y` / `yes` 后，第二问“是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]”默认不保留。第二问留空或回答 `n` / `no` 会一并删除，只有 `y` / `yes` 才保留，其他输入会要求重答。输入 `DELETE` 才是对完整永久清理计划的最终确认；最终确认之前不关闭应用，也不删除文件。退出应用后重新扫描并校验，避免 IDEA 保存配置使旧计划失效。
-
-显式使用 `--include-idea-apps` 或 `--include-idea` 时按参数选择范围，不再显示这两次交互范围选择。`--include-idea-apps` 只额外删除应用，仍保留设置；`--include-idea` 额外删除应用、配置、SDK 登记和用户插件。两种方式都保留最终 `DELETE` 确认。
-
-`--apply --yes` 可省略输入确认，适合已经核对计划的自动化测试；`--yes` 必须与 `--apply` 搭配。非交互执行须显式指定删除范围；预览不修改文件、不退出 IDEA，也不创建操作记录。
-
-发现计划删除的带有效来源标记的系统 JDK，或 `/Applications` 中的 IDEA 时，未加 `--include-system` 会阻止清理，且不会请求退出 IDEA。IDEA 在交互选择后或显式使用 `--include-idea-apps` / `--include-idea` 时纳入计划。加上所需参数重新预览并核对后，再执行清理；不要对整个脚本使用 `sudo`。
+--plan-json 是只读 **schema 1** 实例计划（与成员发布 release.json 的 schema 2 用途不同），包含 id/component/path/label/removable/reason、selected 和删除/配置/说明/阻断项。--instances 是排他白名单，必须明确 --components，未知、跨组件、不可删或来源变化的 ID 拒绝，不因重扫增加实例。
 
 | 参数 | 用途 |
 | --- | --- |
-| `--dry-run` | 只展示安装、配置及待处理问题；不询问、不退出应用；非交互默认行为 |
-| `--apply` | 按计划执行；默认要求输入 `DELETE` |
-| `--yes` | 与 `--apply` 搭配，省略输入确认 |
-| `--include-system` | 允许清理带有效来源标记的系统 JDK；开启 IDEA 清理时也允许 `/Applications` 中的 IDEA；必要时仅针对具体系统安装目录使用 `sudo` |
-| `--include-idea-apps` | 额外删除可识别的 IDEA 软件，保留配置、SDK 登记、用户插件和缓存 |
-| `--include-idea` | 额外删除可识别版本的 IDEA 应用、专属配置（含 SDK 登记）及用户插件 |
-| `--remove-caches` | 在已纳入 IDEA 配置清理时额外删除 IDEA 缓存、Local History 和日志；维护者可显式搭配 `--include-idea`，不删除 Gradle 用户配置或缓存 |
-| `--jdk-dir /absolute/path` | 补充一个自定义 JDK 候选安装目录，可重复；仍须有效来源标记，不强制删除外部 SDK |
-| `--gradle-dir /absolute/path` | 补充一个自定义 Gradle 候选安装目录，可重复；仍须有效来源标记，不强制删除外部 SDK |
-| `--idea-app /absolute/path/App.app` | 显式添加一个自定义 IDEA 应用，可重复；须同时指定 `--include-idea-apps` 或 `--include-idea` |
-| `--idea-plugins-dir /absolute/path` | 显式添加一个专用 IDEA 用户插件目录，可重复；须同时指定 `--include-idea` |
-| `--profile /absolute/path` | 添加需要检查的配置文件，可重复 |
+| --components CSV\|all | 仅扫描选择的六类组件；all 必须单独使用 |
+| --instances CSV | 仅处理列出的有效实例 ID，不能扩大组件范围 |
+| --dry-run / --plan-json | 只读清单/JSON，不询问、不退出应用、不修改 |
+| --apply / --yes | 执行并输入 DELETE；--yes 只能与 --apply 及明确组件范围配合 |
+| --include-system | 纳入有有效来源标记的系统 JDK/系统 IDEA；不对整个脚本使用 sudo |
+| --include-idea-apps | 删除所选 IDEA 应用，保留用户配置、SDK 登记及插件 |
+| --include-idea | 纳入与所选应用明确关联且不共享的配置及插件 |
+| --remove-caches | IDEA 配置清理时额外处理其缓存/Local History/日志 |
+| --jdk-dir / --gradle-dir | 添加具体候选绝对路径，可重复，不绕过来源验证 |
+| --idea-app / --idea-plugins-dir | 具体自定义应用/专用插件目录，可重复，需相应 IDEA 标志 |
+| --profile | 添加待检查配置文件，可重复 |
 
-自定义目录和配置示例：
+系统范围缺少 include-system 会阻止执行；工具不自动提权。IDEA 应用内 JBR 随应用删除，不能选作独立 JDK。自定义 Toolbox 位置需具体 .app，不传宽泛父目录。
 
-```bash
-bash tools/uninstall-java-gradle.sh \
-  --jdk-dir "$HOME/SDKs/jdk-17" \
-  --gradle-dir "$HOME/SDKs/gradle-8.14" \
-  --profile "$HOME/.config/custom-java.sh" \
-  --dry-run
+旧维护者无组件交互引导仍兼容原 Java 范围：默认 JDK/Gradle，先询问是否删 IDEA，选删除后的保留提示默认不保留。它与新版明确组件选择的默认不同，始终以实际提示和最终 DELETE 清单为准。非交互无组件默认只读扫描全候选，不能加 apply/yes 将其提升为真删。
 
-# Toolbox 或其他自定义安装位置须提供具体 .app，不能传宽泛父目录
-bash tools/uninstall-java-gradle.sh \
-  --include-idea \
-  --idea-app "$HOME/Tools/IntelliJ IDEA.app" \
-  --idea-plugins-dir "$HOME/IDEA-plugins" \
-  --dry-run
-```
+## 受管 Java 配置与历史兼容
 
-## 自动处理范围
-
-脚本在下列常见位置查找候选安装，只删除带有效来源标记且结构校验通过的 JDK/Gradle；外部或来源不明的安装保留，不直接递归删除父目录。
-
-- 本工具安装目录：`~/.local/share/java-dev/jdk*`、`~/.local/share/java-dev/gradle-*`，及覆盖的 `JDK_INSTALL_DIR`、`GRADLE_INSTALL_DIR`。
-- 用户 JDK：`~/Library/Java/JavaVirtualMachines`、`~/.jdks`。
-- 系统 JDK：`/Library/Java/JavaVirtualMachines`；只有带有效来源标记的安装才纳入删除，执行需要 `--include-system`。
-- SDKMAN 的 `candidates/java`、`candidates/gradle`：外部版本、`current` 和本地安装链接保留，也不删除其他 SDKMAN 工具。
-- asdf、mise 的 Java/Gradle 安装目录。
-- `--jdk-dir`、`--gradle-dir` 显式指定的额外候选安装；这两个参数不绕过来源标记。
-
-JDK/Gradle 的符号链接及含链接祖先的安装路径不会删除。IDEA 下载 JDK 时生成的 `.<jdk名称>.intellij` JSON 辅助元数据只读识别并保留，不把它当作 JDK 安装或来源标记。
-
-Gradle 用户配置和缓存可能由外部版本共用，因此本次全部保留，包括 `~/.gradle`、自定义 `GRADLE_USER_HOME`、Wrapper 分发、依赖缓存、`gradle.properties`、`init.gradle`、`init.gradle.kts` 和 `init.d`。`--remove-caches` 也不会删除这些内容。业务项目内的 `.gradle`、Wrapper 文件及构建配置不在清理范围内。
-
-开启 `--include-idea`，或在交互中选择删除 IDEA 且不保留设置后，额外处理下列范围：
-
-- `~/Applications` 和 `/Applications` 中的具体 IDEA `.app`：静态读取 `Contents/Info.plist`，按 `com.jetbrains.intellij` 或 `com.jetbrains.intellij.ce` 标识识别，包含应用内置 JBR 和插件；系统目录执行清理需要 `--include-system`。
-- `~/Library/Application Support/JetBrains/{IdeaIC,IntelliJIdea,IntelliJ}<版本>` 中可明确识别的版本专属目录，包含用户配置、`options/jdk.table.xml` 中的 SDK 登记和 `plugins`；旧版 `~/Library/Preferences/<产品><版本>` 配置和 `~/Library/Application Support/<产品><版本>` 插件也会清理。
-- `~/Library/Preferences/com.jetbrains.intellij.plist` 和 `com.jetbrains.intellij.ce.plist` 两份 IDEA 专属偏好文件，以及隐藏旧版 `~/.<产品><版本>` 下的 `config`、`plugins` 子目录。产品名和版本须完整匹配；不删除整个 JetBrains 父目录、隐藏旧版父目录或其他 JetBrains 产品。
-- `--idea-app`、`--idea-plugins-dir` 显式指定且通过校验的具体应用或专用插件目录；开启 IDEA 清理时，`IDEA_APP`、`IDEA_PLUGINS_DIR` 指定的位置也会纳入。
-
-默认保留 IDEA 缓存和日志；纳入 IDEA 配置清理后，还须显式加 `--remove-caches` 才删除对应的 `~/Library/Caches/JetBrains` 和 `~/Library/Logs/JetBrains` 版本专属目录、旧版 `~/Library/Caches/<产品><版本>` 和 `~/Library/Logs/<产品><版本>`，以及隐藏旧版 `~/.<产品><版本>/system`。维护者可使用 `--include-idea --remove-caches` 明确选择这一范围。缓存目录包含 **Local History**，因此此参数也会永久删除本地历史。现代 macOS 默认目录与用户插件的位置依据 [JetBrains 官方目录说明](https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html)。
-
-配置检查默认使用 `~/.config/java-dev/{env,jdk,gradle}.sh`；设置 `ENV_FILE` 后检查其所在目录的模块文件，以及 `ENV_FILE`、`JDK_ENV_FILE`、`GRADLE_ENV_FILE`、`SHELL_PROFILE` 显式指定的文件。还会检查 Bash/Zsh 常见启动文件、`ZDOTDIR` 下的 Zsh 配置及 `--profile` 添加的文件，清除本工具受管配置及对应待删除 SDK 的设置，保留外部 SDK 的原有变量与 PATH 引用。共享 Shell 文件即使在受管标记内混入了别名、编辑器变量等无关内容，也会逐行保留；混合逻辑无法安全拆分时阻止执行。专属环境文件清理后为空时直接删除；共享的 Shell 启动文件始终保留，即使其路径同时被指定为 `ENV_FILE`。引用仍保留的环境或共享配置文件的加载行也会保留，以便其中的无关设置继续生效。
+配置检查默认使用 `~/.config/java-dev/{env,jdk,gradle}.sh`；设置 `ENV_FILE` 后检查其所在目录的模块文件，以及 `ENV_FILE`、`JDK_ENV_FILE`、`GRADLE_ENV_FILE`、`SHELL_PROFILE` 显式指定的文件。还会检查 Bash/Zsh 常见启动文件、`ZDOTDIR` 下的 Zsh 配置及 `--profile` 添加的文件，按所选组件及实例清除相应受管配置及待删除 SDK 的设置，保留外部 SDK 的原有变量与 PATH 引用。共享 Shell 文件即使在受管标记内混入了别名、编辑器变量等无关内容，也会逐行保留；混合逻辑无法安全拆分时阻止执行。专属环境文件清理后为空时直接删除；共享的 Shell 启动文件始终保留，即使其路径同时被指定为 `ENV_FILE`。引用仍保留的环境或共享配置文件的加载行也会保留，以便其中的无关设置继续生效。
 
 清理后位于文件末尾、下面仅有空行的孤立 `# Java 开发环境` 标题会删除；标题下面仍有保留设置或其他内容时原样保留，不删除其他注释。
 
@@ -168,30 +131,26 @@ Gradle 用户配置和缓存可能由外部版本共用，因此本次全部保�
 
 来源标记无效或来源不明的 SDK 保留。发现无法安全拆分的本工具相关配置，或已认领的待删除目录校验失败、混杂其他资料时，脚本会阻止执行并返回非零状态。根据提示核对文件，再重新预览。外部 SDK 的引用会保留，不作为必须删除的残留；不要把含糊的父目录作为安装目录传入。
 
-## 操作记录与验证
+## 记录与卸载后加载
 
-执行时只保存计划和执行结果：
+实际执行只保存计划、操作和结果到：
 
 ```text
-~/Library/Logs/team-java-env/cleanup/<本次记录>/
-└── report.txt   # 本次计划、操作与结果，不含配置文件正文
+~/Library/Logs/team-java-env/cleanup/<本次记录>/report.txt
 ```
 
-本次清理不创建 `files/` 备份目录或 `.bak`，也不自动回滚。需要恢复安装时须重新安装，已删除的配置、插件和缓存不能通过本次操作记录恢复。旧清理记录目录中的历史 `files/` 备份和报告继续保留；仅上述严格识别的旧 `env.sh.bak` 可纳入删除。安装/修复流程自身的备份行为不受此清理工具变更影响。
-
-执行后查看报告，确认是否有失败或残留。**新开终端**后检查变量和命令路径，旧终端仍可能保留此前加载的变量：
+确认前取消或没有清理内容不生成记录；不创建 files/ 备份或新的 .bak，旧历史保留。完成后查看失败及保留项，**新开终端**核对命令路径及剩余版本；旧终端可能仍持有已加载的变量/函数。
 
 ```bash
-printenv JAVA_HOME JAVA_8_HOME JRE_HOME GRADLE_HOME GRADLE_4_5_1_HOME GRADLE_6_8_HOME GRADLE_USER_HOME
-command -v java
-command -v javac
+printenv JAVA_HOME GRADLE_HOME GRADLE_4_5_1_HOME GRADLE_6_8_HOME NVM_DIR
 command -v gradle
+command -v node
+# 保留 Gradle 时加载实际 env.sh 并查看登记
+gradle_use --list
+# 保留 nvm 时加载实际 nvm.sh 再看版本
+nvm ls
 ```
 
-macOS 的 `/usr/bin/java`、`/usr/bin/javac` 是系统启动占位程序，清理后仍可能出现；脚本保留它们，不以这些路径存在判定 JDK 已安装，也不通过运行它们验证，以免弹出安装提示。随后按[运行环境指南](runtime.md)重新安装，并检查修复历史及实际项目构建结果。
+macOS /usr/bin/java、javac 是系统占位程序，保留且不运行它们检查，避免触发系统安装提示。剩余版本有有效配置时可继续切换，不要求重装全部环境。
 
-## 需要手工核对的范围
-
-脚本不会搜索全盘任意自定义目录，也不遍历整个 Toolbox 目录。安装在其他位置的本工具 JDK/Gradle 可通过显式目录参数补充查找，仍须有效来源标记；其他位置的 IDEA 须通过 `--idea-app` 指定具体 `.app`，自定义用户插件目录通过 `--idea-plugins-dir` 添加。IDEA 自定义的配置、缓存和日志路径需另行核对。清理成功只表示本次所选、可确认的范围已处理，不代表外部 SDK 或未发现的目录也已删除。
-
-以下内容保留并由维护者按实际情况核对：业务项目及其 `.idea`/`.gradle`/Wrapper、其他 JetBrains 产品、其他 SDKMAN 工具、全局 `/etc` 配置、`launchctl` 环境和 `.pkg` 安装收据。未选择 IDEA 清理时保留应用、配置、插件及内置 JBR；只删除应用时，内置 JBR 和内置插件随应用删除，用户配置、SDK 登记和用户插件继续保留。删除安装文件不会自动保证这些外部登记和设置也已移除。
+不会全盘搜索任意路径，也不清业务项目 .idea/.gradle/Wrapper、其他 SDKMAN 工具、用户版本选择、/etc、launchctl 环境或 .pkg 收据。未发现的自定义目录及 IDEA 自定义缓存需维护者另行核对；清理成功只表示本次明确选择且可确认的范围已处理。

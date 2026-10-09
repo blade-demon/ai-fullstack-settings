@@ -26,8 +26,8 @@ class CleanupEntryTests(unittest.TestCase):
         scripts = self.kit / '.support/scripts'
         scripts.mkdir()
         shutil.copy2(ROOT / 'dev-kit/.support/scripts/run-cleanup.sh', scripts / 'run-cleanup.sh')
-        self.entry = self.kit / '卸载环境.command'
-        source = ROOT / 'dev-kit/卸载环境.command'
+        self.entry = scripts / 'run-tool.sh'
+        source = ROOT / 'dev-kit/.support/scripts/run-tool.sh'
         if source.exists():
             shutil.copy2(source, self.entry)
         self.binary = self.cleanup / 'cleanup-macos'
@@ -42,7 +42,7 @@ class CleanupEntryTests(unittest.TestCase):
         self.env = {'HOME': str(self.home), 'PATH': '', 'ENTRY_RECORD': str(self.record), 'LC_ALL': 'C.UTF-8'}
 
     def run_entry(self, *args, extra=None):
-        return subprocess.run(['/bin/bash', str(self.entry), *args], env={**self.env, **(extra or {})},
+        return subprocess.run(['/bin/bash', str(self.entry), 'uninstall', *args], env={**self.env, **(extra or {})},
                               input='', text=True, capture_output=True, timeout=5)
 
     def test_arguments_forwarded_with_no_python_or_path_dependencies(self):
@@ -78,29 +78,10 @@ class CleanupEntryTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.record.exists())
 
-    def test_double_click_failure_keeps_result_visible_until_enter(self):
-        import pty
-        master, slave = pty.openpty()
-        self.addCleanup(os.close, master)
-        self.addCleanup(os.close, slave)
-        process = subprocess.Popen(['/bin/bash', str(self.entry), '--plain'], stdin=slave, stdout=slave, stderr=slave,
-                                   env={**self.env, 'ENTRY_EXIT': '23'})
-        def stop():
-            if process.poll() is None:
-                process.kill()
-            process.wait(timeout=5)
-        self.addCleanup(stop)
-        data = b''
-        deadline = time.monotonic() + 5
-        while '按回车' not in data.decode('utf-8', errors='replace') and time.monotonic() < deadline:
-            if select.select([master], [], [], 0.05)[0]:
-                data += os.read(master, 4096)
-            elif process.poll() is not None:
-                break
-        self.assertIn('按回车', data.decode('utf-8', errors='replace'))
-        self.assertIsNone(process.poll())
-        os.write(master, b'\n')
-        self.assertEqual(process.wait(timeout=3), 23)
+    def test_removed_plain_mode_is_rejected_without_running_runtime(self):
+        result=self.run_entry('--plain')
+        self.assertEqual(result.returncode,2)
+        self.assertFalse(self.record.exists())
 
 
 if __name__ == '__main__':

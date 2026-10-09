@@ -1,197 +1,110 @@
-Java 开发环境修复与验证（macOS）
+团队开发环境安装、配置与卸载（macOS）
 
-一键安装基线：JDK 8、独立 Gradle 4.5.1、IDEA 2025.3.6.1 开源社区版和六个插件。
-Gradle 单独安装还可选择 6.8。
-成员不必安装 Python 或 Homebrew，不必填写内网服务器地址。
-Java安装不需要Git；Oh My Zsh框架需要可用Git，工具不会自动安装Xcode开发工具。
-start.zip 内含「开始配置.command」与「卸载环境.command」两个双击入口。
+成员唯一入口为 devtool-helper.sh。连接团队内网，下载维护者提供的文件，
+在终端进入下载目录，运行：bash devtool-helper.sh
+无需克隆仓库、填写服务器地址或预装 Python、Node、Go、Homebrew。
+本文是仓库说明，不放入成员临时工具包；.sh 以终端运行为准，不承诺双击。
 
-一、首次使用
+一、安装与配置
 
-1. 从团队内网下载 start.zip，解压并双击「开始配置.command」。
-   入口下载、校验完整工具后打开菜单，先扫描 SDK、IDEA 和持久化环境变量。
-   使用完整工具备用 ZIP 时，解压后双击 team-dev-env 内的同名入口。
-   请保留完整文件夹，隐藏的 .support 是工具的一部分。
+首页有“安装与配置”“卸载工具”“一键安装配置全部”。
+安装页方向键移动，空格勾选，左右键切换版本，Enter 直接预检并安装已选项。
+当前页显示版本、目录、依赖和默认配置影响；空选择不执行。
+预检失败保留选择并显示原因，调整后再次按 Enter；没有额外安装确认页。
 
-2. 保存工作并正常退出 IDEA，然后用方向键选择“一键安装 Java 环境”，按 Enter 查看并确认操作。
-   它固定处理 JDK 8、独立 Gradle 4.5.1、IDEA 和全部六个插件，复用已验证的同版安装，
-   配置完整环境变量，再做最终环境验证。
-   工具不自动杀掉 IDEA，也不自动打开它。
+六类组件为 JDK、Gradle、nvm、IDEA、iTerm2、Oh My Zsh。
+全量默认：JDK 8、Gradle 4.5.1、nvm 0.40.8 与 Node 14.21.3、
+iTerm2 3.7.3、Oh My Zsh 与四个插件、IDEA 2025.3.6.1 与六个插件。
+执行顺序：JDK → Gradle → nvm/Node → iTerm2 → Oh My Zsh → IDEA/插件。
+只选部分组件也遵循此顺序；Gradle 自动补入 JDK 8 依赖。
+IDEA 单独安装不隐式安装 JDK，没有可用 JDK 时需另行配置 SDK。
 
-3. 查看环境验证结果和显示的历史目录。
-   菜单不选择业务项目，也不执行项目构建，结果明确为“未执行项目构建”。
-   单独的版本命令通过、文件复制完成，都不能代替项目构建成功。
-   新开终端加载环境，在 IDEA 中导入实际业务项目并配置 SDK、Gradle 后完成同步。
+Gradle 可选 4.5.1、6.8 或 all（两版）。单版成为新终端默认；
+两版同装保留有效默认，无有效默认时用 4.5.1，不由安装顺序决定默认。
+Node 固定为 10.24.1、14.21.3、18.20.8、22.23.3。
+安装页、一键全部及未指定 Node 版本的安装默认选择并安装 Node 14.21.3。
+Node none 只安装/配置 nvm，不下载 Node，不改 default；显式选择 all 才安装四版，
+首次或旧 default 失效时回退到 14，已有有效 default 保留（包括历史 Node 16）。
+单版成为默认，默认单版 14 同样遵循此规则。
+Node 16 不再提供新安装，不自动删除既有版本。
+Node 10、14 使用官方 x64 包；Apple Silicon 需已有 Rosetta，工具不自动安装
+Rosetta、不回退源码编译。Node 18、22 按本机架构选择。
+iTerm2 要求 macOS 13+；Oh My Zsh 要求已有可用 Git，不自动安装系统开发工具。
+保存工作并正常退出 IDEA 后再安装插件或修改 SDK 登记。
 
-二、Go TUI 界面与普通菜单
+界面显示总组件进度和当前阶段；下载完成不等于安装、配置和验证完成。
+失败任务及依赖跳过、取消和需处理项会分别显示；独立任务可继续，取消停止后续任务。
+已经成功安装的内容保留，不自动回滚。成员流程不选择业务项目、不执行构建。
 
-默认双击进入 Go + Bubble Tea 界面；方向键选择、Enter继续并确认、Esc返回、q退出。
-安装页显示阶段状态和可滚动日志，Esc取消后等待任务退出，Ctrl+C取消后退出。
-结果页按Enter或Esc返回。窗口过小时请放大，避免看不到完整确认内容。
-Go已编译进工具包，成员不需要安装Go。
+二、安装后的版本切换
 
-需要原数字菜单时，在终端运行 bash 开始配置.command --plain。
-下面编号对应普通模式；Go界面包含同名操作：
+结果页和报告列出实际成功版本、默认值、实际加载路径及可复制切换命令。
+helper/TUI 是子进程，不能替父终端切换环境。新开终端即可加载配置；
+要在原终端立即使用，执行结果中的加载命令。下面仅为默认路径示例，
+自定义路径以实际输出为准，未安装的版本不能直接切换。
 
-1  一键安装 JDK、Gradle 并配置环境，包含 IDEA 和全部六个插件。
-   固定使用 JDK 8 + Gradle 4.5.1。
-2  安装并配置 JDK 8。
-3  安装并配置 Gradle：3.1 Gradle 4.5.1；3.2 Gradle 6.8。
-4  安装 IDEA 软件；菜单会显示当前用户 $HOME/Applications 的实际路径。
-5  安装推荐 IDEA 插件（全部六个）；执行前请退出 IDEA。
-6  安装前端环境：nvm / Node 14、16、18、iTerm2、Oh My Zsh 与常用插件。
-0  退出。
-
-普通模式可在主菜单直接输入 3.1 / 3.2，或输入 3 进入 Gradle 版本选择。
-子菜单可输入 1 / 2 或完整编号选择版本，输入 0 返回；空行不开始安装。
-两版 Gradle 均使用 JDK 8，安装时会检查并补齐 JDK 8 环境。
-
-启动时保留只读环境预检，不下载、不安装、不构建。
-项目检查、仅下载、历史查看及可选 MySQL 服务由维护者通过命令行操作。
-
-三、安装位置与环境变量
-
-JDK 默认下载目录：~/.local/share/java-dev/jdk8
-实际 JAVA_HOME 可能位于内部 Contents/Home，复用已有 JDK 时以结果为准。
-完整变量为 JAVA_HOME、JAVA_8_HOME、JRE_HOME；JRE_HOME 指向实际 jre 目录。
-
-独立 Gradle 按版本保存：~/.local/share/java-dev/gradle-4.5.1、~/.local/share/java-dev/gradle-6.8
-GRADLE_HOME 指向最近选择的版本，保留已配置的 GRADLE_4_5_1_HOME、GRADLE_6_8_HOME。
-GRADLE_USER_HOME 默认 ~/.gradle，用于 Gradle 用户配置和缓存。
-独立 SDK 安装与 Wrapper 缓存分别管理；项目构建按 IDEA 分发选择实际命令。
-Wrapper 缓存通常在 ~/.gradle/wrapper/dists，不作为独立安装的 GRADLE_HOME。
-
-受管配置默认位于 ~/.config/java-dev/：
-  jdk.sh     JDK 变量
-  gradle.sh  Gradle 变量
-  env.sh     聚合加载两模块，把 Java/Gradle bin 放在 PATH 前部并去重
-
-脚本保留用户原有配置，只更新受管区块；首次改写已有文件保存同路径 .bak。
-重复修复不会反复追加配置，不设置全局 CLASSPATH。
-新开终端自动加载；当前终端需要时执行：
   source "$HOME/.config/java-dev/env.sh"
-若维护者自定义过 ENV_FILE，请使用实际路径。
+  gradle_use --list
+  gradle_use 4.5.1            # 当前终端
+  gradle_use 6.8 --default    # 当前终端并设置新终端默认
+  gradle --version
 
-四、IDEA 与插件
+  export NVM_DIR="$HOME/.nvm"
+  . "$NVM_DIR/nvm.sh"
+  nvm ls
+  nvm use 22                 # 当前终端
+  nvm alias default 14       # 设置新终端默认，当前终端仍需切换
+  nvm use default
+  node -v
+  npm -v
 
-IDEA 安装到：/Users/当前用户名/Applications/IntelliJ IDEA CE.app
-脚本自动从 HOME 确定当前用户目录，与 ~/Applications 指向同一位置。
-不会在主目录下再拼接 Users/用户名，也不写入系统 /Applications；无需填写用户名。
-工具校验安装包、版本与应用内容；相同版本和构建号且完整时复用。
-其他已有目标保留并报错，不直接覆盖，不使用 sudo。
-当前使用 JetBrains GitHub 发布的 2025.3.6.1 Community Open Source 原包。
-2024 已从有效下载清单和新安装基线移除；已有 2024 应用须先按第六节核对并确认卸载，再安装 2025。
+只安装 nvm 时，本次未安装 Node；结果按已有状态显示 nvm ls 和默认值。
+Gradle 函数长期保存在受管环境中，nvm 是 Node 唯一切换方式；
+切换无需联网、重装或保留下载临时目录，不修改业务项目 Wrapper 或 IDEA 分发设置。
 
-菜单 1 和 5 默认安装验证全部六个固定插件：
-  Database Navigator、MyBatisX、GenerateAllSetter、GsonFormatPlus、Key Promoter X、Lombok。
-插件默认目录：
-  ~/Library/Application Support/JetBrains/IdeaIC2025.3/plugins
-安装前保存工作并退出 IDEA；工具不会自动强制结束进程。
-完成后手动打开 IDEA，检查 Plugins 页面和实际功能。
+三、卸载
 
-维护者通过命令行指定 --project 后，工具使用 macOS 的 xmllint 只读检查
-项目 .idea/misc.xml、.idea/gradle.xml，
-以及 IDEA_CONFIG_DIR/options/jdk.table.xml 中的 SDK 登记，成员无需 Python。
-IDEA_CONFIG_DIR 默认 ~/Library/Application Support/JetBrains/IdeaIC2025.3。
-检查关注 Project SDK、Gradle JVM 是否登记且有效 JDK 8，以及 LOCAL 的 Gradle 目录。
-待配置时打印实际 JDK/Gradle 路径与设置入口，不自动修改 IDEA 配置或启动 GUI。
-已选项目待配置时，环境扫描返回 1；修复预检以阶段退出码 2 记录并继续 SDK/构建验证。
+运行 bash devtool-helper.sh uninstall，进入默认全不选的六组件卸载页。
+选择组件和具体实例，核对路径、配置影响、保留项和阻断原因，输入 DELETE 后才执行。
+卸载只静态扫描，不启动待删 SDK，也不把未选组件附带删除。
+IDEA 可以保留用户配置、SDK 登记及插件；只有与所选应用明确关联的数据可清理。
+JDK/Gradle 必须有有效工具来源标记；nvm/Node、Oh My Zsh/插件需要可信来源和快照，
+外部版本、未知或用户新增修改的内容保留。Node 全局包影响会在计划中列出。
+iTerm2 需要绑定应用的可信收据，偏好、历史和会话保留；
+不自动退出正在运行的 iTerm2，若它是当前终端宿主，请从其他终端重试。
+业务项目、Gradle 用户配置和缓存、系统 zsh/Git/开发工具不删除。
 
-维护者指定 --project 的修复会在预检前统一 SDK 登记名称、Project SDK、Gradle JVM 和模块旧名称引用，
-默认名称 azul-1.8。同目录的重复名称会合并，其他 JDK 与 Gradle 分发设置保留。
-执行前须完全退出 IDEA；首次修改备份 .bak，重复运行相同配置不再改写。
-名称冲突或配置无法安全解析时，停止并报告失败，不开始后续构建。
-尚未导入的项目先完成 IDEA 导入，再运行名称同步；扫描入口仍保持只读。
-其他项目若使用被合并的旧名称，也需逐一同步，否则 IDEA 可能再次补回旧名称。
+清理永久删除所选范围，不建立配置或软件备份，不自动回滚。
+实际执行记录写入 ~/Library/Logs/team-java-env/cleanup/；只读预览和确认前取消不写记录。
+删除后新开终端检查；原终端可能仍保留旧变量。
 
-在 IDEA 中仍需手动确认：
-  Project SDK：实际 JAVA_HOME 对应的 JDK 8；
-  Gradle 分发：选择项目的 Wrapper 或本地安装，本地安装填实际 GRADLE_HOME；
-  Gradle JVM：同一个 JDK 8，不直接使用 IDEA 自带运行时替代。
-完成后执行 Reload All Gradle Projects；静态配置可解析不代表 IDEA 已同步成功。
+四、CLI、帮助与日志
 
-维护者可运行 .support/scripts/download-tools.sh 仅下载软件或插件，
-文件位于 ~/Downloads/team-java-env 的相应子目录。
-DBeaver 下载后打开 DMG 手动安装；插件手动安装可在 IDEA 的
-Settings → Plugins → 齿轮 → Install Plugin from Disk 中选择原始 ZIP，
-无需先解压。下载 ZIP 不等于插件已安装。
+  bash devtool-helper.sh help
+  bash devtool-helper.sh help install
+  bash devtool-helper.sh --dry-run install --components all
+  bash devtool-helper.sh install --components nvm --node-version none
+  bash devtool-helper.sh install --components gradle --gradle-version all --dry-run
+  bash devtool-helper.sh uninstall --components nvm,iterm2,oh-my-zsh --dry-run
 
-Lombok 已包含在菜单 1 和 5 的自动安装中。单独手动安装步骤：
-1. 由维护者在完整工具目录运行 bash .support/scripts/download-tools.sh --id lombok，文件为：
-   ~/Downloads/team-java-env/plugins/idea/lombok-253.28294.251.zip
-2. 打开 IntelliJ IDEA → Settings → Plugins，点击齿轮 → Install Plugin from Disk。
-3. 选择上述原始 ZIP，点击 OK，按提示重启 IDEA。
-4. 在 Plugins → Installed 中搜索 Lombok，确认已启用；需要时点击 Enable。
-5. 在 Settings → Build, Execution, Deployment → Compiler → Annotation Processors
-   勾选 Enable annotation processing 和 Obtain processors from project classpath，
-   点击 Apply → OK，再重新加载 Gradle 项目并验证构建。
-IDE 插件版本与业务项目的 Lombok 库版本分别管理，项目仍需声明 Lombok 依赖。
+help / help install / help uninstall：本地帮助，不联网。
+动作前全局 --dry-run：只显示下载地址和转发参数，不联网。
+动作后 --help / --dry-run：下载最新工具后显示业务帮助或只读计划，不安装、不删除。
+无交互终端的实际安装必须明确 --components；非交互真删须明确组件加 --apply --yes。
+frontend、--frontend、--plain、两份旧 .command 和数字菜单均已移除。
 
-五、查看结果、变更与失败记录
+安装记录：~/Library/Logs/team-java-env/components/<本次记录>/
+含计划、组件日志、阶段和最终状态；TUI 完整日志在同一根目录的 tui/。
+底层 Java 修复 history/ 历史及已有备份继续保留，不因入口迁移删除。
+失败后查看实际退出码与日志；分享前检查密码、令牌和私有配置。
+Esc 取消并等待当前任务退出，Ctrl+C 取消后退出；结果页 Enter/Esc 返回。
+界面缺失或校验失败时重新下载，不退回旧文本菜单。
 
-每次开始修复后，无论成功或失败，都有独立历史：
-  ~/Library/Logs/team-java-env/history/<本次记录>/
+五、安装后仍需完成
 
-在 Finder 的「前往 → 前往文件夹」中输入上述目录可查看历史。
-维护者也可在完整工具目录运行 bash .support/scripts/history.sh。
-重点文件：
-  report.md             本次结果、阶段摘要与变更说明
-  steps.tsv/result.tsv  阶段和最终状态、退出码、项目
-  logs/                 安装、IDEA 项目预检、环境验证、插件和终端构建输出
-  before/、after/       前后配置快照
-  config-changes.diff   实际配置差异
-  plugin-backups/       若替换插件，保存对应原目录
-
-还会保留前后扫描、文件摘要及插件逐项结果（若执行插件阶段）。
-预演 --dry-run 不安装、不构建，也不创建历史目录。
-失败时先看 report.md 与失败阶段日志；维护者指定项目时，SDK 已装好而构建失败仍是失败。
-历史含配置快照，发给维护者前先检查密码、令牌等私密内容，不发送数据库密码。
-
-六、卸载环境
-
-1. 保存工作，双击「卸载环境.command」。启动入口会下载并校验最新工具，打开安全卸载页面。
-   可先只读预览；进入实际卸载时会临时交出终端，保留下面的原确认流程。
-   使用完整工具 ZIP 时，直接双击 team-dev-env 内的同名入口，并保留 .support。
-2. 按提示选择是否删除检测到的 IDEA 软件；此处留空或回答 n/no 会保留 IDEA。
-   选择删除后，会继续询问“是否保留 IDEA 用户配置、SDK 登记和用户插件？[y/N]”。
-   留空或回答 n/no 会一并删除；只有回答 y/yes 才保留这些内容。
-3. 核对实际删除路径和配置清理计划，输入 DELETE 后才执行；取消不会删除。
-   清理直接删除所选内容，不建立软件或配置备份；业务项目及 Gradle 用户缓存保留。
-   IDEA 缓存、日志和 Local History 默认也保留，须由维护者显式加 --remove-caches 才纳入。
-4. 查看结果，按 Enter 返回菜单，按 q 退出。实际执行清理时，操作记录位于：
-   ~/Library/Logs/team-java-env/cleanup/<本次记录>/report.txt
-
-仅删除带有效来源标记且校验通过的本工具 JDK / Gradle；来源不明或旧版无标记
-安装会保留。Gradle 4.5.1 与 6.8 都可识别。IDEA 按用户选择及应用标识处理。
-卸载工具自带运行时，无需预装 Python；缺失、校验失败时请重新下载完整工具包。
-命令行预览（在完整工具目录）：bash 卸载环境.command --dry-run
-已有用户须重新下载一次 start.zip 才能看到新卸载入口。服务器地址不变时，
-两个启动入口每次运行都会获取最新发布工具；完整工具 ZIP 是下载时的快照。
-
-七、前端环境
-
-Go界面选择“安装前端环境”；普通菜单输入 6：1 一键前端；2/3/4 分别安装 nvm+Node14/16/18；
-5 安装 nvm+全部三版 Node；6 安装 iTerm2；7 安装 Oh My Zsh 和推荐插件；0 返回。
-Java 一键安装不会安装这些前端工具。Node14/16/18为旧项目兼容版本，已结束官方维护。
-Node14在Apple Silicon上需要已有Rosetta，工具不会自动安装Rosetta。
-iTerm2 3.7.3需要macOS13+，保存到 /Users/当前用户名/Applications/iTerm.app，与 IDEA 使用同一目录规则。
-Oh My Zsh推荐插件：git、z、zsh-autosuggestions、zsh-syntax-highlighting。
-已有主题和插件配置保留；修改.zshrc前保存.team-frontend.bak，新开终端生效。
-不修改登录Shell、不安装主题或字体。当前卸载入口不删除新增前端工具。
-前端操作记录：~/Library/Logs/team-java-env/frontend/<本次记录>/。
-
-已有Node/npm也可使用维护者提供的npm包通过npx启动同一工具；
-没有Node的电脑继续使用双击入口。临时包名team-dev-env-preview尚未公开发布。
-
-八、其他说明
-
-首次打开可能遇到 macOS 来源确认。确认来自可信团队服务器后，按系统提示
-允许打开这一个文件；受设备策略限制时联系维护者或 IT。
-若没有执行权限，重新下载并解压 ZIP，不要直接下载 .command。
-若下载失败或出现 404，请联系维护者确认服务器已启动、地址和文件路径正确。
-
-业务项目由团队另行提供。可选 MySQL 服务仅供维护者通过命令行运行，需要 Docker。
-安装包不包含业务依赖缓存、额外 JDBC 驱动
-或 MySQL 镜像；实际 build 可能仍需访问内网依赖仓库。
-工具的模拟测试不等于你的业务项目已经构建成功，以本次真实构建结果为准。
-本次脚本更新未执行真实环境重装或 GUI 自动验收。
+IDEA/iTerm2 安装在当前用户 $HOME/Applications，不是系统 /Applications。
+在 IDEA 手动导入业务项目，确认 Project SDK、Gradle JVM、Wrapper/LOCAL 分发，
+执行 Gradle 同步并验证插件实际功能。业务构建由维护者明确指定项目另行验证。
+安装包齐全不代表业务依赖、数据库驱动或 MySQL 镜像已就绪。
+无 Node 的成员继续用 Shell helper；已有 Node >=14.14/npm 可用团队本地 npx 薄入口。
+详细指南见仓库 README.md、docs/environment/ 与 docs/distribution.md。

@@ -3,6 +3,7 @@ import functools
 import hashlib
 import http.server
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -12,7 +13,6 @@ import tarfile
 import tempfile
 import threading
 import unittest
-import zipfile
 
 try:
     from .cleanup_fixture import cleanup_fixture
@@ -54,11 +54,6 @@ class DistributionTests(unittest.TestCase):
             'SERVER_ADDR="${SERVER_ADDR:-config.example:8088}"\n'
             'SERVER_SCHEME="${SERVER_SCHEME:-http}"\n'
         )
-        (self.kit / "开始配置.command").write_text(
-            '#!/bin/bash\n'
-            'printf "%s\\n" "$SERVER_ADDR" "$SERVER_SCHEME" "$@" > "$RESULT_FILE"\n'
-            'exit "${PAYLOAD_EXIT_CODE:-0}"\n'
-        )
         self.home = self.base / "home"
         self.home.mkdir()
         self.tmp = self.base / "downloads"
@@ -70,11 +65,12 @@ class DistributionTests(unittest.TestCase):
         self.httpd = None
         self.cleanup = cleanup_fixture(self.repo)
         self.tui = tui_fixture(self.repo)
-        (self.kit / "卸载环境.command").write_text(
+        (self.kit / ".support/scripts/run-tool.sh").write_text(
             '#!/bin/bash\n'
-            'printf "%s\\n" "卸载入口" "$SERVER_ADDR" "$SERVER_SCHEME" "$@" > "$UNINSTALL_RESULT_FILE"\n'
-            'exit "${PAYLOAD_EXIT_CODE:-0}"\n'
-        )
+            'action="$1"; shift\n'
+            'if [ "$action" = uninstall ]; then dest="$UNINSTALL_RESULT_FILE"; else dest="$RESULT_FILE"; fi\n'
+            'printf "%s\\n" "$action" "$SERVER_ADDR" "$SERVER_SCHEME" "$@" > "$dest"\n'
+            'exit "${PAYLOAD_EXIT_CODE:-0}"\n')
         self.uninstall_result = self.base / "uninstall-result"
         self.env["UNINSTALL_RESULT_FILE"] = str(self.uninstall_result)
 
@@ -92,7 +88,9 @@ class DistributionTests(unittest.TestCase):
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     def launch(self, *args, extra=None, launcher=None):
-        return subprocess.run(["/bin/bash", str(launcher or self.output / "start.command"), *args],
+        if not args or args[0] not in ("install", "uninstall", "help", "--help", "--dry-run", "-h"):
+            args = ("install", "--components", "jdk", *args)
+        return subprocess.run(["/bin/bash", str(launcher or self.output / "devtool-helper.sh"), *args],
                               cwd=self.base, env={**self.env, **(extra or {})}, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15)
 
@@ -142,8 +140,12 @@ class DistributionTests(unittest.TestCase):
                     info.type = tarfile.SYMTYPE if kind == "symlink" else tarfile.LNKTYPE
                     info.linkname = content.decode()
                     tar.addfile(info)
-        archive.with_suffix(".gz.sha256").write_text(
-            hashlib.sha256(archive.read_bytes()).hexdigest() + "  team-dev-env.tar.gz\n")
+        release = json.loads((self.output / "release.json").read_text())
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        release["bundle"]["sha256"] = digest
+        release["bundle"]["size"] = archive.stat().st_size
+        release["version"] = "go-tui-" + digest[:12]
+        (self.output / "release.json").write_text(json.dumps(release))
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS controlling terminal")
     def test_bootstrap_ctrl_c_keeps_payload_alive_and_preserves_final_exit(self):
@@ -157,7 +159,7 @@ class DistributionTests(unittest.TestCase):
         payload = ("import signal,sys; "
                    "signal.signal(signal.SIGINT,lambda *_: print('CANCELLED',flush=True)); "
                    "print('READY',flush=True); input(); sys.exit(23)")
-        (self.kit / "卸载环境.command").write_text(
+        (self.kit / ".support/scripts/run-tool.sh").write_text(
             '#!/bin/bash\nexec ' + shlex.quote(sys.executable) + ' -u -c ' + shlex.quote(payload) + '\n')
         self.assert_ok(self.package())
         server = self.serve()
@@ -165,7 +167,7 @@ class DistributionTests(unittest.TestCase):
         def terminal():
             os.setsid()
             fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
-        process = subprocess.Popen(["/bin/bash", str(self.output / "uninstall.command")],
+        process = subprocess.Popen(["/bin/bash", str(self.output / "devtool-helper.sh"), "uninstall"],
                                    stdin=slave, stdout=slave, stderr=slave,
                                    env={**self.env, "SERVER_ADDR": server}, preexec_fn=terminal)
         os.close(slave)
@@ -200,7 +202,7 @@ class DistributionTests(unittest.TestCase):
                 process.kill()
             process.wait(timeout=5)
 
-    def test_package_allowlist_checksums_and_executable_zip(self):
+    def test_package_has_three_files_and_minimal_executable_tar(self):
         for name in (".env", ".support/config/team.sh", ".support/config/passwords.txt",
                      "tests/test_private.py", "docs/internal.md", "__pycache__/cache.pyc"):
             path = self.kit / name
@@ -208,8 +210,9 @@ class DistributionTests(unittest.TestCase):
             path.write_text("PRIVATE-MAINTAINER-DATA")
         self.assert_ok(self.package("--server", "intranet.example:9000", "--scheme", "https"))
         archive = self.output / "dev-env/team-dev-env.tar.gz"
-        self.assertEqual(archive.with_suffix(".gz.sha256").read_text().split()[0],
+        self.assertEqual(json.loads((self.output / "release.json").read_text())["bundle"]["sha256"],
                          hashlib.sha256(archive.read_bytes()).hexdigest())
+        self.assertEqual(set(self.published_files()), {"devtool-helper.sh", "dev-env/team-dev-env.tar.gz", "release.json"})
         with tarfile.open(archive) as tar:
             names = {member.name for member in tar.getmembers() if member.isfile()}
             self.assertEqual(names, {"team-dev-env/" + name for name in self.kit_files} |
@@ -225,8 +228,8 @@ class DistributionTests(unittest.TestCase):
                               "team-dev-env/.support/tui/THIRD_PARTY_NOTICES.txt"})
             self.assertTrue(tar.extractfile("team-dev-env/.support/config/resources.tsv")
                             .read().startswith(b"# id\tgroup\tversion\tarch\tpath\turl\tsha256\n"))
-            self.assertEqual(tar.getmember("team-dev-env/开始配置.command").mode & 0o777, 0o755)
-            self.assertEqual(tar.getmember("team-dev-env/卸载环境.command").mode & 0o777, 0o755)
+            self.assertEqual(tar.getmember("team-dev-env/.support/scripts/run-tool.sh").mode & 0o777, 0o755)
+            self.assertEqual(tar.getmember("team-dev-env/.support/scripts/run-tool.sh").mode & 0o777, 0o755)
             for member in tar.getmembers():
                 if member.isfile():
                     self.assertNotIn(b"PRIVATE-MAINTAINER-DATA", tar.extractfile(member).read())
@@ -239,52 +242,38 @@ class DistributionTests(unittest.TestCase):
                                  "_", str(config)], env={**self.env, "SERVER_ADDR": "other:81", "SERVER_SCHEME": "http"},
                                 text=True, capture_output=True)
         self.assertEqual(result.stdout, "other:81 http")
-        with zipfile.ZipFile(self.output / "team-dev-env.zip") as zipped:
-            self.assertEqual({i.filename for i in zipped.infolist() if not i.is_dir()}, names)
-            self.assertEqual((zipped.getinfo("team-dev-env/开始配置.command").external_attr >> 16) & 0o777, 0o755)
-            self.assertEqual((zipped.getinfo("team-dev-env/卸载环境.command").external_attr >> 16) & 0o777, 0o755)
-        with zipfile.ZipFile(self.output / "start.zip") as zipped:
-            self.assertEqual(zipped.namelist(), ["开始配置.command", "卸载环境.command"])
-            self.assertEqual(zipped.read("开始配置.command"), (self.output / "start.command").read_bytes())
-            self.assertEqual((zipped.getinfo("开始配置.command").external_attr >> 16) & 0o777, 0o755)
-            self.assertEqual(zipped.read("卸载环境.command"), (self.output / "uninstall.command").read_bytes())
-            self.assertEqual((zipped.getinfo("卸载环境.command").external_attr >> 16) & 0o777, 0o755)
 
     def test_uninstall_bootstrap_selects_only_uninstall_entry_and_forwards_all_arguments(self):
         self.assert_ok(self.package())
         server = self.serve()
         moved = self.base / "中文 目录's" / "卸载 启动器.command"
         moved.parent.mkdir()
-        shutil.copy2(self.output / "uninstall.command", moved)
+        shutil.copy2(self.output / "devtool-helper.sh", moved)
         self.assertEqual(moved.stat().st_mode & 0o777, 0o755)
-        result = self.launch("--dry-run", "--help", "--home", "用户 空间's", launcher=moved,
+        result = self.launch("uninstall", "--dry-run", "--help", "--home", "用户 空间's", launcher=moved,
                              extra={"SERVER_ADDR": server})
         self.assert_ok(result)
         self.assertEqual(self.uninstall_result.read_text().splitlines(),
-                         ["卸载入口", server, "http", "--dry-run", "--help", "--home", "用户 空间's"])
+                         ["uninstall", server, "http", "--dry-run", "--help", "--home", "用户 空间's"])
         self.assertFalse(self.result_file.exists())
         self.assertEqual(list(self.tmp.iterdir()), [])
-        result = self.launch(launcher=moved, extra={"SERVER_ADDR": server, "PAYLOAD_EXIT_CODE": "7"})
+        result = self.launch("uninstall", launcher=moved, extra={"SERVER_ADDR": server, "PAYLOAD_EXIT_CODE": "7"})
         self.assertEqual(result.returncode, 7, result.stdout)
 
-    def test_both_bootstraps_fetch_latest_package_each_time(self):
+    def test_bootstrap_fetches_latest_package_each_time(self):
         self.assert_ok(self.package())
         server = self.serve()
-        for filename, result_path, source_name in (("start.command", self.result_file, "开始配置.command"),
-                                                    ("uninstall.command", self.uninstall_result, "卸载环境.command")):
-            with self.subTest(filename=filename):
-                saved_launcher = self.base / filename
-                shutil.copy2(self.output / filename, saved_launcher)
-                self.assert_ok(self.launch(launcher=saved_launcher, extra={"SERVER_ADDR": server}))
-                (self.kit / source_name).write_text('#!/bin/bash\nprintf latest > "$' +
-                    ("RESULT_FILE" if filename == "start.command" else "UNINSTALL_RESULT_FILE") + '"\n')
-                self.assert_ok(self.package())
-                self.assert_ok(self.launch(launcher=saved_launcher, extra={"SERVER_ADDR": server}))
-                self.assertEqual(result_path.read_text(), "latest")
+        saved = self.base / "saved-helper.sh"
+        shutil.copy2(self.output / "devtool-helper.sh", saved)
+        self.assert_ok(self.launch("uninstall", launcher=saved, extra={"SERVER_ADDR": server}))
+        (self.kit / ".support/scripts/run-tool.sh").write_text('#!/bin/bash\nprintf latest > "$UNINSTALL_RESULT_FILE"\n')
+        self.assert_ok(self.package())
+        self.assert_ok(self.launch("uninstall", launcher=saved, extra={"SERVER_ADDR": server}))
+        self.assertEqual(self.uninstall_result.read_text(), "latest")
 
     def test_uninstall_publication_symlink_is_rejected_before_replacing_other_files(self):
         self.assert_ok(self.package())
-        launcher = self.output / "uninstall.command"
+        launcher = self.output / "devtool-helper.sh"
         outside = self.base / "outside-launcher"
         outside.write_bytes(b"keep external content")
         launcher.unlink()
@@ -299,16 +288,16 @@ class DistributionTests(unittest.TestCase):
     def test_uninstall_checksum_failure_or_missing_entry_never_runs_installation(self):
         self.assert_ok(self.package())
         server = self.serve()
-        launcher = self.output / "uninstall.command"
+        launcher = self.output / "devtool-helper.sh"
         archive = self.output / "dev-env/team-dev-env.tar.gz"
         archive.write_bytes(archive.read_bytes() + b"corrupted")
-        result = self.launch(launcher=launcher, extra={"SERVER_ADDR": server})
+        result = self.launch("uninstall", launcher=launcher, extra={"SERVER_ADDR": server})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("校验", result.stdout)
         self.assertFalse(self.result_file.exists())
         self.assertFalse(self.uninstall_result.exists())
-        self.replace_payload([("team-dev-env/开始配置.command", (self.kit / "开始配置.command").read_bytes(), "file")])
-        result = self.launch(launcher=launcher, extra={"SERVER_ADDR": server})
+        self.replace_payload([("team-dev-env/.support/scripts/other.sh", b"#!/bin/bash\n", "file")])
+        result = self.launch("uninstall", launcher=launcher, extra={"SERVER_ADDR": server})
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.result_file.exists())
         self.assertFalse(self.uninstall_result.exists())
@@ -341,8 +330,7 @@ class DistributionTests(unittest.TestCase):
         for _, _, _, _, relative, payload in entries:
             target = self.output / "resources" / relative
             self.assertEqual(target.read_bytes(), payload)
-            self.assertEqual(target.with_name(target.name + ".sha256").read_text(),
-                             f"{hashlib.sha256(payload).hexdigest()}  {target.name}\n")
+            self.assertFalse(target.with_name(target.name + ".sha256").exists())
             stats[relative] = (target.stat().st_ino, target.stat().st_mtime_ns)
         self.assertFalse((self.output / "resources/private.key").exists())
         self.assertEqual(unknown.read_bytes(), b"keep")
@@ -350,8 +338,8 @@ class DistributionTests(unittest.TestCase):
         for relative, expected in stats.items():
             target = self.output / "resources" / relative
             self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns), expected)
-        with zipfile.ZipFile(self.output / "team-dev-env.zip") as archive:
-            self.assertFalse(any(name.endswith(("jdk8.tar.gz", "setter.zip")) for name in archive.namelist()))
+        with tarfile.open(self.output / "dev-env/team-dev-env.tar.gz") as archive:
+            self.assertFalse(any(name.endswith(("jdk8.tar.gz", "setter.zip")) for name in archive.getnames()))
 
     def test_resource_validation_finishes_before_replacing_published_files(self):
         self.assert_ok(self.package())
@@ -397,7 +385,7 @@ class DistributionTests(unittest.TestCase):
         storage, _ = self.resources(unpinned=True)
         (storage / "plugins/setter.zip.sha256").unlink()
         self.assertNotEqual(self.package().returncode, 0)
-        self.assertFalse((self.output / "start.command").exists())
+        self.assertFalse((self.output / "devtool-helper.sh").exists())
 
     def test_accepted_receipt_without_final_newline_generates_pinned_manifest(self):
         storage, _ = self.resources(unpinned=True)
@@ -416,13 +404,13 @@ class DistributionTests(unittest.TestCase):
     def test_launcher_survives_move_dry_run_and_environment_override(self):
         self.assert_ok(self.package("--server", "intranet.example:9000", "--scheme", "https"))
         moved = self.base / "下载 单个'启动器.command"
-        shutil.copy2(self.output / "start.command", moved)
+        shutil.copy2(self.output / "devtool-helper.sh", moved)
         shutil.rmtree(self.output)
         result = self.launch("--dry-run", launcher=moved)
         self.assert_ok(result)
         self.assertIn("https://intranet.example:9000/dev-env/team-dev-env.tar.gz", result.stdout)
         self.assertNotIn("jdk", result.stdout.lower())
-        result = self.launch("--project", "项目 ' test", "--dry-run", launcher=moved,
+        result = self.launch("--dry-run", "install", "--components", "jdk", launcher=moved,
                              extra={"SERVER_ADDR": "mirror:9090", "SERVER_SCHEME": "http"})
         self.assert_ok(result)
         self.assertIn("http://mirror:9090/dev-env/team-dev-env.tar.gz", result.stdout)
@@ -442,11 +430,11 @@ class DistributionTests(unittest.TestCase):
         keep = self.output / "existing-jdk.tar.gz"
         keep.write_bytes(b"do not change")
         self.assert_ok(self.package())
-        original = (self.output / "start.command").read_bytes()
-        (self.kit / ".support/menu.sh").unlink()
+        original = (self.output / "devtool-helper.sh").read_bytes()
+        (self.kit / ".support/scripts/repair-env.sh").unlink()
         self.assertNotEqual(self.package().returncode, 0)
         self.assertEqual(keep.read_bytes(), b"do not change")
-        self.assertEqual((self.output / "start.command").read_bytes(), original)
+        self.assertEqual((self.output / "devtool-helper.sh").read_bytes(), original)
 
     def test_rejects_invalid_urls_and_symlinked_source_before_publishing(self):
         for args in (("--scheme", "file"), ("--server", "example/path"), ("--server", "example's:8")):
@@ -464,7 +452,7 @@ class DistributionTests(unittest.TestCase):
                              extra={"SERVER_ADDR": server, "SERVER_SCHEME": "http"})
         self.assert_ok(result)
         self.assertEqual(self.result_file.read_text().splitlines(),
-                         [server, "http", "--project", "项目 path's", "--check"])
+                         ["install", server, "http", "--components", "jdk", "--project", "项目 path's", "--check"])
         self.assertEqual(list(self.tmp.iterdir()), [])
         result = self.launch(extra={"SERVER_ADDR": server, "PAYLOAD_EXIT_CODE": "7"})
         self.assertEqual(result.returncode, 7, result.stdout)
@@ -492,7 +480,7 @@ class DistributionTests(unittest.TestCase):
         server = self.serve(self.base)
         result = self.launch(extra={"SERVER_ADDR": server, "LC_ALL": "C.UTF-8"})
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn(f"http://{server}/dev-env/team-dev-env.tar.gz", result.stdout)
+        self.assertIn(f"http://{server}/release.json", result.stdout)
         self.assertIn("HTTP 404", result.stdout)
         self.assertIn("dist/server", result.stdout)
         self.assertFalse(self.result_file.exists())
@@ -520,13 +508,126 @@ class DistributionTests(unittest.TestCase):
         ):
             with self.subTest(name=name, kind=kind):
                 self.replace_payload([(name, data, kind)])
-                for launcher in ("start.command", "uninstall.command"):
+                for launcher in ("devtool-helper.sh", "devtool-helper.sh"):
                     result = self.launch(launcher=self.output / launcher, extra={"SERVER_ADDR": server})
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("工具包", result.stdout)
                     self.assertFalse(self.result_file.exists())
                     self.assertFalse(self.uninstall_result.exists())
                     self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_local_help_preview_and_usage_failures_never_download(self):
+        self.assert_ok(self.package())
+        for args, code in [(("--help",), 0), (("help", "install"), 0),
+                           (("help", "uninstall"), 0), (("--dry-run", "uninstall"), 0),
+                           (("frontend",), 2), (("help", "frontend"), 2),
+                           (("install", "--frontend"), 2), (("--plain", "--help"), 2),
+                           (("--dry-run", "install", "--plain"), 2), (("--project", "x"), 2),
+                           (("unknown",), 2), ((), 2), (("install",), 2),
+                           (("install", "--components", "jdk,,nvm"), 2),
+                           (("install", "--components", "all,nvm"), 2)]:
+            with self.subTest(args=args):
+                result = subprocess.run(["/bin/bash", str(self.output / "devtool-helper.sh"), *args],
+                    env={**self.env, "SERVER_ADDR": "127.0.0.1:1"}, text=True, capture_output=True, timeout=3)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                self.assertNotIn("正在获取", result.stdout)
+                self.assertEqual(list(self.tmp.iterdir()), [])
+        result = self.launch("--help", extra={"SERVER_ADDR": "invalid/root"})
+        self.assert_ok(result)
+
+    def test_component_csv_rejects_cr_lf_before_download_or_temporary_files(self):
+        self.assert_ok(self.package())
+        commands = self.base / "guard-commands"
+        commands.mkdir()
+        record = self.base / "curl-invoked"
+        curl = commands / "curl"
+        curl.write_text('#!/bin/bash\nprintf invoked > "$CURL_RECORD"\nexit 55\n')
+        curl.chmod(0o755)
+        environment = {**self.env, "PATH": str(commands) + os.pathsep + self.env["PATH"],
+                       "SERVER_ADDR": "127.0.0.1:1", "CURL_RECORD": str(record)}
+        for value in ("jdk\nunknown", "jdk\runknown", "jdk\r\nunknown", "jdk\n", "jdk\r"):
+            for prefix in (("--dry-run", "install"), ("--dry-run", "uninstall"),
+                           ("install", "--dry-run"), ("install",), ("uninstall",)):
+                for component_args in (("--components", value), ("--components=" + value,)):
+                    with self.subTest(value=value, prefix=prefix, component_args=component_args):
+                        record.unlink(missing_ok=True)
+                        result = subprocess.run(
+                            ["/bin/bash", str(self.output / "devtool-helper.sh"), *prefix, *component_args],
+                            env=environment, text=True, capture_output=True, timeout=3)
+                        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                        self.assertNotIn("正在获取", result.stdout)
+                        self.assertFalse(record.exists(), "invalid components invoked the download command")
+                        self.assertEqual(list(self.tmp.iterdir()), [])
+                        self.assertFalse(self.result_file.exists())
+                        self.assertFalse(self.uninstall_result.exists())
+
+    def test_business_preview_and_help_download_and_preserve_arguments(self):
+        self.assert_ok(self.package())
+        server = self.serve()
+        for action in ("install", "uninstall"):
+            path = self.result_file if action == "install" else self.uninstall_result
+            for flag in ("--help", "--dry-run"):
+                result = self.launch(action, flag, extra={"SERVER_ADDR": server})
+                self.assert_ok(result)
+                self.assertEqual(path.read_text().splitlines(), [action, server, "http", flag])
+        # NUL records prove newline/literal command substitution survive shell forwarding.
+        (self.kit / ".support/scripts/run-tool.sh").write_text('#!/bin/bash\nprintf "%s\\0" "$@" > "$RESULT_FILE"\n')
+        self.assert_ok(self.package())
+        unusual = "中文 空格's\n$(touch SHOULD_NOT_EXIST)"
+        self.assert_ok(self.launch("install", "--components", "jdk", "--label", unusual,
+                                   extra={"SERVER_ADDR": server}))
+        self.assertEqual(self.result_file.read_bytes().split(b"\0")[:-1],
+                         [b"install", b"--components", b"jdk", b"--label", unusual.encode()])
+        self.assertFalse((self.base / "SHOULD_NOT_EXIST").exists())
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS TTY page selection")
+    def test_no_argument_terminal_home_and_explicit_install_page_are_distinct(self):
+        import pty
+        (self.kit / ".support/scripts/run-tool.sh").write_text(
+            '#!/bin/bash\nprintf "%s:%s:%s" "$1" "$#" "${TEAM_TOOL_PAGE:-install}" > "$RESULT_FILE"\n')
+        self.assert_ok(self.package())
+        server = self.serve()
+        for args, expected in [((), "install:1:home"), (("install",), "install:1:install")]:
+            master, slave = pty.openpty()
+            try:
+                process = subprocess.Popen(["/bin/bash", str(self.output / "devtool-helper.sh"), *args],
+                    stdin=slave, stdout=slave, stderr=slave,
+                    env={**self.env, "SERVER_ADDR": server, "TEAM_TOOL_PAGE": "home"})
+                self.assertEqual(process.wait(timeout=8), 0)
+                self.assertEqual(self.result_file.read_text(), expected)
+                self.assertEqual(list(self.tmp.iterdir()), [])
+            finally:
+                os.close(slave)
+                os.close(master)
+
+    def test_manifest_schema_path_size_digest_and_missing_manifest_never_execute(self):
+        self.assert_ok(self.package())
+        server = self.serve()
+        path = self.output / "release.json"
+        original = json.loads(path.read_text())
+        cases = [("schema", 1), ("schema", True), ("interface", "legacy"),
+                 ("bundle.path", "../other.tar.gz"), ("bundle.size", True),
+                 ("bundle.size", 1.0), ("bundle.size", 0), ("bundle.size", "10"),
+                 ("bundle.sha256", "A" * 64), ("launcher.path", "uninstall.command"),
+                 ("launcher.size", -1), ("bundle.extra", "unsupported"), ("artifacts", {})]
+        for key, value in cases:
+            with self.subTest(key=key, value=value):
+                release = json.loads(json.dumps(original))
+                parts = key.split(".")
+                if len(parts) == 1: release[key] = value
+                else: release[parts[0]][parts[1]] = value
+                path.write_text(json.dumps(release))
+                result = self.launch("uninstall", extra={"SERVER_ADDR": server})
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse(self.result_file.exists())
+                self.assertFalse(self.uninstall_result.exists())
+                self.assertEqual(list(self.tmp.iterdir()), [])
+        path.write_text(" " * 65537)
+        self.assertNotEqual(self.launch("uninstall", extra={"SERVER_ADDR": server}).returncode, 0)
+        path.unlink()
+        result = self.launch("uninstall", extra={"SERVER_ADDR": server})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("HTTP 404", result.stdout)
 
 
 if __name__ == "__main__":

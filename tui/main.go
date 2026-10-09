@@ -24,10 +24,13 @@ func runCLI(args []string, in *os.File, out, errout io.Writer) int {
 	flags := flag.NewFlagSet("team-dev-env", flag.ContinueOnError)
 	flags.SetOutput(errout)
 	support := flags.String("support-dir", "", "支持文件目录（.support）")
-	page := flags.String("page", "home", "起始页面：home、frontend 或 cleanup")
+	page := flags.String("page", "home", "起始页面：home、install 或 cleanup")
+	components := flags.String("components", "", "预选组件，逗号分隔")
+	gradleVersion := flags.String("gradle-version", "4.5.1", "4.5.1|6.8|all")
+	nodeVersion := flags.String("node-version", "14", "none|10|14|18|22|all")
 	showVersion := flags.Bool("version", false, "显示版本")
 	flags.Usage = func() {
-		fmt.Fprintln(out, "团队开发环境 · 交互终端界面\n\n用法：team-dev-env --support-dir PATH [--page home|frontend|cleanup]\n\n  --support-dir PATH  支持文件目录\n  --page PAGE         起始页面\n  --help              显示帮助\n  --version           显示版本\n\n需要交互终端；脚本或流水线请使用启动器的 --plain 模式。")
+		fmt.Fprintln(out, "团队开发环境 · 交互终端界面\n\n用法：team-dev-env --support-dir PATH [--page home|install|cleanup]\n\n  --support-dir PATH  支持文件目录\n  --page PAGE         起始页面\n  --help              显示帮助\n  --version           显示版本\n\n需要交互终端；脚本或流水线请明确指定 install --components 或使用 --dry-run。")
 	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -43,13 +46,22 @@ func runCLI(args []string, in *os.File, out, errout io.Writer) int {
 		fmt.Fprintln(errout, "不支持的位置参数；使用 --help 查看用法。")
 		return 2
 	}
-	if *page != "home" && *page != "frontend" && *page != "cleanup" {
-		fmt.Fprintln(errout, "--page 只能为 home、frontend 或 cleanup。")
+	if *page != "home" && *page != "install" && *page != "cleanup" {
+		fmt.Fprintln(errout, "--page 只能为 home、install 或 cleanup。")
+		return 2
+	}
+	selection, selectionErr := componentSelection(*components)
+	if selectionErr != nil {
+		fmt.Fprintln(errout, selectionErr)
+		return 2
+	}
+	if !containsArg([]string{"4.5.1", "6.8", "all"}, *gradleVersion) || !containsArg([]string{"none", "10", "14", "18", "22", "all"}, *nodeVersion) {
+		fmt.Fprintln(errout, "版本选择无效")
 		return 2
 	}
 	outputFile, ok := out.(*os.File)
 	if in == nil || !term.IsTerminal(in.Fd()) || !ok || !term.IsTerminal(outputFile.Fd()) {
-		fmt.Fprintln(errout, "交互界面需要 TTY 终端。请在终端打开启动器，或使用启动器的 --plain 模式。")
+		fmt.Fprintln(errout, "交互界面需要 TTY 终端。请在终端打开启动器，或明确指定组件和非交互操作。")
 		return 2
 	}
 	if *support == "" {
@@ -67,6 +79,14 @@ func runCLI(args []string, in *os.File, out, errout io.Writer) int {
 		return 2
 	}
 	m := newModel(&Runner{SupportDir: absSupport}, *page)
+	m.components = selection
+	m.gradleVersion = *gradleVersion
+	m.nodeVersion = *nodeVersion
+	if *page == "install" {
+		_ = m.refreshInstallPlan()
+	} else if *page == "home" {
+		m.refreshHomepagePlan()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.lifecycle.ctx = ctx
 	signals := make(chan os.Signal, 4)

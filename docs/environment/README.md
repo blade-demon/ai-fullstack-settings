@@ -1,24 +1,19 @@
 # 本地开发环境指南
 
-目标平台为 macOS，一键安装基线为 JDK 8、Gradle 4.5.1、IDEA 2025.3.6.1 开源社区版和全部六个推荐插件；Gradle 单独安装另可选择 6.8。
+目标平台为 macOS。成员下载 `devtool-helper.sh`，在终端运行 `bash devtool-helper.sh`；首页提供安装与配置、卸载工具及一键安装配置全部。无需预装 Python、Node、Go、Homebrew。方向键移动、空格选择组件、左右键选择版本，安装页 Enter 直接预检并执行；卸载另需核对实例、清单和 `DELETE`。
 
-IDEA 使用 JetBrains GitHub 的 Community Open Source 构建，默认配置目录为 `IdeaIC2025.3`。2024 已从有效下载和新安装基线移除；已有 2024 应用须先按[卸载指南](cleanup.md)核对并确认卸载，再安装 2025，安装器不会直接覆盖旧应用。
-
-小组成员从维护者提供的内网地址下载 `start.zip`，解压后双击「开始配置.command」，默认通过 Go TUI 操作，方向键选择、Enter 确认；`--plain` 保留数字菜单。完整工具 ZIP 是备用入口。成员简要操作见[使用说明](../../dev-kit/使用说明.txt)，服务器准备与首次打开说明见[内网分发指南](../distribution.md)。
-
-详细交互与构建说明见[Go TUI 指南](tui.md)。Windows 和 macOS 下载服务器拉取仓库后执行原 `start`，会自动获取匹配源码的预构建运行文件；维护者构建、发布锁、镜像和离线操作见[运行文件发布指南](runtime-release.md)。下表编号对应普通模式，Go TUI 提供同名操作。
-
-| 层次 | 内容 | 成员操作入口 |
+| 指南 | 内容 | 成员选择 |
 | --- | --- | --- |
-| [系统运行环境](runtime.md) | JDK 8、独立 Gradle 4.5.1、完整环境变量 | 菜单 `1` 一键安装配置，或 `2` 单独安装配置 JDK |
-| [Gradle 安装与验证](gradle.md) | 从内网分别安装 Gradle 4.5.1 / 6.8、配置完整变量 | 菜单 `3` 选择版本，或直接 `3.1` / `3.2`；项目构建使用维护者命令行 |
-| [本地服务与数据](services.md) | 可选 MySQL 容器、数据库客户端 | 维护者命令行 |
-| [IDE 与插件](ide.md) | IDEA 个人目录安装、六个团队插件、项目 SDK 与 Gradle JVM | 菜单 `4` 安装 IDEA，`5` 安装全部插件 |
-| [前端环境](frontend.md) | nvm、Node 14/16/18、iTerm2、Oh My Zsh 与常用插件 | 菜单 `6`；已有 Node 可用 npx 薄入口 |
-| [项目依赖](dependencies.md) | Lombok、Spring、MyBatis 和数据库驱动 | 遵循项目现有构建文件 |
+| [系统运行环境](runtime.md) | JDK 8、环境模块、Shell 加载 | `jdk` |
+| [Gradle 安装与切换](gradle.md) | 4.5.1 / 6.8 / all，当前与持久默认 | `gradle`，自动补入 JDK 8 依赖 |
+| [前端环境](frontend.md) | nvm、Node 10/14/18/22、iTerm2、Oh My Zsh | `nvm,iterm2,oh-my-zsh` |
+| [IDE 与插件](ide.md) | IDEA 2025.3.6.1 和六个推荐插件 | `idea` |
+| [安全卸载](cleanup.md) | 六组件与具体实例、来源及用户数据边界 | `uninstall` |
+| [本地服务与数据](services.md) | 可选 MySQL、数据库客户端 | 维护者底层命令行 |
+| [项目依赖](dependencies.md) | Lombok、Spring、MyBatis、数据库驱动 | 业务项目维护 |
 
-安装界面启动时先只读扫描安装状态和持久环境配置；安全卸载页面不执行 SDK 扫描。普通模式主菜单提供 `1` 至 `6` 的安装操作和 `0` 退出；`3` 可进入 Gradle 子菜单，选择 `1` / `2` 或 `3.1` / `3.2`，`0` 返回，空行不安装，不选择业务项目或执行构建。项目检查、构建验证、仅下载和历史查看均保留为维护者命令行功能。
+全量默认按 JDK → Gradle → nvm/Node → iTerm2 → Oh My Zsh → IDEA/插件执行，Gradle 默认 4.5.1，安装页和一键全部默认选择并安装 Node 14.21.3；其他单版仍可选，显式 `all` 才安装四版，首次或旧 default 失效时回退到14，有效 default 保留。单版（包括默认单14）设置所选默认；只安装 nvm 可选 `none` 且不改默认；两版 Gradle 可并存。安装完成后使用 `gradle_use` / `nvm use` 切换，无需重跑 helper。helper 不能改变父终端，按结果指引加载或新开终端。
 
-菜单 `4` 显示当前用户 `$HOME/Applications` 的实际路径并将 IDEA 安装到该目录；菜单 `5` 安装全部六个推荐插件，安装前退出 IDEA。每次操作仍保存修复历史，包含配置差异、备份路径和验证日志，详见[修复历史](../repair-history.md)。MySQL 是维护者命令行可选服务，仅使用该服务时需要 Docker。
+成员使用说明见[使用说明](../../dev-kit/使用说明.txt)，交互与进度见[TUI 指南](tui.md)，分发和服务器启停见[内网分发](../distribution.md)。旧双入口、frontend 路由、--plain 和数字菜单不再使用。新版 IDEA 不覆盖已有冲突应用；2024 不是新安装基线，先核对卸载范围。
 
-本目录命令示例供维护者使用；除明确要求进入业务项目的步骤外，从仓库根目录执行。内部脚本位于 `dev-kit/.support/`，成员不必浏览或修改；Java 业务项目由 `--project` 显式指定，`--dry-run` 可预览操作。
+服务端仍支持 Windows/macOS，运行文件的构建、锁、镜像和下载见[运行文件发布指南](runtime-release.md)。成员不执行项目构建；维护者保留底层 `repair-env.sh --project` 等检查和构建功能，它们与公共组件入口分别管理。记录见[修复历史](../repair-history.md)；历史结果不代表本次实机或业务项目已经验证。

@@ -36,6 +36,68 @@ frontend_check_file() {
     [ ! -e "$target" ] || [ -f "$target" ] || die "目标不是普通文件：$target"
 }
 
+# 展示只静态读取；真实安装用 nvm 解析、切换并运行目标。两个入口共用默认规则。
+_frontend_nvm_default_version() (
+    set +u
+    local target actual
+    . "$NVM_DIR/nvm.sh" --no-use >/dev/null 2>&1 || exit 1
+    target="$(nvm version default)" || exit 1
+    [ -n "$target" ] && [ "$target" != N/A ] && [ "$target" != none ] || exit 1
+    nvm use --silent default >/dev/null 2>&1 || exit 1
+    actual="$(node --version)" || exit 1
+    if [ "$target" = system ]; then
+        [[ "$actual" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || exit 1
+    else [ "$actual" = "$target" ] || exit 1; fi
+    printf '%s' "$actual"
+)
+frontend_node_default_plan() {
+    local selection="$1" mode="${2:-static}" current='' resolved='' major='' depth=0
+    FRONTEND_DEFAULT_BEFORE=''; FRONTEND_DEFAULT_AFTER=''; FRONTEND_DEFAULT_VALIDATION=missing
+    if [ -f "$NVM_DIR/alias/default" ] && [ ! -L "$NVM_DIR/alias/default" ]; then
+        current="$(cat "$NVM_DIR/alias/default")"
+        FRONTEND_DEFAULT_BEFORE="$current"
+        FRONTEND_DEFAULT_VALIDATION=pending
+    fi
+    if [ "$selection" = none ]; then
+        FRONTEND_DEFAULT_AFTER="$current"
+        FRONTEND_DEFAULT_IMPACT="默认保持 ${current:-未设置}；仅安装 nvm，不要求已有 Node"
+        return 0
+    fi
+    if [ -n "$current" ]; then
+        if [ "$mode" = verify ]; then
+            resolved="$(_frontend_nvm_default_version)" && FRONTEND_DEFAULT_VALIDATION=valid || FRONTEND_DEFAULT_VALIDATION=invalid
+        else
+            resolved="$current"
+            while [ -f "$NVM_DIR/alias/$resolved" ] && [ ! -L "$NVM_DIR/alias/$resolved" ] && [ "$depth" -lt 20 ]; do
+                resolved="$(cat "$NVM_DIR/alias/$resolved")"; depth=$((depth + 1))
+            done
+            case "$resolved" in
+                v[0-9]*.[0-9]*.[0-9]*)
+                    [ -x "$NVM_DIR/versions/node/$resolved/bin/node" ] || FRONTEND_DEFAULT_VALIDATION=invalid ;;
+                system) command -v node >/dev/null 2>&1 || FRONTEND_DEFAULT_VALIDATION=invalid ;;
+            esac
+            [ "$depth" -lt 20 ] || FRONTEND_DEFAULT_VALIDATION=invalid
+        fi
+    fi
+    case "$selection" in
+        all)
+            if [ "$FRONTEND_DEFAULT_VALIDATION" = valid ] || [ "$FRONTEND_DEFAULT_VALIDATION" = pending ]; then
+                FRONTEND_DEFAULT_AFTER="$current"
+                FRONTEND_DEFAULT_IMPACT="默认保留 ${current}（执行前验证，失效则恢复 v14.21.3）"
+            else
+                FRONTEND_DEFAULT_AFTER=v14.21.3
+                if [ -n "$current" ]; then FRONTEND_DEFAULT_IMPACT="默认 $current 已失效 → v14.21.3"
+                else FRONTEND_DEFAULT_IMPACT='新终端默认 未设置 → v14.21.3'; fi
+            fi ;;
+        10) FRONTEND_DEFAULT_AFTER=v10.24.1 ;;
+        14) FRONTEND_DEFAULT_AFTER=v14.21.3 ;;
+        18) FRONTEND_DEFAULT_AFTER=v18.20.8 ;;
+        22) FRONTEND_DEFAULT_AFTER=v22.23.3 ;;
+    esac
+    if [ "$selection" != all ]; then FRONTEND_DEFAULT_IMPACT="新终端默认 ${current:-未设置} → $FRONTEND_DEFAULT_AFTER"; fi
+    return 0
+}
+
 frontend_fetch_resource() {
     frontend_read_resource "$1"
     local cache="${FRONTEND_CACHE_DIR:-$HOME/Library/Caches/team-frontend-env/resources}"
@@ -113,6 +175,42 @@ frontend_write_marker() {
     done
     frontend_check_file "$target/.team-frontend-env-install.json"
     [ ! -e "$target/.team-frontend-env-install.json" ] || die '已有前端安装来源标记，拒绝覆盖'
-    printf '{"schema":1,"tool":"team-frontend-env","kind":"%s","version":"%s","arch":"%s","archive":"%s","sha256":"%s"}\n' \
-        "$component" "$version" "$architecture" "$archive" "$sha" > "$target/.team-frontend-env-install.json"
+    local profile extra_key extra_value
+    case "$component" in
+        nvm|node)
+            profile="${nvm_profile:-${SHELL_PROFILE:-${ZDOTDIR:-$HOME}/.zshrc}}"
+            extra_key=nvm_dir; extra_value="${NVM_DIR:-$HOME/.nvm}" ;;
+        *) profile="${PROFILE:-${ZDOTDIR:-$HOME}/.zshrc}"; extra_key=zsh_custom; extra_value="${CUSTOM_ROOT:-${ZSH_CUSTOM:-${ZSH:-$HOME/.oh-my-zsh}/custom}}" ;;
+    esac
+    {
+        printf '{"schema":1,"tool":"team-frontend-env","kind":"%s","version":"%s","arch":"%s","archive":"%s","sha256":"%s","profile":' \
+            "$component" "$version" "$architecture" "$archive" "$sha"
+        json_quote "$profile"
+        printf ',"%s":' "$extra_key"; json_quote "$extra_value"
+        case "$component" in
+            nvm|oh-my-zsh|zsh-autosuggestions|zsh-syntax-highlighting)
+                local file relative digest separator=''
+                printf ',"files":{'
+                while IFS= read -r -d '' file; do
+                    relative="${file#"$target/"}"
+                    [ "$relative" != .team-frontend-env-install.json ] || continue
+                    digest="$(shasum -a 256 < "$file")" || return 1
+                    printf '%s' "$separator"; json_quote "$relative"; printf ':'; json_quote "${digest%% *}"
+                    separator=,
+                done < <(find "$target" -type f -print0)
+                printf '},"links":{'; separator=''
+                while IFS= read -r -d '' file; do
+                    relative="${file#"$target/"}"
+                    printf '%s' "$separator"; json_quote "$relative"; printf ':'; json_quote "$(readlink "$file")"
+                    separator=,
+                done < <(find "$target" -type l -print0)
+                printf '},"directories":['; separator=''
+                while IFS= read -r -d '' file; do
+                    [ "$file" != "$target" ] || continue
+                    printf '%s' "$separator"; json_quote "${file#"$target/"}"; separator=,
+                done < <(find "$target" -type d -print0)
+                printf ']' ;;
+        esac
+        printf '}\n'
+    } > "$target/.team-frontend-env-install.json"
 }

@@ -4,5 +4,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const assets = path.join(root, 'assets');
 fs.mkdirSync(assets, { recursive: true });
-fs.copyFileSync(path.resolve(root, '../tools/start.command.in'), path.join(assets, 'start.command.in'));
+const oldTemplate = path.join(assets, 'start.command.in');
+if (fs.existsSync(oldTemplate)) fs.unlinkSync(oldTemplate);
+fs.copyFileSync(path.resolve(root, '../tools/devtool-helper.sh.in'), path.join(assets, 'devtool-helper.sh.in'));
 fs.chmodSync(path.join(root, 'bin/team-dev-env.cjs'), 0o755);

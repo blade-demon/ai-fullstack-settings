@@ -4,7 +4,7 @@
 
 安装包来自 JetBrains 的 GitHub 官方开源发行，应用标识为 `com.jetbrains.intellij.ce`，配置目录标识为 `IdeaIC2025.3`。2025.3 起官网采用统一分发，团队这里固定使用独立开源构建；发行来源、DMG 摘要和插件依据见[来源说明](../resources/plugin-sources.md)。2024 已从有效下载清单和新安装基线移除。
 
-菜单 `1` 固定安装配置 JDK 8、Gradle 4.5.1、IDEA 和全部六个推荐插件；菜单 `4` 单独安装 IDEA，菜单 `5` 安装并验证全部六个推荐插件。仅下载功能保留为维护者命令行入口，下载 ZIP 不等于插件已经安装。
+成员在 devtool-helper.sh 的安装页勾选 idea，安装应用及全部六个推荐插件；首页一键全部还包含 JDK、Gradle、nvm/Node、iTerm2、Oh My Zsh。安装页 Enter 直接预检并执行，没有额外确认页。仅选 IDEA 不隐式安装 JDK：已有可用 JDK 8 时执行全局 SDK 登记（默认 azul-1.8），不修改业务项目，没有可用 JDK 时 SDK 需另行配置，不能将它虚构为已完成；纳入计划的 SDK 关联失败会显示待处理。仅下载及插件单项调试保留为维护者底层功能，下载 ZIP 不等于插件已安装。
 
 ## 操作前退出 IDEA
 
@@ -14,11 +14,11 @@
 
 ## IDEA 应用安装
 
-菜单 `4` 显示当前用户 `$HOME/Applications` 的实际路径，并按 Mac 架构从内网下载或复用 DMG，校验固定 SHA-256 后只读挂载。安装前检查社区版 bundle ID、短版本、构建号和可执行文件；复制到个人应用目录的临时位置后再次检查，最后保存到目标路径。
+安装页的 idea 组件显示当前用户 `$HOME/Applications` 的实际路径，并按 Mac 架构从内网下载或复用 DMG，校验固定 SHA-256 后只读挂载。安装前检查社区版 bundle ID、短版本、构建号和可执行文件；复制到个人应用目录的临时位置后再次检查，最后保存到目标路径。
 
 已有同版本、同构建号且完整的应用会复用；其他版本、不完整目标或符号链接会保留并报错，不直接覆盖。`~/Applications` 若是指向其他位置的符号链接，安装器也会拒绝，避免意外写入系统目录。
 
-若目标位置已有 2024 版，先按[卸载指南](cleanup.md)核对并确认卸载，再重新运行安装。选择删除 IDEA 后，配置、SDK 登记和用户插件默认一并删除；如需保留，应在保留提示中明确回答 `y` / `yes`。新版本默认读取 `IdeaIC2025.3`，保留旧配置不代表已经迁移或完成新版本的 SDK 设置。
+若目标位置已有 2024 版，先按[卸载指南](cleanup.md)核对并确认卸载，再重新运行安装。卸载页选择具体 IDEA 实例，核对是否保留用户配置、SDK 登记和插件；只有与该应用明确关联且不共享的数据才能纳入清理。公共组件选择的保留提示默认保留，维护者旧无组件引导仍使用其原默认，须以当前清单和提示为准。新版本默认读取 `IdeaIC2025.3`，保留旧配置不代表已经迁移或完成新版本的 SDK 设置。
 
 完成后在 Finder 中按 `Command + Shift + G`，输入：
 
@@ -49,20 +49,20 @@
 ~/Library/Application Support/JetBrains/IdeaIC2025.3/plugins
 ```
 
-维护者可通过 `IDEA_PLUGINS_DIR` 指定其他受控目录；应用位置由 `IDEA_APP` 表示。修复流程会对全部目标插件逐项安装和验证，最终报告实际结果。需要替换原插件时，旧目录保存在**本次修复历史**的 `plugin-backups/`；用户其他插件不应当作这六个插件的安装结果。
+维护者可通过 `IDEA_PLUGINS_DIR` 指定其他受控目录；应用位置由 `IDEA_APP` 表示。修复流程会对全部目标插件逐项安装和验证，最终报告实际结果。需要替换原插件时，旧目录保存在输出的插件备份路径；底层 repair-env.sh 使用本次修复历史的 plugin-backups，公共组件入口默认使用日志根的 plugin-backups，可由 IDEA_PLUGIN_BACKUP_DIR 配置；用户其他插件不应当作这六个插件的安装结果。
 
 操作步骤：
 
 1. 保存工作并退出 IDEA。
-2. 使用菜单 `1` 一键安装并配置全部环境，或在 IDEA 已就绪时使用菜单 `5`。
-3. 检查插件逐项结果和整体结果；失败时打开输出的本次历史目录，查看对应日志和备份。
+2. 在安装页选择 idea 或首页一键安装全部；已有同版应用会复用，再核验六个推荐插件。
+3. 检查插件逐项结果和整体结果；失败时打开输出的安装记录及实际备份路径，查看对应日志。
 4. 手动启动 IDEA，在 Plugins 页面确认六个插件显示正常，再在真实项目中使用相关功能。
 
 只想下载或手动安装时，由维护者运行 `bash dev-kit/.support/scripts/download-tools.sh`，选择需要的插件。原始 ZIP 默认保存在 `~/Downloads/team-java-env/plugins/idea/`，可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选择 ZIP，按提示重启；手动磁盘安装不需要先解压 ZIP。自动安装与手动安装应使用同一组固定版本。下载命令需要已打包工具中的资源清单；在完整工具目录运行时，将脚本路径改为 `.support/scripts/download-tools.sh`。
 
 ## Lombok 安装与启用步骤
 
-菜单 `1` 和 `5` 已包含 Lombok；自动安装完成后，从第 4 步开始检查。需要单独手动安装时，按以下步骤操作：
+idea 组件已包含 Lombok；自动安装完成后，从第 4 步开始检查。需要单独手动安装时，按以下步骤操作：
 
 1. 由维护者运行 `bash dev-kit/.support/scripts/download-tools.sh --id lombok`，得到 `~/Downloads/team-java-env/plugins/idea/lombok-253.28294.251.zip`。
 2. 打开 IDEA，在 macOS 顶部菜单选择 `IntelliJ IDEA → Settings… → Plugins`（旧版本设置菜单可能叫 `Preferences…`）。
@@ -87,7 +87,7 @@ SDK 配置完成后，在 IDEA 中检查：
 
 ## 只读项目预检
 
-维护者通过 `check-env.sh --project` 或 `repair-env.sh --project` 指定项目后，会使用 macOS 的 `xmllint` 读取项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2025.3`。成员无需安装 Python；菜单不选择或检查业务项目。
+维护者通过 `check-env.sh --project` 或 `repair-env.sh --project` 指定项目后，会使用 macOS 的 `xmllint` 读取项目的 `.idea/misc.xml`、`.idea/gradle.xml`，以及 `${IDEA_CONFIG_DIR}/options/jdk.table.xml`。`IDEA_CONFIG_DIR` 默认是 `~/Library/Application Support/JetBrains/IdeaIC2025.3`。成员无需安装 Python；公共组件入口不选择或检查业务项目。
 
 预检检查 Project SDK、Gradle JVM 是否已登记且指向有效 JDK 8，以及 LOCAL 的 Gradle 目录等信息；待配置时打印实际 JDK/Gradle 路径和 IDEA 设置入口。它不会自动写入用户 IDEA 配置，也不会启动 GUI。自定义配置目录时，可由维护者设置 `IDEA_CONFIG_DIR` 后运行：
 
@@ -108,6 +108,14 @@ printf '%s\n' "$JAVA_HOME" "$JAVA_8_HOME" "$JRE_HOME" "$GRADLE_HOME" "$GRADLE_4_
 自定义过 `ENV_FILE` 时使用实际文件。IDEA 安装成功、插件安装验证通过和 SDK 版本通过，都不能替代项目构建；由维护者使用 `repair-env.sh --project` 完成带项目的修复和构建，或使用[独立构建验证入口](gradle.md#维护者命令行)。
 
 ## 统一 JDK 8 登记与项目引用
+
+公共 idea 组件调用底层 `config-idea-sdk.sh --global`，只在 IDEA 全局 SDK 表中登记实际 JDK 8，不要求或改写业务项目；单独安装 IDEA 未选 JDK 且无可用 JDK 时提示 SDK 待配置，应用/插件仍按自身验证结果处理。选中 JDK 后的 SDK 登记已纳入计划，失败不能算作完整配置。维护者可单独只读预演全局登记：
+
+```bash
+bash dev-kit/.support/scripts/runtime/config-idea-sdk.sh --global --dry-run
+```
+
+下面的 --project 流程用于显式指定的已导入项目，范围与公共组件入口不同。
 
 维护者通过 `repair-env.sh --project` 指定已导入 IDEA 的项目，并选择全部或 JDK、Gradle、IDEA 修复范围时，使用 `IDEA_JDK_NAME`（默认 `azul-1.8`）统一名称：
 
@@ -130,6 +138,6 @@ bash dev-kit/.support/scripts/runtime/config-idea-sdk.sh --project "/absolute/pa
 
 ## 历史与其他资源
 
-每次修复开始后，成功或失败均记录到 `~/Library/Logs/team-java-env/history/<本次记录>/`。`report.md` 汇总步骤，`steps.tsv` / `result.tsv` 记录状态，`config-changes.diff` 展示配置差异；插件阶段有逐项结果与必要的 `plugin-backups/`。可直接打开历史目录，或运行 `bash dev-kit/.support/scripts/history.sh` 查看记录；`--dry-run` 不创建历史。
+统一组件安装记录在 `~/Library/Logs/team-java-env/components/`，含计划、状态和组件日志。维护者底层 Java 修复开始后，成功或失败均记录到 `~/Library/Logs/team-java-env/history/<本次记录>/`。`report.md` 汇总步骤，`steps.tsv` / `result.tsv` 记录状态，`config-changes.diff` 展示配置差异；插件阶段有逐项结果与必要的 `plugin-backups/`。可直接打开历史目录，或运行 `bash dev-kit/.support/scripts/history.sh` 查看记录；`--dry-run` 不创建历史。
 
 DBeaver 由维护者通过 `download-tools.sh` 选择并下载 DMG 后手动安装。Database Navigator 或 DBeaver 首次连接数据库可能需要额外 JDBC 驱动；业务依赖、驱动、数据库连接和 MySQL 镜像不因 IDEA 安装完成而自动准备好。

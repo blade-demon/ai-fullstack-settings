@@ -4,6 +4,18 @@ set -euo pipefail
 umask 022
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [ -f "$ROOT/scripts/lib/download-progress.sh" ]; then
+  source "$ROOT/scripts/lib/download-progress.sh"
+elif [ -f "$ROOT/dev-kit/.support/scripts/lib/download-progress.sh" ]; then
+  source "$ROOT/dev-kit/.support/scripts/lib/download-progress.sh"
+else
+  # 维护者可以单独复制这个清单下载器；TUI 成员包必须带进度模块。
+  team_download() {
+    local destination="$1" url="$2"; shift 2
+    [ "${TEAM_TUI_EVENTS:-0}" != 1 ] || { printf '进度模块缺失，请重新获取完整工具包。\n' >&2; return 1; }
+    curl --disable --fail --location --silent --show-error --proto '=http,https' --proto-redir '=http,https' --output "$destination" "$@" -- "$url"
+  }
+fi
 OUTPUT="$ROOT/resources"
 CATALOG="$ROOT/resources/catalog.tsv"
 GROUP=all
@@ -246,9 +258,8 @@ write_receipt() {
 download_file() {
   local destination="$1" url="$2" attempt status
   for attempt in 1 2 3; do
-    if curl --disable --fail --location --proto '=http,https' --proto-redir '=http,https' \
-      --connect-timeout 30 --max-time 7200 --retry 2 --retry-delay 2 --silent --show-error \
-      --output "$destination" -- "$url"; then
+    if TEAM_DOWNLOAD_ATTEMPT="$attempt" team_download "$destination" "$url" \
+      --connect-timeout 30 --max-time 7200 --retry 2 --retry-delay 2; then
       return 0
     else
       status=$?

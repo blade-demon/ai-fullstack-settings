@@ -3,11 +3,21 @@
 REPO_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=../../config/env.sh
 source "$REPO_ROOT/config/env.sh"
+if [ -f "$REPO_ROOT/scripts/lib/download-progress.sh" ]; then
+    source "$REPO_ROOT/scripts/lib/download-progress.sh"
+fi
 
 log() { printf '%s\n' "$*"; }
+json_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"; value="${value//\"/\\\"}"
+    value="${value//$'\n'/\\n}"; value="${value//$'\r'/\\r}"; value="${value//$'\t'/\\t}"
+    printf '"%s"' "$value"
+}
 team_tui_stage() {
     [ "${TEAM_TUI_EVENTS:-0}" = 1 ] || return 0
     local id="$1" status="$2" title="$3"
+    [ -z "${TEAM_TUI_COMPONENT:-}" ] || id="$TEAM_TUI_COMPONENT:$id"
     id="${id//$'\t'/ }"; id="${id//$'\n'/ }"; id="${id//$'\r'/ }"
     title="${title//$'\t'/ }"; title="${title//$'\n'/ }"; title="${title//$'\r'/ }"
     printf '@@TEAM_TUI\tstage\t%s\t%s\t%s\n' "$id" "$status" "$title"

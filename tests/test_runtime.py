@@ -48,6 +48,27 @@ class RuntimeTests(unittest.TestCase):
     def assert_ok(self, result):
         self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_jdk_check_only_rejects_conflicting_targets_without_environment_writes(self):
+        target = self.home / 'target-jdk'
+        for shape in ('file', 'symlink', 'incomplete', 'wrong-version'):
+            with self.subTest(shape=shape):
+                if shape == 'file': target.write_text('mine')
+                elif shape == 'symlink': target.symlink_to(self.home, target_is_directory=True)
+                else:
+                    (target / 'bin').mkdir(parents=True)
+                    (target / 'jre').mkdir()
+                    for tool in ('java', 'javac'):
+                        binary = target / 'bin' / tool
+                        binary.write_text('#!/bin/sh\necho version 17.0\n'); binary.chmod(0o755)
+                result = self.run_script('scripts/runtime/config-jdk.sh', '--check-only', extra={'JDK_INSTALL_DIR': str(target)})
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse((self.home / '.config').exists())
+                self.assertFalse((self.home / '.zshrc').exists())
+                if target.is_symlink() or target.is_file(): target.unlink()
+                else:
+                    import shutil
+                    shutil.rmtree(target)
+
     def test_dry_run_defaults_and_custom_server_never_write_home(self):
         result = self.run_script("install_env.sh", "--dry-run")
         self.assert_ok(result)

@@ -70,6 +70,22 @@ func TestRunnerStreamsStageAndPreservesExit(t *testing.T) {
 	}
 }
 
+func TestRunnerCancelFinishesWhenCriticalEventQueueIsFull(t *testing.T) {
+    runner, action := fixtureRunner(t, "while :; do printf '@@TEAM_TUI\\tstage\\tstep\\trunning\\t执行\\n'; done\n")
+    job, err := runner.Start(action)
+    if err != nil { t.Fatal(err) }
+    time.Sleep(80*time.Millisecond)
+    job.Cancel()
+    select {
+    case <-job.Done():
+    case <-time.After(5*time.Second):
+        collectJob(t, job)
+        t.Fatal("cancellation must not wait for a UI that stopped reading events")
+    }
+    events:=collectJob(t,job)
+    if len(events)==0 || events[len(events)-1].Kind!="done" || events[len(events)-1].Code!=130 { t.Fatal("cancellation terminal event missing") }
+}
+
 func TestRunnerCancelStopsProcessGroupAndCompletes(t *testing.T) {
 	runner, action := fixtureRunner(t, "trap 'echo stopped; exit 130' INT TERM\necho ready\nsleep 30 &\nwait\n")
 	job, err := runner.Start(action)

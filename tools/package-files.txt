@@ -1,8 +1,4 @@
-开始配置.command
-卸载环境.command
-使用说明.txt
 .support/install_env.sh
-.support/menu.sh
 .support/config/env.sh
 .support/config/mysql.compose.yaml
 .support/scripts/lib/common.sh
@@ -34,3 +30,6 @@
 .support/scripts/frontend-env.sh
 .support/scripts/verify-environment.sh
 .support/scripts/history.sh
+.support/scripts/run-tool.sh
+.support/scripts/manage-components.sh
+.support/scripts/lib/download-progress.sh

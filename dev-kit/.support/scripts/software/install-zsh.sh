@@ -6,9 +6,11 @@ source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.s
 source "$REPO_ROOT/scripts/lib/frontend.sh"
 DRY_RUN=false
 WITH_PLUGINS=true
+CHECK_ONLY=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --dry-run) DRY_RUN=true ;;
+        --check-only) CHECK_ONLY=true ;;
         --without-plugins) WITH_PLUGINS=false ;;
         --help|-h) log '用法：install-zsh.sh [--dry-run] [--without-plugins]；保留用户主题、配置和已有插件。'; exit 0 ;;
         *) die "未知参数：$1" ;;
@@ -77,6 +79,7 @@ valid_framework() {
 if [ -e "$ZSH_ROOT" ]; then
     valid_framework "$ZSH_ROOT" || die "已有 Oh My Zsh 目录无法确认，原文件已保留：$ZSH_ROOT"
 fi
+if "$CHECK_ONLY"; then log 'Oh My Zsh 预检通过，未执行安装。'; exit 0; fi
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/team-zsh.XXXXXXXX")"
 WORK_DIR="$(CDPATH= cd -- "$WORK_DIR" && pwd -P)"
 PUBLISH=''

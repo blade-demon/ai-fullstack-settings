@@ -51,16 +51,17 @@ func receiveUIEvent(t *testing.T, job *Job) Event {
 	}
 }
 
-// Removing the confirmation gate would start a script on the first Enter.
-func TestUIRequiresConfirmationBeforeStarting(t *testing.T) {
-	m := readyUI(t, "home")
-	m, cmd := uiUpdate(m, uiKey(tea.KeyEnter))
-	if m.screen != screenConfirm || cmd != nil || m.job != nil {
-		t.Fatal("selection must only open confirmation")
+// Installation only starts after a component is selected and Enter is pressed.
+func TestUISelectionDoesNotStartUntilEnter(t *testing.T) {
+	m := readyUI(t, "install")
+	fixtureScript(t, m.runner.SupportDir, "scripts/manage-components.sh", `printf '%s\n' '{"schema":1,"components":[{"id":"jdk","target":"/fixture/jdk"}]}'`)
+	m, cmd := uiUpdate(m, uiKey(' '))
+	if m.screen != screenMenu || cmd != nil || m.job != nil {
+		t.Fatal("checking a box must not start installation")
 	}
-	m, cmd = uiUpdate(m, uiKey(tea.KeyEscape))
-	if m.screen != screenMenu || cmd != nil {
-		t.Fatal("escape must return without starting")
+	m, cmd = uiUpdate(m, uiKey(tea.KeyEnter))
+	if m.screen != screenRunning || cmd == nil {
+		t.Fatal("Enter must start selected installation")
 	}
 }
 
@@ -68,7 +69,7 @@ func TestUIRequiresConfirmationBeforeStarting(t *testing.T) {
 func TestUIInitOnlyRunsReadOnlyScanAndMissingToolsAreNotFatal(t *testing.T) {
 	support := t.TempDir()
 	fixtureScript(t, support, "scripts/check-env.sh", "printf '缺少待配置工具\\n'; exit 1")
-	m := newModel(&Runner{SupportDir: support, LogRoot: t.TempDir()}, "frontend")
+	m := newModel(&Runner{SupportDir: support, LogRoot: t.TempDir()}, "home")
 	msg := m.Init()()
 	started, ok := msg.(jobStartedMsg)
 	if !ok || started.err != nil || started.job == nil {
@@ -78,7 +79,7 @@ func TestUIInitOnlyRunsReadOnlyScanAndMissingToolsAreNotFatal(t *testing.T) {
 	for m.screen == screenRunning {
 		m, _ = uiUpdate(m, jobEventMsg{receiveUIEvent(t, started.job)})
 	}
-	if m.screen != screenMenu || m.page != "frontend" || m.exitCode != 0 || !strings.Contains(m.scanSummary, "待配置") {
+	if m.screen != screenMenu || m.page != "home" || m.exitCode != 0 || !strings.Contains(m.scanSummary, "待配置") {
 		t.Fatal("missing tools should leave frontend menu usable without failure status")
 	}
 }
@@ -159,27 +160,14 @@ func TestUIResizesAndWarnsInSmallTerminals(t *testing.T) {
 }
 
 func TestUIMenuOpensPagesAndEscapeReturns(t *testing.T) {
-	for _, page := range []string{"gradle", "frontend", "cleanup"} {
-		m := readyUI(t, "home")
-		found := false
-		for i, a := range ActionsFor("home") {
-			if a.ID == "page:"+page {
-				m.cursor = i
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("missing %s submenu", page)
-		}
-		m, cmd := uiUpdate(m, uiKey(tea.KeyEnter))
-		if m.page != page || m.screen != screenMenu || cmd != nil {
-			t.Fatalf("must open %s without executing", page)
-		}
-		m, _ = uiUpdate(m, uiKey(tea.KeyEscape))
-		if m.page != "home" {
-			t.Fatal("escape should return home")
-		}
+	m := readyUI(t, "home")
+	m, _ = uiUpdate(m, uiKey(tea.KeyEnter))
+	if m.page != "install" {
+		t.Fatal("first entry should open installation selector")
+	}
+	m, _ = uiUpdate(m, uiKey(tea.KeyEscape))
+	if m.page != "home" {
+		t.Fatal("Escape should return home")
 	}
 }
 
@@ -200,6 +188,91 @@ func TestUILogsAreBoundedAndStagesUseReportedStatus(t *testing.T) {
 	}
 }
 
+func TestUILogsKeepFollowingWhenStageShrinksViewport(t *testing.T) {
+	m := readyUI(t, "install")
+	m.screen = screenRunning
+	for i := 1; i <= 12; i++ {
+		m.addLog(fmt.Sprintf("preflight %02d", i))
+	}
+	if !m.viewport.AtBottom() {
+		t.Fatal("fixture should start following the latest output")
+	}
+	m, _ = uiUpdate(m, jobEventMsg{Event{Kind: "stage", ID: "download", Title: "下载 JDK", Status: "running"}})
+	m, _ = uiUpdate(m, jobEventMsg{Event{Kind: "log", Line: "JDK installation finished"}})
+	if !strings.Contains(m.viewport.View(), "JDK installation finished") {
+		t.Fatalf("stage layout change stopped following the log: %s", m.viewport.View())
+	}
+}
+
+func TestUILogsKeepFollowingAfterWindowResize(t *testing.T) {
+	for _, size := range [][2]int{{90, 24}, {52, 30}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := readyUI(t, "install")
+			m.screen = screenRunning
+			for i := 1; i <= 30; i++ {
+				m.addLog(fmt.Sprintf("output %02d %s", i, strings.Repeat("w", 60)))
+			}
+			m, _ = uiUpdate(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			m.addLog("Latest output after resize")
+			if !strings.Contains(m.viewport.View(), "Latest output after resize") {
+				t.Fatalf("window resize stopped following the log: %s", m.viewport.View())
+			}
+		})
+	}
+}
+
+func TestUIEndReturnsToLatestLogAndResumesFollowing(t *testing.T) {
+	for _, state := range []screen{screenRunning, screenResult} {
+		t.Run(fmt.Sprintf("screen-%d", state), func(t *testing.T) {
+			m := readyUI(t, "install")
+			m.screen = state
+			for i := 1; i <= 30; i++ {
+				m.addLog(fmt.Sprintf("output %02d", i))
+			}
+			m, _ = uiUpdate(m, uiKey(tea.KeyPgUp))
+			if m.viewport.AtBottom() {
+				t.Fatal("page up should pause log following")
+			}
+			m, _ = uiUpdate(m, uiKey(tea.KeyEnd))
+			if !strings.Contains(m.viewport.View(), "output 30") {
+				t.Fatalf("End did not return to the latest output: %s", m.viewport.View())
+			}
+			m.addLog("New output after End")
+			if !strings.Contains(m.viewport.View(), "New output after End") {
+				t.Fatal("End did not resume following subsequent output")
+			}
+		})
+	}
+}
+
+func TestUILogLayoutChangesPreserveScrolledReadingPosition(t *testing.T) {
+	for _, change := range []string{"stage", "window"} {
+		t.Run(change, func(t *testing.T) {
+			m := readyUI(t, "install")
+			m.screen = screenRunning
+			for i := 1; i <= 30; i++ {
+				m.addLog(fmt.Sprintf("output %02d", i))
+			}
+			for i := 0; i < 3; i++ {
+				m, _ = uiUpdate(m, uiKey(tea.KeyUp))
+			}
+			firstLine := strings.Split(m.viewport.View(), "\n")[0]
+			if change == "stage" {
+				m, _ = uiUpdate(m, jobEventMsg{Event{Kind: "stage", ID: "download", Title: "下载 JDK", Status: "running"}})
+			} else {
+				m, _ = uiUpdate(m, tea.WindowSizeMsg{Width: 90, Height: 24})
+			}
+			m.addLog("New output while reading earlier logs")
+			if got := strings.Split(m.viewport.View(), "\n")[0]; got != firstLine {
+				t.Fatalf("layout change moved the reading position from %q to %q", firstLine, got)
+			}
+			if strings.Contains(m.viewport.View(), "New output while reading earlier logs") {
+				t.Fatal("layout change resumed following without an explicit End")
+			}
+		})
+	}
+}
+
 func TestCLIRejectsNonTTYBeforeExecutingScripts(t *testing.T) {
 	var out, errout bytes.Buffer
 	in, err := os.Open(os.DevNull)
@@ -208,8 +281,8 @@ func TestCLIRejectsNonTTYBeforeExecutingScripts(t *testing.T) {
 	}
 	defer in.Close()
 	code := runCLI([]string{"--support-dir", t.TempDir()}, in, &out, &errout)
-	if code == 0 || !strings.Contains(errout.String(), "--plain") {
-		t.Fatalf("non-TTY should explain plain mode: %d %s", code, errout.String())
+	if code == 0 || !strings.Contains(errout.String(), "TTY") {
+		t.Fatalf("non-TTY should explain terminal requirement: %d %s", code, errout.String())
 	}
 	out.Reset()
 	errout.Reset()
@@ -221,16 +294,13 @@ func TestCLIRejectsNonTTYBeforeExecutingScripts(t *testing.T) {
 func TestUIInteractiveCommandRetainsSafetyArguments(t *testing.T) {
 	m := readyUI(t, "cleanup")
 	fixtureScript(t, m.runner.SupportDir, "scripts/run-cleanup.sh", "exit 0")
-	for _, a := range ActionsFor("cleanup") {
-		if a.Interactive {
-			m.action = a
-		}
-	}
+	m.components["jdk"] = true
+	m.action = m.selectionAction(false)
 	cmd, err := m.interactiveCommand()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cmd.Args) != 2 || cmd.Args[0] != "/bin/bash" || !strings.HasSuffix(cmd.Args[1], "/scripts/run-cleanup.sh") {
+	if len(cmd.Args) != 4 || cmd.Args[0] != "/bin/bash" || !strings.HasSuffix(cmd.Args[1], "/scripts/run-cleanup.sh") || cmd.Args[2] != "--components" || cmd.Args[3] != "jdk" {
 		t.Fatalf("interactive cleanup must retain its own prompts: %v", cmd.Args)
 	}
 	if cmd.Stdin != nil || cmd.Stdout != nil || cmd.SysProcAttr != nil {
@@ -247,13 +317,13 @@ func TestUIInteractiveCommandRetainsSafetyArguments(t *testing.T) {
 	}
 }
 
-func TestUISmallTerminalDoesNotStartHiddenConfirmation(t *testing.T) {
-	m := readyUI(t, "home")
-	m, _ = uiUpdate(m, uiKey(tea.KeyEnter))
+func TestUISmallTerminalDoesNotStartHiddenExecution(t *testing.T) {
+	m := readyUI(t, "install")
+	m, _ = uiUpdate(m, uiKey(' '))
 	m, _ = uiUpdate(m, tea.WindowSizeMsg{Width: 30, Height: 9})
 	m, cmd := uiUpdate(m, uiKey(tea.KeyEnter))
-	if m.screen != screenConfirm || cmd != nil {
-		t.Fatal("a hidden confirmation must not be accepted in a small terminal")
+	if m.screen != screenMenu || cmd != nil {
+		t.Fatal("small terminal must block execution")
 	}
 }
 
@@ -305,11 +375,8 @@ func TestUICleanupStartsAtMenuWithoutAutomaticScan(t *testing.T) {
 	if !strings.Contains(m.scanSummary, "预览") {
 		t.Fatal("cleanup should guide the user to preview first")
 	}
-	m, cmd := uiUpdate(m, uiKey(tea.KeyEnter))
-	if m.screen != screenConfirm || cmd != nil {
-		t.Fatal("preview should still require an explicit selection and confirmation")
-	}
-	m, cmd = uiUpdate(m, uiKey(tea.KeyEnter))
+	m, _ = uiUpdate(m, uiKey(' '))
+	m, cmd := uiUpdate(m, uiKey('p'))
 	started := cmd().(jobStartedMsg)
 	if started.err != nil {
 		t.Fatal(started.err)
@@ -319,7 +386,7 @@ func TestUICleanupStartsAtMenuWithoutAutomaticScan(t *testing.T) {
 		m, _ = uiUpdate(m, jobEventMsg{receiveUIEvent(t, started.job)})
 	}
 	args, err := os.ReadFile(filepath.Join(support, "preview-args"))
-	if err != nil || string(args) != "--dry-run" {
+	if err != nil || string(args) != "--components jdk --dry-run" {
 		t.Fatalf("explicit preview must use --dry-run: %q %v", args, err)
 	}
 	if _, err := os.Stat(filepath.Join(support, "scanned")); !os.IsNotExist(err) {
@@ -328,7 +395,7 @@ func TestUICleanupStartsAtMenuWithoutAutomaticScan(t *testing.T) {
 }
 
 func TestUINormalEntrypointsStillScanBeforeMenu(t *testing.T) {
-	for _, page := range []string{"home", "frontend"} {
+	for _, page := range []string{"home"} {
 		t.Run(page, func(t *testing.T) {
 			support := t.TempDir()
 			fixtureScript(t, support, "scripts/check-env.sh", "printf checked > scanned")

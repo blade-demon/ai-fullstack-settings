@@ -12,9 +12,15 @@ managed_env_prepare_paths() {
             *) die '请设置 SHELL_PROFILE 为 Bash/Zsh 配置文件路径' ;;
         esac
     fi
-    local file other
-    for file in "$ENV_FILE" "$JDK_ENV_FILE" "$GRADLE_ENV_FILE" "$SHELL_PROFILE"; do
+    GRADLE_DEFAULT_FILE="${GRADLE_DEFAULT_FILE:-${ENV_FILE%/*}/gradle-default}"
+    local file other parent
+    for file in "$ENV_FILE" "$JDK_ENV_FILE" "$GRADLE_ENV_FILE" "$GRADLE_DEFAULT_FILE" "$SHELL_PROFILE"; do
         require_absolute_path '受管环境路径' "$file"
+        parent="$(dirname -- "$file")"
+        while [ "$parent" != / ]; do
+            [ ! -e "$parent" ] || [ -d "$parent" ] || die "环境配置目录位置已有其他文件：$parent"
+            parent="$(dirname -- "$parent")"
+        done
         [ ! -L "$file" ] || die "环境文件是符号链接，原文件已保留：$file"
         if [ -e "$file" ] && [ ! -f "$file" ]; then die "环境路径不是普通文件：$file"; fi
     done
@@ -22,7 +28,25 @@ managed_env_prepare_paths() {
         [ "$JDK_ENV_FILE" != "$GRADLE_ENV_FILE" ] || die 'JDK、Gradle 模块与聚合环境文件必须使用不同路径'
     for file in "$ENV_FILE" "$JDK_ENV_FILE" "$GRADLE_ENV_FILE"; do
         [ "$file" != "$SHELL_PROFILE" ] || die '环境文件不能与 SHELL_PROFILE 相同'
+        [ "$file" != "$GRADLE_DEFAULT_FILE" ] || die 'Gradle 默认数据文件不能覆盖环境模块'
     done
+    [ "$GRADLE_DEFAULT_FILE" != "$SHELL_PROFILE" ] || die 'Gradle 默认数据文件不能覆盖 Shell 配置'
+}
+
+# 真实预检与安装共用；不下载、不创建用户目录、不加载用户 profile。
+managed_install_target_check() {
+    local target="$1" kind="$2" marker="$1/.team-java-env-install.json" parent="$1"
+    while [ "$parent" != / ]; do
+        [ ! -e "$parent" ] || [ -d "$parent" ] || die "安装目录位置已有其他文件：$parent"
+        parent="$(dirname -- "$parent")"
+    done
+    [ ! -L "$target" ] || die "安装目录是符号链接，原内容已保留：$target"
+    if [ -e "$marker" ] || [ -L "$marker" ]; then
+        [ -f "$marker" ] && [ ! -L "$marker" ] || die "安装来源标记不是普通文件：$marker"
+        [ "$(plutil -extract schema raw -o - "$marker" 2>/dev/null)" = 1 ] &&
+            [ "$(plutil -extract tool raw -o - "$marker" 2>/dev/null)" = team-java-env ] &&
+            [ "$(plutil -extract kind raw -o - "$marker" 2>/dev/null)" = "$kind" ] || die "安装来源标记无效，原目录已保留：$target"
+    fi
 }
 
 managed_env_profile_ready() {
@@ -213,6 +237,64 @@ managed_env_write_gradle() {
 export $alias=$(shell_quote "$previous")"
         fi
     done
+    body="$body
+export GRADLE_DEFAULT_FILE=$(shell_quote "$GRADLE_DEFAULT_FILE")
+$(_managed_gradle_switch_body)"
     _managed_env_write_block "$GRADLE_ENV_FILE" "$body"
+    if [ "${GRADLE_REGISTER_ONLY:-0}" != 1 ]; then
+        (source "$GRADLE_ENV_FILE"; gradle_use "$GRADLE_VERSION" --default >/dev/null) || die '无法保存 Gradle 默认版本'
+    fi
     _managed_env_finish
+}
+
+_managed_gradle_switch_body() {
+    cat <<'GRADLE_SWITCH'
+gradle_use() {
+    local requested="${1:-}" persist="${2:-}" target='' old_bin="${GRADLE_HOME:+$GRADLE_HOME/bin}"
+    local remaining="${PATH-}" part cleaned='' separator='' more temporary='' probe
+    if [ "$requested" = --list ] && [ "$#" -eq 1 ]; then
+        printf '4.5.1: %s\n6.8: %s\n当前终端: %s\n' "${GRADLE_4_5_1_HOME:-未安装}" "${GRADLE_6_8_HOME:-未安装}" "${GRADLE_HOME:-未选择}"
+        if [ -f "$GRADLE_DEFAULT_FILE" ] && [ ! -L "$GRADLE_DEFAULT_FILE" ]; then printf '新终端默认: '; cat "$GRADLE_DEFAULT_FILE"; fi
+        return 0
+    fi
+    case "$requested" in 4.5.1) target="${GRADLE_4_5_1_HOME:-}" ;; 6.8) target="${GRADLE_6_8_HOME:-}" ;; *) printf '用法：gradle_use 4.5.1|6.8 [--default]；gradle_use --list\n' >&2; return 2 ;; esac
+    [ "$#" -le 2 ] && { [ -z "$persist" ] || [ "$persist" = --default ]; } || return 2
+    if [ -z "$target" ] || [ -L "$target" ] || [ ! -x "$target/bin/gradle" ] || [ ! -s "$target/lib/gradle-launcher-$requested.jar" ]; then
+        printf 'Gradle %s 尚未安装或目录无效，环境未改变。\n' "$requested" >&2; return 1
+    fi
+    while :; do
+        case "$remaining" in *:*) part="${remaining%%:*}"; remaining="${remaining#*:}"; more=1 ;; *) part="$remaining"; more=0 ;; esac
+        if ! { [ -n "$old_bin" ] && [ "$part" = "$old_bin" ]; } &&
+           ! { [ -n "${GRADLE_4_5_1_HOME:-}" ] && [ "$part" = "$GRADLE_4_5_1_HOME/bin" ]; } &&
+           ! { [ -n "${GRADLE_6_8_HOME:-}" ] && [ "$part" = "$GRADLE_6_8_HOME/bin" ]; }; then
+            cleaned="$cleaned$separator$part"; separator=:
+        fi
+        [ "$more" -eq 1 ] || break
+    done
+    if [ "$persist" = --default ]; then
+        case "$GRADLE_DEFAULT_FILE" in /*) ;; *) printf '默认版本文件必须为绝对路径。\n' >&2; return 1 ;; esac
+        probe="$GRADLE_DEFAULT_FILE"
+        while [ "$probe" != / ]; do
+            [ ! -L "$probe" ] || { printf '默认版本路径包含链接，已保留。\n' >&2; return 1; }
+            probe="${probe%/*}"; [ -n "$probe" ] || probe=/
+        done
+        [ ! -e "$GRADLE_DEFAULT_FILE" ] || [ -f "$GRADLE_DEFAULT_FILE" ] || return 1
+        if [ "$(cat "$GRADLE_DEFAULT_FILE" 2>/dev/null)" != "$requested" ]; then
+            temporary="$(mktemp "$GRADLE_DEFAULT_FILE.tmp.XXXXXXXX")" || return 1
+            if ! printf '%s\n' "$requested" > "$temporary" || ! mv -f -- "$temporary" "$GRADLE_DEFAULT_FILE"; then
+                rm -f -- "$temporary"; return 1
+            fi
+        fi
+    fi
+    export GRADLE_HOME="$target"
+    export PATH="$target/bin${separator:+:}$cleaned"
+    hash -r 2>/dev/null || true
+    printf '当前终端 Gradle: %s\n' "$requested"
+}
+if [ -f "$GRADLE_DEFAULT_FILE" ] && [ ! -L "$GRADLE_DEFAULT_FILE" ]; then
+    _team_gradle_default="$(cat "$GRADLE_DEFAULT_FILE")"
+    gradle_use "$_team_gradle_default" >/dev/null || return 1
+    unset _team_gradle_default
+fi
+GRADLE_SWITCH
 }

@@ -1,95 +1,76 @@
 # 资源准备与使用
 
-维护者可以在 Windows 或 macOS 上，把官方原包集中准备到 `resources/`，再打包并启动内网下载服务。服务端只需 Python 3.8+ 标准库，不依赖 Bash；成员安装客户端仍面向 macOS。一键安装基线保持 **JDK 8（1.8）、Gradle 4.5.1**，Gradle 单独安装另可选择 **6.8**。
+维护者用 Windows/macOS 的 Python 3.8+ 标准库把官方原包准备到源资源库 `resources/`；成员安装客户端仅支持 macOS。成员入口为 `devtool-helper.sh`，常规分发只有 helper、TAR、release.json，软件资源独立托管。
 
 ## 清单范围
 
-| 分组 | 固定资源 | 架构与使用方式 |
+以 [catalog.tsv](../../resources/catalog.tsv) 为依据，当前共 **25 项**：
+
+| 分组 | 固定资源 | 组件或使用方式 |
 | --- | --- | --- |
-| `runtime` | Azul Zulu JDK 8u504+1、Gradle 4.5.1 / 6.8 | JDK 分 arm64/x64；Gradle 共用。菜单 `1` 固定 JDK 8 + Gradle 4.5.1，`2` 单独安装 JDK 8，`3.1` / `3.2` 分别安装两版 Gradle |
-| `software` | IDEA Community Open Source 2025.3.6.1、DBeaver Community 26.2.2 | 各有 arm64/x64 DMG；IDEA 用菜单 `4` 安装到个人应用目录，DBeaver 由维护者命令行下载后手动安装 |
-| `plugins` | Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 253.28294.251 | 通用 ZIP；菜单 `5` 安装并验证全部插件，或由维护者命令行下载后从 IDEA 磁盘安装 |
+| runtime | Azul Zulu JDK 8u504+1；Gradle 4.5.1/6.8；nvm 0.40.8；Node 10.24.1/14.21.3/18.20.8/22.23.3 | jdk、gradle、nvm；JDK 分架构，Gradle/nvm 通用；Node 10/14 x64，18/22 arm64/x64 |
+| software | IDEA Community Open Source 2025.3.6.1；DBeaver CE 26.2.2；iTerm2 3.7.3 | idea、iterm2；DBeaver 维护者下载后手动安装 |
+| plugins | 六个 IDEA 插件；固定 Oh My Zsh、zsh-autosuggestions、zsh-syntax-highlighting | IDEA 安装含六个插件；Oh My Zsh 使用 git、z 与两个外部插件 |
 
-以 [resources/catalog.tsv](../../resources/catalog.tsv) 为下载依据。现共 24 项（原有 14 项、前端工具 10 项）；Gradle 6.8 已于 2026-10-07 下载并通过固定摘要校验，分发前仍须核对全部资源。IDEA 当前固定 JetBrains GitHub 的 2025.3.6.1 Community Open Source 原包；2024 已从有效下载清单和新安装基线移除，Lombok 改为适配 253 的版本，其余五个插件保留兼容版本。完整资源大小以实际下载为准；发布时还需容纳 `dist/server/resources/` 中的副本。Docker Desktop 仅保留[官方下载与许可说明](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不自动下载。默认 IDEA 插件仅包含上表六个，之前研究的其他候选不加入本次清单。
+IDEA 插件为 Database Navigator 4.1.0.3、MyBatisX 1.7.6、GenerateAllSetter 2.8.5、GsonFormatPlus 1.6.1、Key Promoter X 2026.1.2、Lombok 253.28294.251。IDEA 2024 与 Node 16 已从新安装资源集合移除，已有对象不自动删除。Docker Desktop 仅登记[官方入口与许可](runtime-sources.md#docker-desktop仅登记暂不自动下载)，不下载。
 
-版本、官方直链、系统支持范围及校验依据见[运行环境与桌面工具来源](runtime-sources.md)、[IDEA 与插件来源](plugin-sources.md)。来源核验、文件下载、目标电脑安装和业务构建验收是不同步骤，不应互相替代。
+固定版本、来源和支持范围见[运行环境来源](runtime-sources.md)、[IDEA/插件来源](plugin-sources.md)、[前端来源](frontend-sources.md)。资源下载与摘要通过不等于目标机器安装或业务项目构建通过。
 
-## 默认：一键准备并启动
+## 源资源库与本地服务
 
-先按[Python 3 安装指引](../service-startup.md#部署前安装-python-3)在实际运行下载服务的机器上安装并验证，再在项目根目录执行。下例为 macOS，Windows 将 `python3` 替换为 `py -3`，或已确认是 Python 3.8+ 的 `python`：
+完成[Python 安装与验证](../service-startup.md#部署前安装-python-3)，在实际服务器仓库根目录运行；Windows 将 python3 改为 py -3：
 
 ```bash
 python3 server/manage.py start
 ```
 
-也可双击 `server/start-server.command`（macOS）或 `server/start-server.cmd`（Windows），无参入口默认执行 `start`。它检测本机活动 IPv4 地址，多候选时选择序号；先绑定 `0.0.0.0:8080`，再按清单校验已有资源、下载缺失项、带资源打包到 `dist/server`，最后显示实际 HTTP 下载链接。保持窗口运行，并从成员电脑验证地址、防火墙及 VPN 是否允许访问。
+start 先绑定端口，准备运行文件和全部清单资源，生成三个成员发布文件，并把本次包清单中的 `/resources/...` URL **只读映射到源资源库**。默认不生成 `dist/server/resources/` 副本；大包只需存一份。源库须保留以便校验、重新打包和本地下载服务读取。未知文件、旁置摘要及目录浏览不公开托管。
 
-资源默认保存在 `resources/`，重复启动会复用校验通过的文件；损坏资源会保留并报错，不自动覆盖。可用 `--server` 覆盖自动选址，或用 `--port`、`--output`、`--resources-dir`、`--catalog` 自定义端口、发布目录、资源库和清单。IP 变化后重新 `start`，让成员重新下载启动包。完整参数、重启方式与配置说明见[服务启动指南](../service-startup.md)。
+资源有固定摘要时用 catalog 中的值；官方未提供独立摘要且清单记为 `-` 的资源，首次下载生成同名 `.sha256` 本地记录，随后只检查是否变化。它是源库校验依据，不是上游签名或成员下载端点；打包时把确定摘要写进 TAR 内 resources.tsv。已固定摘要的文件不需要发布旁置摘要，源库已有历史记录保留。校验失败保留原文件，由维护者核对后移走异常内容，不为绕过检查修改摘要。
 
-## 高级：单独准备或校验文件
+运行文件七项不计入 catalog，由独立的 schema 1 runtime-lock 管理。修改源码后构建/上传匹配运行文件是维护者工作，见[运行文件指南](../environment/runtime-release.md)。本地服务只读取匹配产物，不执行 Mac 二进制。
 
-需要提前下载资源、分组准备或在不同机器上部署时，单独使用 `prepare`：
+## 分组准备与只读校验
 
 ```bash
 python3 server/manage.py prepare --dry-run
 python3 server/manage.py prepare
 python3 server/manage.py prepare --verify
-```
-
-默认读取 `resources/catalog.tsv`，保存到 `resources/`。可以缩小范围：
-
-```bash
-# 只准备运行环境
 python3 server/manage.py prepare --group runtime
-
-# 只准备 Apple Silicon 所需软件；架构筛选同时包含 any 通用资源
 python3 server/manage.py prepare --group software --arch arm64
-
-# 只准备某个插件
 python3 server/manage.py prepare --id mybatisx
-
-# 保存到其他本地目录
 python3 server/manage.py prepare --output /absolute/path/team-resources
-# 若要直接从该目录打包，同时保存下载清单
-cp resources/catalog.tsv /absolute/path/team-resources/catalog.tsv
 ```
 
-自定义目录请换成当前系统的实际路径；Windows 复制清单可用 PowerShell 的 `Copy-Item resources/catalog.tsv "D:\team-resources\catalog.tsv"`。也可使用系统原生入口 `server/start-server.cmd prepare` 或 `server/start-server.command prepare`。既有 Mac `tools/prepare-resources.sh` 保留使用，但 Windows 服务端无需运行它。
+默认 catalog/resources 在源库。自定义目录打包前复制清单：`cp resources/catalog.tsv /absolute/path/team-resources/catalog.tsv`；Windows 用 Copy-Item。`--group all|runtime|software|plugins` 与 `--arch all|arm64|x64|any` 同时筛选，arm64 筛选会包含 any，但不会包含 Node 10/14 x64。给 Apple Silicon 提供这两版时再准备 node10-macos-x64、node14-macos-x64，或使用全量清单；成员须已有 Rosetta。
 
-`--group` 支持 `runtime`、`software`、`plugins`、`all`；`--arch` 支持 `arm64`、`x64`、`any`、`all`。筛选条件同时生效。`--dry-run` 不联网、不写文件；`--verify` 只校验已存在文件，不下载、不补写校验记录。
+--dry-run 不联网、不写文件；--verify 只校验已有文件，不下载/补记录。资源损坏保留报错；许可证、原始归档和源库首次下载记录须保留。系统原生服务器入口可传这些子命令，既有 Mac `tools/prepare-resources.sh` 也可使用。
 
-已有且校验通过的资源会复用。校验不符时保留原文件并停止，由维护者检查后移走异常文件再重试；不要仅为了让校验通过而修改摘要。有官方 SHA-256 的 JDK、Gradle、IDEA、DBeaver 使用清单中的固定值；IDEA 2025.3.6.1 的值来自官方 GitHub Release 资产 `digest`，详见[来源记录](plugin-sources.md)。六个插件的官方元数据未提供独立 SHA-256，清单记为 `-`，首次下载时生成同名 `.sha256` 本地记录，后续用它检查文件是否变化；这不等于官方发布了该摘要。保留原始 ZIP、DMG、许可证及校验文件。
+## 部署副本与预览
 
-## 高级：单独打包与托管
-
-完成全部资源准备与校验后执行：
+本机 Python 服务无需复制资源：
 
 ```bash
-python3 server/manage.py package --server "192.168.1.20:8080" --scheme http --with-resources --output dist/server
-python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 8080
+python3 server/manage.py package --server "192.168.1.20:8080" --scheme http --output dist/server
+python3 server/manage.py serve --directory dist/server --resources-dir resources --bind 0.0.0.0 --port 8080
 ```
 
-资源放到 `dist/server/resources/`，不放进 `start.zip` 或 `team-dev-env.zip`。使用其他本地资源目录时，再加 `--resources-dir /absolute/path/team-resources`；该目录须包含 `catalog.tsv`、清单内全部资源和所需的本地校验记录。
+需要上传到外部静态服务器时才显式使用：
 
-只更新成员脚本时省略 `--with-resources`，保留输出目录已有资源，不必重复复制或上传大包。打包仍会根据本地完整资源库校验并生成成员清单，因此应保留本地 `resources/`。成员清单包含确定的文件摘要，成员下载时据此核对；插件的摘要仍来自维护者首次下载的本地记录。打包不等于发布服务器，上传步骤见[内网分发指南](../distribution.md)。
+```bash
+python3 server/manage.py package --server "team-download.example:8080" --scheme http --with-resources --output dist/server
+```
 
-Windows 用 `py -3` 执行同样的 `package` / `serve`，原生入口也可显式传入这些子命令。`serve` 只读托管已有发布目录，不改写包；`preview` 则会重新打包并默认监听本机 `127.0.0.1:8081`，在端口占用时先退出。HTTPS 静态服务或反向代理使用高级打包流程及 `package --scheme https`。地址与协议优先级见[服务启动与配置](../service-startup.md)。当前没有 Windows 实机验收结果。
+`--with-resources` 在输出目录复制所需原包，不另写资源 `.sha256`，不将资源塞入 TAR。上传三个成员发布文件和清单资源路径；静态服务须按同一白名单限制访问、关闭目录浏览。省略参数时不生成副本，既有副本保留。package 不联网；serve 先验证 schema 2 清单和文件，再按包内资源清单托管，源库参数优先于部署副本。详细规则见[分发指南](../distribution.md)。
 
-## 成员下载和安装
+preview 默认只监听 127.0.0.1:8081，并使用退出清理的临时目录，忽略正式 output 配置；只有显式 --output 才保留预览产物。它准备运行文件但不下载缺失软件资源，先 prepare。端口占用不改旧服务或发布文件。
 
-1. 从团队内网下载并解压 `start.zip`，双击「开始配置.command」。
-2. 保存工作并退出 IDEA，使用菜单 `1` 一键安装、配置和复验 JDK 8、Gradle 4.5.1、完整变量、IDEA 及全部六个推荐插件。菜单不选择业务项目，也不执行构建；菜单 `2` 安装并配置 JDK 8，菜单 `3` 选择 Gradle 版本，也可直接输入 `3.1` / `3.2` 安装 4.5.1 / 6.8。
-3. 单独安装 IDEA 可选菜单 `4`，校验后安装到 `~/Applications/IntelliJ IDEA CE.app`；菜单 `5` 安装并验证全部六个推荐 IDEA 插件。日志和修复历史仍保存，可直接打开输出的目录查看。
-4. 只需下载软件、DBeaver 或插件时，由维护者在完整工具目录运行 `bash .support/scripts/download-tools.sh` 并选择资源，文件保存到 `~/Downloads/team-java-env/` 下的对应子目录。DBeaver 打开 DMG 手动安装；插件也可在 IDEA 的 `Settings → Plugins → 齿轮 → Install Plugin from Disk` 中选原始 ZIP，**无需解压**。
+## 成员安装与仅下载
 
-`download-tools.sh` 仅下载时只保存文件；安装和复验结果以对应安装菜单为准。IDEA 的个人目录 `~/Applications` 与系统 `/Applications` 不同，工具自动识别当前用户，无需填写用户名。手动安装时，在 Finder 按 `Command + Shift + G` 前往 `~/Applications`（没有则先创建），复制 DMG 中的 `IntelliJ IDEA CE.app`，不使用通常指向系统目录的 `Applications` 快捷方式。完整步骤见 [IDE 指南](../environment/ide.md)。独立 JDK / Gradle 及完整变量见[运行环境指南](../environment/runtime.md)；安装 IDEA 后另行设置项目 SDK 和 Gradle JVM。
+成员下载 helper，运行 `bash devtool-helper.sh`，在同一安装页选择六组件与版本，Enter 预检并安装。全量默认 JDK 8、Gradle 4.5.1、nvm 和 Node 14.21.3、iTerm2、Oh My Zsh、IDEA/插件；安装页同样默认选14，其他版本仍可选。显式 all 才安装四版，首次或旧 default 失效时回退到14，有效 default 保留；单版（包括默认单14）设所选默认，none 仅配置 nvm、不改默认。应用在个人 `$HOME/Applications`；结果含实际版本、默认及切换指引，详见[环境指南](../environment/README.md)。
 
-已有 2024 应用占用目标位置时会保留并报冲突，先按[卸载指南](../environment/cleanup.md)核对并确认卸载，再安装 2025。重新发布时须使用新清单及对应资源，不能把旧 2024 安装包继续作为当前下载提供。
-
-## 前端工具资源
-
-新增 nvm、Node14 x64、Node16/18 两种架构、iTerm2、Oh My Zsh 和两个外部 Zsh 插件，均已准备并固定 SHA-256，详见[前端资源来源](frontend-sources.md)。使用默认全量准备可同时提供 Apple Silicon 上需要的 Node14 x64 包；单独筛选 arm64 时须另外准备该 ID。前端 shell 插件由独立安装器处理，不属于 IDEA 推荐插件。
+维护者仅下载 DBeaver 或插件时，在具有打包资源清单的工具目录运行 download-tools.sh，文件位于 `~/Downloads/team-java-env/` 相应子目录；原始插件 ZIP 从 IDEA 的 Install Plugin from Disk 安装，无需解压。下载完成不代表插件安装验证或实际功能通过。IDEA 冲突旧应用先按[卸载指南](../environment/cleanup.md)核对，不静默覆盖。
 
 ## 离线范围
 
-此资源目录解决安装包和插件 ZIP 的内网获取，不代表业务项目已能完全断网构建。业务依赖、Gradle 插件及 Maven 仓库缓存须由项目维护者另行准备；DBeaver / Database Navigator 所需 JDBC 驱动、MySQL 容器镜像也未自动缓存。连接团队开发数据库不需要本地 MySQL；需要本地容器时见[本地服务指南](../environment/services.md)。
+本资源库解决 SDK/应用/插件获取，不包含业务 Maven/Gradle 依赖、JDBC 驱动和 MySQL 容器镜像。项目维护者须另行准备并验证真实构建、IDEA 同步和数据库连接；连接团队数据库不要求本地 MySQL，容器服务见[服务指南](../environment/services.md)。

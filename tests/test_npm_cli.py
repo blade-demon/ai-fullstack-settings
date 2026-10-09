@@ -24,6 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE = shutil.which('node')
 
 
+def write_release(root, archive):
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    (root / 'release.json').write_text(json.dumps({
+        'schema': 2, 'interface': 'go-tui', 'version': 'go-tui-' + digest[:12],
+        'launcher': {'path': 'devtool-helper.sh', 'size': 1, 'sha256': '0' * 64},
+        'bundle': {'path': 'dev-env/team-dev-env.tar.gz', 'size': archive.stat().st_size, 'sha256': digest}}))
+
+
 @unittest.skipUnless(NODE, 'requires Node for npm launcher tests')
 class NpmCliTests(unittest.TestCase):
     def run_cli(self, *args, env=None):
@@ -34,21 +42,54 @@ class NpmCliTests(unittest.TestCase):
     def test_help_needs_no_server_or_network(self):
         result = self.run_cli('--help')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('frontend', result.stdout)
+        self.assertIn('--components', result.stdout)
+        self.assertNotIn('frontend', result.stdout)
         self.assertIn('--server', result.stdout)
 
-    def test_explicit_server_and_frontend_arguments_are_preserved_in_preview(self):
-        result = self.run_cli('frontend', '--server', 'team.example:9090', '--scheme', 'https',
-                              '--component', 'node', '--node-version', '16', '--dry-run')
+    def test_explicit_server_and_component_arguments_are_preserved_in_preview(self):
+        result = self.run_cli('install', '--server', 'team.example:9090', '--scheme', 'https',
+                              '--components', 'nvm', '--node-version', '22', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('https://team.example:9090/dev-env/team-dev-env.tar.gz', result.stdout)
-        self.assertIn('--frontend --component node --node-version 16', result.stdout)
+        self.assertIn('--components nvm --node-version 22', result.stdout)
 
     def test_uninstall_preview_does_not_execute_or_add_apply(self):
         result = self.run_cli('uninstall', '--server', '127.0.0.1:8080', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('卸载环境.command', result.stdout)
+        self.assertIn('run-tool.sh uninstall', result.stdout)
         self.assertNotIn('--apply', result.stdout)
+
+    def test_removed_actions_and_plain_are_usage_errors_even_with_help(self):
+        for args in [('frontend',), ('help', 'frontend'), ('install', '--frontend'),
+                     ('--help', '--plain'), ('uninstall', '--plain', '--dry-run')]:
+            with self.subTest(args=args):
+                result = self.run_cli(*args)
+                self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_noninteractive_install_requires_components_before_download(self):
+        result = self.run_cli('install', '--server', '127.0.0.1:1')
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_invalid_component_sets_fail_before_download(self):
+        for components in ('', 'jdk,,nvm', 'all,nvm', 'node', 'unknown'):
+            with self.subTest(components=components):
+                result = self.run_cli('install', '--server', '127.0.0.1:1', '--components', components)
+                self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_prepare_package_keeps_only_current_template(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copytree(ROOT / 'npm-cli', root / 'npm-cli')
+            (root / 'tools').mkdir()
+            shutil.copyfile(ROOT / 'tools/devtool-helper.sh.in', root / 'tools/devtool-helper.sh.in')
+            assets = root / 'npm-cli/assets'
+            assets.mkdir(exist_ok=True)
+            (assets / 'start.command.in').write_text('legacy')
+            result = subprocess.run([NODE, str(root / 'npm-cli/scripts/prepare-package.cjs')], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((assets / 'start.command.in').exists())
+            self.assertEqual((assets / 'devtool-helper.sh.in').read_bytes(),
+                             (ROOT / 'tools/devtool-helper.sh.in').read_bytes())
 
     def test_missing_or_unsafe_server_fails_before_download(self):
         for arguments in [[], ['--server', ''], ['--server', 'https://host/x'],
@@ -62,7 +103,7 @@ class NpmCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('https://mirror.example:8080/', result.stdout)
 
-    def test_frontend_downloads_verified_payload_and_preserves_its_failure_status(self):
+    def test_install_downloads_verified_payload_and_preserves_its_failure_status(self):
         with tempfile.TemporaryDirectory(prefix="npx route's ") as temporary:
             root = Path(temporary)
             (root / 'dev-env').mkdir()
@@ -71,23 +112,23 @@ class NpmCliTests(unittest.TestCase):
                        b'[ -z "${npm_config_prefix:-}${NPM_CONFIG_PREFIX:-}${PREFIX:-}" ] || exit 44\n'
                        b'printf "%s\\0" "$@" > "$ENTRY_RECORD"\nexit 43\n')
             with tarfile.open(archive, 'w:gz') as package:
-                info = tarfile.TarInfo('team-dev-env/开始配置.command')
+                info = tarfile.TarInfo('team-dev-env/.support/scripts/run-tool.sh')
                 info.mode = 0o755; info.size = len(payload)
                 package.addfile(info, io.BytesIO(payload))
-            archive.with_name(archive.name + '.sha256').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '\n')
+            write_release(root, archive)
             class Quiet(http.server.SimpleHTTPRequestHandler):
                 def log_message(self, *args): pass
             server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Quiet, directory=str(root)))
             thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
             try:
                 record = root / 'arguments'
-                result = self.run_cli('frontend', '--server', f'127.0.0.1:{server.server_port}',
-                                      '--component', 'node', '--node-version', '16', env={
+                result = self.run_cli('install', '--server', f'127.0.0.1:{server.server_port}',
+                                      '--components', 'nvm', '--node-version', '22', env={
                                           'ENTRY_RECORD': str(record), 'npm_execpath': '/fixture/npm-cli.js',
                                           'npm_config_prefix': '/old/npm', 'NPM_CONFIG_PREFIX': '/old/npm', 'PREFIX': '/old/npm'})
                 self.assertEqual(result.returncode, 43, result.stdout + result.stderr)
                 self.assertEqual(record.read_bytes().decode().split('\0')[:-1],
-                                 ['--frontend', '--component', 'node', '--node-version', '16'])
+                                 ['install', '--components', 'nvm', '--node-version', '22'])
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=5)
 
@@ -101,7 +142,7 @@ class NpmSignalTests(unittest.TestCase):
         (self.package / 'bin').mkdir(parents=True)
         (self.package / 'assets').mkdir()
         shutil.copy2(ROOT / 'npm-cli/bin/team-dev-env.cjs', self.package / 'bin/team-dev-env.cjs')
-        shutil.copy2(ROOT / 'tools/start.command.in', self.package / 'assets/start.command.in')
+        shutil.copy2(ROOT / 'tools/devtool-helper.sh.in', self.package / 'assets/devtool-helper.sh.in')
         self.web = self.base / 'web'
         (self.web / 'dev-env').mkdir(parents=True)
         archive = self.web / 'dev-env/team-dev-env.tar.gz'
@@ -109,14 +150,12 @@ class NpmSignalTests(unittest.TestCase):
         self.worker = self.base / 'worker.py'
         self.worker.write_text(SIGNAL_WORKER)
         with tarfile.open(archive, 'w:gz') as bundle:
-            for name, content in [('卸载环境.command', (ROOT / 'dev-kit/卸载环境.command').read_bytes()),
-                                  ('.support/scripts/run-tui.sh', helper),
-                                  ('.support/scripts/run-cleanup.sh', helper)]:
+            for name, content in [('.support/scripts/run-tool.sh', helper)]:
                 info = tarfile.TarInfo('team-dev-env/' + name)
                 info.mode = 0o755
                 info.size = len(content)
                 bundle.addfile(info, io.BytesIO(content))
-        archive.with_name(archive.name + '.sha256').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '\n')
+        write_release(self.web, archive)
         self.requested = threading.Event()
         self.release = threading.Event()
         self.block_download = False

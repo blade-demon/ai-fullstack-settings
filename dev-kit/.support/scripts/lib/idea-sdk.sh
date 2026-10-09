@@ -1,5 +1,61 @@
 #!/bin/bash
 # Bash 3.2 + 系统 XML 工具；所有内容预检、暂存完成后才发布。
+
+idea_sdk_register_global() (
+    local table="$IDEA_CONFIG_DIR/options/jdk.table.xml" work='' stage='' input count index name kind sdk_home had_table=false
+    local IDEA_SYNC_HOME=''
+    _idea_sync_safe_path "$table"
+    _idea_sync_stopped
+    if "$DRY_RUN"; then log "[预演] 已有可用 JDK 时登记 IDEA SDK：$table；不修改业务项目。"; return 0; fi
+    probe_jdk8
+    if [ -z "$PROBE_JDK_HOME" ]; then log '[IDEA SDK 待配置] 尚无可用 JDK；应用与插件可以独立使用。'; return 2; fi
+    IDEA_SYNC_HOME="$(CDPATH= cd -- "$PROBE_JDK_HOME" && pwd -P)" || return 1
+    if [ -e "$table" ]; then
+        had_table=true
+        _idea_sync_xml "$table" application
+        case "$(_idea_sync_count "$table" '/application/component[@name="ProjectJdkTable"]')" in 0|1) ;; *) die 'ProjectJdkTable 重复' ;; esac
+        count="$(_idea_sync_count "$table" '/application/component[@name="ProjectJdkTable"]/jdk')"
+        case "$count" in ''|*[!0-9]*) die 'SDK 登记数量无效' ;; esac
+        [ "$count" -le 256 ] || die 'SDK 登记过多'
+        for ((index=1;index<=count;index++)); do
+            for kind in name type homePath; do _idea_sync_one "$table" "/application/component[@name='ProjectJdkTable']/jdk[$index]/$kind" "SDK $kind"; done
+            kind="$(_idea_xml_value "$table" "/application/component[@name='ProjectJdkTable']/jdk[$index]/type/@value")"
+            name="$(_idea_xml_value "$table" "/application/component[@name='ProjectJdkTable']/jdk[$index]/name/@value")"
+            sdk_home="$(_idea_xml_value "$table" "/application/component[@name='ProjectJdkTable']/jdk[$index]/homePath/@value")"
+            sdk_home="$(_idea_expand_path "$sdk_home" "$HOME")" || sdk_home=''
+            if [ "$kind" = JavaSDK ] && [ -n "$sdk_home" ] && [ "$sdk_home" -ef "$IDEA_SYNC_HOME" ]; then
+                [ "$(_idea_sync_count "$table" "/application/component[@name='ProjectJdkTable']/jdk[$index]/roots/classPath/root/root")" -gt 0 ] || die '已有 SDK roots 不完整，请在 IDEA 中修复'
+                log "已复用 IDEA JDK 登记：$name → $IDEA_SYNC_HOME"; return 0
+            fi
+            [ "$name" != "$IDEA_JDK_NAME" ] || die "SDK 名称 $IDEA_JDK_NAME 已被其他目录使用，原配置保留"
+        done
+    fi
+    work="$(mktemp -d "${TMPDIR:-/tmp}/idea-global-sdk.XXXXXXXX")" || return 1
+    trap 'status=$?; [ -z "$stage" ] || rm -f -- "$stage"; rm -rf -- "$work"; exit "$status"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if [ -f "$table" ]; then cp -p "$table" "$work/input.xml"; else printf '<application><component name="ProjectJdkTable"/></application>' > "$work/input.xml"; fi
+    cp "$REPO_ROOT/scripts/lib/idea-sdk-sync.xsl" "$work/sync.xsl"
+    {
+        printf '<plan name="%s" home="%s" keep-index="0" gradle-index="0">' "$(_idea_sync_escape "$IDEA_JDK_NAME")" "$(_idea_sync_escape "$IDEA_SYNC_HOME")"
+        _idea_sync_new_sdk
+        printf '</plan>'
+    } > "$work/plan.xml"
+    _idea_xml_valid "$work/plan.xml" || die 'SDK 计划无效'
+    xsltproc --nonet "$work/sync.xsl" "$work/input.xml" > "$work/output.xml" || die 'SDK 登记准备失败'
+    _idea_xml_valid "$work/output.xml" || die 'SDK 登记结果无效'
+    _idea_sync_stopped
+    _idea_sync_safe_path "$table"
+    if "$had_table"; then cmp -s "$table" "$work/input.xml" || die 'IDEA 配置已变化，未写入'
+    else [ ! -e "$table" ] || die 'IDEA 配置已出现，原文件保留'; fi
+    mkdir -p "$(dirname -- "$table")"
+    _idea_sync_safe_path "$table.bak"
+    if [ -f "$table" ] && [ ! -e "$table.bak" ]; then cp -p "$table" "$table.bak"; fi
+    stage="$(mktemp "$(dirname -- "$table")/.idea-sdk.XXXXXXXX")" || return 1
+    cp "$work/output.xml" "$stage" && mv -f "$stage" "$table" || die 'SDK 登记发布失败'
+    stage=''
+    log "已登记 IDEA JDK：${IDEA_JDK_NAME} → ${IDEA_SYNC_HOME}；未修改项目。"
+)
 _idea_sync_safe_path() {
     local path="$1"
     require_absolute_path 'IDEA 配置路径' "$path"

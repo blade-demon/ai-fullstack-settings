@@ -1,6 +1,7 @@
 """终端工具集成：只操作临时 HOME、小型归档和签名/下载命令替身。"""
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -36,7 +37,7 @@ class TerminalToolsTests(unittest.TestCase):
                     "USER": "other-login", "LOGNAME": "other-login"}
         self.stub("uname", '#!/bin/sh\ncase "$1" in -m) echo arm64;; *) echo Darwin;; esac\n')
         self.stub("sw_vers", '#!/bin/sh\necho "${MACOS_VERSION:-14.0}"\n')
-        self.stub("codesign", '#!/bin/sh\nexit "${SIGNATURE_STATUS:-0}"\n')
+        self.stub("codesign", '#!/bin/sh\ncase "$1" in -d) echo CDHash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >&2;; esac\nexit "${SIGNATURE_STATUS:-0}"\n')
         self.stub("git", '#!/bin/sh\n[ "${1-}" = --version ] || exit 91\nprintf "git version 2.48.0\\n"\n')
         self.stub("curl", r'''#!/bin/bash
 output=''
@@ -154,6 +155,22 @@ done
         self.assertIn(str(self.home / "Applications/iTerm.app"), result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
 
+    def test_iterm_check_only_validates_without_downloading_or_creating_directories(self):
+        self.stub('curl', '#!/bin/sh\necho unexpected download >&2\nexit 91\n')
+        self.assert_ok(self.run_script('install-iterm2.sh', '--check-only'))
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertNotEqual(self.run_script('install-iterm2.sh', '--check-only', extra={'MACOS_VERSION': '12.7'}).returncode, 0)
+
+    def test_iterm_check_only_rejects_existing_application_conflict(self):
+        self.assert_ok(self.run_script('install-iterm2.sh'))
+        app = self.home / 'Applications/iTerm.app'
+        info = app / 'Contents/Info.plist'
+        data = plistlib.loads(info.read_bytes())
+        data['CFBundleShortVersionString'] = '3.6.0'
+        info.write_bytes(plistlib.dumps(data))
+        self.assertNotEqual(self.run_script('install-iterm2.sh', '--check-only').returncode, 0)
+        self.assertEqual(plistlib.loads(info.read_bytes())['CFBundleShortVersionString'], '3.6.0')
+
     def test_iterm_rejects_old_macos_and_invalid_signature(self):
         for extra in ({"MACOS_VERSION": "12.7"}, {"SIGNATURE_STATUS": "1"}):
             with self.subTest(extra=extra):
@@ -182,6 +199,12 @@ done
         records = list((self.home / ".local/share/team-frontend-env/receipts").rglob(".team-frontend-env-install.json"))
         self.assertEqual(len(records), 1)
         self.assertIn('"kind":"iterm2"', records[0].read_text())
+        receipt = json.loads(records[0].read_text())
+        self.assertEqual(receipt['app_path'], str(app))
+        self.assertEqual(receipt['bundle_identifier'], 'com.googlecode.iterm2')
+        self.assertEqual(receipt['bundle_version'], '3.7.3')
+        self.assertEqual(receipt['code_identity'], 'a' * 40)
+        self.assertEqual(receipt['executable_sha256'], hashlib.sha256((app / 'Contents/MacOS/iTerm2').read_bytes()).hexdigest())
 
     def test_dry_runs_do_not_create_cache_or_shell_configuration(self):
         for script in ("install-iterm2.sh", "install-zsh.sh"):

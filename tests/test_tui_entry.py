@@ -28,7 +28,7 @@ class TuiEntryTests(unittest.TestCase):
         self.tui.mkdir()
         self.cleanup = self.support / 'cleanup'
         self.cleanup.mkdir()
-        for relative in ('开始配置.command', '卸载环境.command',
+        for relative in ('.support/scripts/run-tool.sh',
                          '.support/scripts/run-tui.sh', '.support/scripts/run-cleanup.sh'):
             source = ROOT / 'dev-kit' / relative
             if source.exists():
@@ -39,8 +39,7 @@ class TuiEntryTests(unittest.TestCase):
             self.fixture(binary, 'tui-' + arch)
             self.manifest['binaries'][arch] = {'file': binary.name, 'sha256': self.sha(binary)}
         self.write_manifest()
-        self.fixture(self.support / 'install_env.sh', 'install')
-        self.fixture(self.support / 'menu.sh', 'menu')
+        self.fixture(self.scripts / 'manage-components.sh', 'install')
         cleanup = self.cleanup / 'cleanup-macos'
         self.fixture(cleanup, 'cleanup')
         (self.cleanup / 'manifest.json').write_text(json.dumps({'schema': 1, 'sha256': self.sha(cleanup)}))
@@ -67,13 +66,13 @@ class TuiEntryTests(unittest.TestCase):
         return self.record.read_bytes().decode().split('\0')[:-1]
 
     def non_tty(self, entry, *args, extra=None, input=''):
-        return subprocess.run(['/bin/bash', str(self.kit / entry), *args], input=input, text=True,
+        return subprocess.run(['/bin/bash', *([str(self.scripts / 'run-tool.sh'), entry] if entry in ('install','uninstall') else [str(self.kit / entry)]), *args], input=input, text=True,
                               capture_output=True, timeout=5, env={**self.env, **(extra or {})})
 
     def terminal(self, entry, *args, extra=None, expect_pause=False):
         import pty
         master, slave = pty.openpty()
-        process = subprocess.Popen(['/bin/bash', str(self.kit / entry), *args], stdin=slave,
+        process = subprocess.Popen(['/bin/bash', *([str(self.scripts / 'run-tool.sh'), entry] if entry in ('install','uninstall') else [str(self.kit / entry)]), *args], stdin=slave,
                                    stdout=slave, stderr=slave, env={**self.env, **(extra or {})})
         data = b''
         saw_pause = False
@@ -101,76 +100,50 @@ class TuiEntryTests(unittest.TestCase):
             os.close(master)
             os.close(slave)
 
-    def test_terminal_defaults_and_frontend_open_the_correct_page_without_pause(self):
-        for entry, args, page in (('开始配置.command', (), 'home'),
-                                  ('开始配置.command', ('--frontend',), 'frontend'),
-                                  ('卸载环境.command', (), 'cleanup')):
-            with self.subTest(entry=entry, page=page):
-                code, output = self.terminal(entry, *args)
-                self.assertEqual(code, 0, output)
-                self.assertEqual(self.recorded(), ['tui-' + self.arch, '4', '--support-dir', str(self.support), '--page', page])
+    def test_terminal_actions_open_correct_page_without_pause(self):
+        for entry,page in [('install','install'),('uninstall','cleanup')]:
+            code,output=self.terminal(entry)
+            self.assertEqual(code,0,output)
+            self.assertEqual(self.recorded(),['tui-'+self.arch,'4','--support-dir',str(self.support),'--page',page])
 
-    def test_plain_is_removed_anywhere_and_never_touches_tui(self):
-        shutil.rmtree(self.tui)
-        project = str(self.base / "project's $(not-a-command)")
-        result = self.non_tty('开始配置.command', '--project', project, '--plain', '--dry-run', '--plain')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.recorded(), ['install', '3', '--project', project, '--dry-run'])
-        code, output = self.terminal('开始配置.command', '--plain', '--frontend')
-        self.assertEqual(code, 0, output)
-        self.assertEqual(self.recorded(), ['install', '1', '--frontend'])
-        result = self.non_tty('卸载环境.command', '--dry-run', '--plain')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.recorded(), ['cleanup', '1', '--dry-run'])
+    def test_removed_modes_are_rejected_without_payload(self):
+        for entry,args in [('install',('--plain',)),('install',('--frontend',)),('uninstall',('--plain','--dry-run'))]:
+            result=self.non_tty(entry,*args)
+            self.assertEqual(result.returncode,2,result.stderr)
+            self.assertFalse(self.record.exists())
 
-    def test_plain_no_arguments_uses_bash_menu_even_with_pipe(self):
-        result = self.non_tty('开始配置.command', '--plain', input='0\n')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.recorded(), ['menu', '0'])
+    def test_explicit_components_in_tty_preselect_the_tui(self):
+        code,output=self.terminal('install','--components','nvm','--node-version','22',extra={'ENTRY_EXIT':'23'})
+        self.assertEqual(code,23,output)
+        self.assertEqual(self.recorded(),['tui-'+self.arch,'8','--support-dir',str(self.support),'--page','install','--components','nvm','--node-version','22'])
 
-    def test_plain_cleanup_without_arguments_keeps_original_result_pause(self):
-        code, output = self.terminal('卸载环境.command', '--plain', expect_pause=True)
-        self.assertEqual(code, 0, output)
-        self.assertEqual(self.recorded(), ['cleanup', '0'])
+    def test_business_preview_bypasses_tui_and_preserves_exit(self):
+        result=self.non_tty('uninstall','--dry-run',extra={'ENTRY_EXIT':'19'})
+        self.assertEqual(result.returncode,19,result.stderr)
+        self.assertEqual(self.recorded(),['cleanup','1','--dry-run'])
+        result=self.non_tty('install','--components','jdk','--dry-run')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.recorded(),['install','3','--components','jdk','--dry-run'])
 
-    def test_explicit_business_parameters_keep_cli_and_exit_status(self):
-        code, output = self.terminal('开始配置.command', '--frontend', '--component', 'node', extra={'ENTRY_EXIT': '23'})
-        self.assertEqual(code, 23, output)
-        self.assertEqual(self.recorded(), ['install', '3', '--frontend', '--component', 'node'])
-        result = self.non_tty('卸载环境.command', '--plain', '--dry-run', extra={'ENTRY_EXIT': '19'})
-        self.assertEqual(result.returncode, 19, result.stdout + result.stderr)
-        self.assertEqual(self.recorded(), ['cleanup', '1', '--dry-run'])
+    def test_literal_cleanup_path_is_not_evaluated(self):
+        value=str(self.base/"path's $(not-a-command)")
+        result=self.non_tty('uninstall','--profile',value,'--dry-run')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.recorded(),['cleanup','3','--profile',value,'--dry-run'])
 
-    def test_non_tty_defaults_do_not_enter_tui(self):
-        result = self.non_tty('开始配置.command')
-        self.assertEqual(result.returncode, 0)
-        self.assertIn('命令行', result.stdout)
-        self.assertFalse(self.record.exists())
-        result = self.non_tty('卸载环境.command')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.recorded(), ['cleanup', '0'])
-        result = self.non_tty('开始配置.command', '--frontend')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.recorded(), ['install', '1', '--frontend'])
+    def test_tui_failure_exits_without_double_click_pause(self):
+        for entry in ('install','uninstall'):
+            code,output=self.terminal(entry,extra={'ENTRY_EXIT':'23'})
+            self.assertEqual(code,23,output)
+            self.assertEqual(self.recorded()[0],'tui-'+self.arch)
 
-    def test_failed_tui_retains_status_and_keeps_terminal_open(self):
-        for entry in ('开始配置.command', '卸载环境.command'):
-            with self.subTest(entry=entry):
-                code, output = self.terminal(entry, extra={'ENTRY_EXIT': '23'}, expect_pause=True)
-                self.assertEqual(code, 23, output)
-                self.assertEqual(self.recorded()[0], 'tui-' + self.arch)
-
-    def test_tui_corruption_fails_without_running_or_falling_back(self):
-        binary = self.tui / ('team-dev-env-' + self.arch)
+    def test_tui_corruption_stops_without_fallback(self):
+        binary=self.tui/('team-dev-env-'+self.arch)
         binary.write_text('#!/bin/bash\nexit 0\n')
-        result = self.non_tty('.support/scripts/run-tui.sh', '--page', 'home')
-        self.assertNotEqual(result.returncode, 0)
+        code,output=self.terminal('install')
+        self.assertNotEqual(code,0,output)
         self.assertFalse(self.record.exists())
-        self.assertIn('重新下载', result.stdout + result.stderr)
-        self.assertIn('--plain', result.stdout + result.stderr)
-        code, output = self.terminal('开始配置.command', expect_pause=True)
-        self.assertNotEqual(code, 0, output)
-        self.assertFalse(self.record.exists(), 'must not fall back to the installer')
+        self.assertNotIn('--plain',output)
 
     def test_tui_rejects_manifest_escape_invalid_schema_symlink_and_missing_runtime(self):
         binary = self.tui / ('team-dev-env-' + self.arch)
@@ -213,7 +186,7 @@ class TuiEntryTests(unittest.TestCase):
                 result = self.non_tty('.support/scripts/run-tui.sh', '--page', 'home')
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.record.exists())
-                self.assertIn('--plain', result.stdout + result.stderr)
+                self.assertNotIn('--plain', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

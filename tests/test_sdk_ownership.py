@@ -1,11 +1,17 @@
 """安装来源标记：仅新发布的 SDK 可供清理器认领，不标记复用的 SDK。"""
 import hashlib
+import contextlib
+import importlib.util
+import io
 import json
+from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import unittest
 
 import test_gradle_install as gradle_fixture
+import test_gradle_versions as versions_fixture
 
 
 MARKER = ".team-java-env-install.json"
@@ -96,6 +102,34 @@ class SDKOwnershipTests(unittest.TestCase):
         self.assertFalse(list(fixture.base.rglob(MARKER)))
         self.assertFalse(fixture.target.exists())
         self.assertFalse(fixture.env_file.exists())
+
+    def test_uninstall_one_registered_gradle_preserves_actual_switch_function_jdk_and_default(self):
+        fixture = versions_fixture.GradleVersionTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        first, second = fixture.seed_version('4.5.1'), fixture.seed_version('6.8')
+        for version, path in (('4.5.1', first), ('6.8', second)):
+            (path / MARKER).write_text(json.dumps(dict(schema=1, tool='team-java-env', kind='gradle')))
+            fixture.assert_ok(fixture.run_script(extra={'GRADLE_VERSION': version}))
+        spec = importlib.util.spec_from_file_location('owned_component_cleanup', Path(__file__).resolve().parents[1] / 'tools/uninstall_java_gradle.py')
+        tool = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = tool
+        spec.loader.exec_module(tool)
+        env = dict(HOME=str(fixture.home), ENV_FILE=str(fixture.env_file), PATH='/usr/bin:/bin')
+        def cleaner(instances=None):
+            return tool.Cleaner(fixture.home, components='gradle', instances=instances, environ=env,
+                                system_jvms=fixture.base / 'system/java', process_reader=lambda: [])
+        selected = next(item['id'] for item in cleaner().scan().instances if item['path'] == str(first))
+        with contextlib.redirect_stdout(io.StringIO()):
+            cleaner([selected]).scan().apply()
+        self.assertFalse(first.exists())
+        self.assertTrue(second.exists())
+        self.assertTrue(fixture.jdk.exists())
+        self.assertEqual((fixture.env_file.parent / 'gradle-default').read_text(), '6.8\n')
+        for shell in ('/bin/bash', '/bin/zsh'):
+            result = subprocess.run([shell, '-f', '-c', 'source "$1"; gradle_use 6.8 >/dev/null || exit; printf "%s\\n" "$GRADLE_HOME" "$JAVA_HOME"', 'cleanup-check', str(fixture.env_file)], env=fixture.env, text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [str(second), str(fixture.jdk)])
 
 
 if __name__ == "__main__":

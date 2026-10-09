@@ -1,8 +1,8 @@
 {
   "archive": {
-    "sha256": "b87d6d2d2f677f9deba3fb0c8a09cf8ea75611a65edd4383209c9da76d28436c",
-    "size": 26006111,
-    "url": "https://github.com/blade-demon/ai-fullstack-settings/releases/download/runtimes-b87d6d2d2f677f9d/team-dev-env-runtimes.zip"
+    "sha256": "f496853e2e4b7d84e0ff01eb147bda3fb4a444e0787f1f602169c252395700e2",
+    "size": 27555119,
+    "url": "https://github.com/blade-demon/ai-fullstack-settings/releases/download/runtimes-f496853e2e4b7d84/team-dev-env-runtimes.zip"
   },
   "files": {
     "resources/cleanup/THIRD_PARTY_NOTICES.txt": {
@@ -10,11 +10,11 @@
       "size": 109860
     },
     "resources/cleanup/cleanup-macos-universal2": {
-      "sha256": "e370a412c7f3c9dfa8893e2ba45390b634eaa918d6ed9ab47bc3128efaa656ad",
-      "size": 17378592
+      "sha256": "3c881b780c94373eeb6dd214ca4e5d7555ae8ab3bb7f1f1d3833bea66c91740e",
+      "size": 17407600
     },
     "resources/cleanup/manifest.json": {
-      "sha256": "6b6881eb5818892ca4d1bab33eb946a0170060e33c671a350144cc18a14f7e08",
+      "sha256": "af7e2a5d83b3ef82bf0ea3b20537e2382f02d0753fbe665aad544b323f25517e",
       "size": 852
     },
     "resources/tui/THIRD_PARTY_NOTICES.txt": {
@@ -22,22 +22,22 @@
       "size": 41164
     },
     "resources/tui/manifest.json": {
-      "sha256": "082018ecfc6b2b7a1a8c5689e6e62deab6b776e1894c5ff1baf2640d0c86ce2d",
+      "sha256": "5b38c88c35bd1b561ae0567ff34d744f17e80613b08efdef99ac9628fc5c4b64",
       "size": 2331
     },
     "resources/tui/team-dev-env-amd64": {
-      "sha256": "d97566559ed424b418d05e6b554f47c99e76a872d7639c9d7516f188a06ada86",
-      "size": 4326528
+      "sha256": "20e96990176f58108e60c6ce5f202d32f0fe672b77189a603ef7c1e211ef7939",
+      "size": 5143216
     },
     "resources/tui/team-dev-env-arm64": {
-      "sha256": "b4b1cb49fdc26ab02b4bc587c4ec22a5dbe3c8f121ab2f79c859056b6e236af8",
-      "size": 4145746
+      "sha256": "632e171ad796da87149cf49a709245a058ee1df175aa2703c58b220bc1bb804d",
+      "size": 4849058
     }
   },
-  "release": "runtimes-b87d6d2d2f677f9d",
+  "release": "runtimes-f496853e2e4b7d84",
   "schema": 1,
   "source_sha256": {
-    "cleanup": "7c77e8fbdfcdc83761894c97be5a1b8f5f1b91c35e4ed720b88d1919a4befd51",
-    "tui": "ab63590bfd54b9a0daa13df621ea6a9c20c1b11227f78031ed0515fe857d92d2"
+    "cleanup": "706de349228020258e85126940d5e7c2c647b3add46744b9a50b1d9e6ad823b2",
+    "tui": "f98efdab96b51425dcff4e30f6e1766b58f7cf779fdbfa7250de4a09af76713f"
   }
 }

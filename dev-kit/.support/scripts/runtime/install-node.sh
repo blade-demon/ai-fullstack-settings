@@ -3,19 +3,21 @@
 set -euo pipefail
 source "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 source "$REPO_ROOT/scripts/lib/frontend.sh"
-selection=all
+selection=14
 DRY_RUN=false
+CHECK_ONLY=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --version)
-            [ "$#" -ge 2 ] || die '--version 后需要 14、16、18 或 all'
-            case "$2" in 14|16|18|all) selection="$2" ;; *) die '--version 仅支持 14、16、18 或 all' ;; esac
+            [ "$#" -ge 2 ] || die '--version 后需要 none、10、14、18、22 或 all'
+            case "$2" in none|10|14|18|22|all) selection="$2" ;; *) die '--version 仅支持 none、10、14、18、22 或 all' ;; esac
             shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
+        --check-only) CHECK_ONLY=true; shift ;;
         --help|-h)
-            log '用法：install-node.sh [--version 14|16|18|all] [--dry-run]'
-            log '默认安装 Node 14.21.3、16.20.2、18.20.8；保留已有 default，首次默认 18。'
-            log '指定单版本时设为 default。Apple Silicon 的 Node 14 使用 x64，需要已安装 Rosetta。'
+            log '用法：install-node.sh [--version none|10|14|18|22|all] [--dry-run]'
+            log '默认安装 Node 14.21.3 并设为 default；all 安装四版，保留有效 default，没有有效默认时使用 14。'
+            log '指定单版本时设为 default。Apple Silicon 的 Node 10/14 使用 x64，需要已安装 Rosetta。'
             exit 0 ;;
         *) die "未知参数：$1（使用 --help 查看用法）" ;;
     esac
@@ -32,14 +34,17 @@ NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 export NVM_DIR
 frontend_check_directory "$NVM_DIR"
 [ "$NVM_DIR" != / ] && [ "$NVM_DIR" != "$HOME" ] || die 'NVM_DIR 必须使用独立安装目录'
-frontend_check_file "${ZDOTDIR:-$HOME}/.zshrc"
+if [ -n "${SHELL_PROFILE:-}" ]; then nvm_profile="$SHELL_PROFILE"
+elif [ "${SHELL:-/bin/zsh}" = /bin/bash ]; then nvm_profile="$HOME/.bash_profile"
+else nvm_profile="${ZDOTDIR:-$HOME}/.zshrc"; fi
+frontend_check_file "$nvm_profile"
 frontend_check_directory "$NVM_DIR/versions/node"
 frontend_check_directory "$NVM_DIR/alias"
 frontend_check_file "$NVM_DIR/alias/default"
 versions=(); arches=(); ids=(); candidates=(); existing=()
-case "$selection" in all) majors=(14 16 18) ;; *) majors=("$selection") ;; esac
-for major in "${majors[@]}"; do
-    case "$major" in 14) version=14.21.3; architecture=x64 ;; 16) version=16.20.2; architecture="$machine_arch" ;; 18) version=18.20.8; architecture="$machine_arch" ;; esac
+case "$selection" in all) majors=(10 14 18 22) ;; none) majors=() ;; *) majors=("$selection") ;; esac
+for major in ${majors[@]+"${majors[@]}"}; do
+    case "$major" in 10) version=10.24.1; architecture=x64 ;; 14) version=14.21.3; architecture=x64 ;; 18) version=18.20.8; architecture="$machine_arch" ;; 22) version=22.23.3; architecture="$machine_arch" ;; esac
     identifier="node$major-macos-$architecture"
     frontend_read_resource "$identifier"
     [ "$FR_VERSION" = "$version" ] && [ "$FR_ARCH" = "$architecture" ] && [ "$FR_GROUP" = runtime ] || die "Node 资源版本/架构与固定目标不匹配：$identifier"
@@ -51,15 +56,15 @@ frontend_read_resource nvm
 [ "$FR_VERSION" = 0.40.8 ] && [ "$FR_ARCH" = any ] && [ "$FR_GROUP" = runtime ] || die 'nvm 资源必须为固定的 0.40.8 通用版本'
 if "$DRY_RUN"; then
     log "[预演] 复用有效 nvm 或安装固定资源：$FR_URL → $NVM_DIR"
-    if [ "$machine_arch" = arm64 ] && { [ "$selection" = all ] || [ "$selection" = 14 ]; }; then
-        log '[预演] Node 14 需要 Rosetta；正式安装前先确认 x64 程序可执行，不自动安装 Rosetta。'
+    if [ "$machine_arch" = arm64 ] && { [ "$selection" = all ] || [ "$selection" = 14 ] || [ "$selection" = 10 ]; }; then
+        log '[预演] Node 10/14 需要 Rosetta；正式安装前先确认 x64 程序可执行，不自动安装 Rosetta。'
     fi
-    log "[预演] 验证 nvm ls/use 和 Node 版本；备份并更新 ${ZDOTDIR:-$HOME}/.zshrc 的 nvm 受管区块。"
+    log "[预演] 验证 nvm ls/use 和 Node 版本；备份并更新 ${nvm_profile} 的 nvm 受管区块。"
     log '[预演] 不执行 SDK、不联网、不写文件。'
     exit 0
 fi
-if [ "$machine_arch" = arm64 ] && { [ "$selection" = all ] || [ "$selection" = 14 ]; }; then
-    arch -x86_64 /usr/bin/true 2>/dev/null || die 'Node 14 仅提供 x64 macOS 二进制；请先由你或管理员安装 Rosetta 2，再重试。也可先选择原生 Node 16 或 18。'
+if [ "$machine_arch" = arm64 ] && { [ "$selection" = all ] || [ "$selection" = 14 ] || [ "$selection" = 10 ]; }; then
+    arch -x86_64 /usr/bin/true 2>/dev/null || die 'Node 10/14 仅提供 x64 macOS 二进制；请先由你或管理员安装 Rosetta 2，再重试。也可先选择原生 Node 18 或 22。'
 fi
 for command in tar awk shasum mktemp; do require_command "$command"; done
 work=''; lock=''
@@ -114,6 +119,10 @@ for ((i=0; i<${#versions[@]}; i++)); do
         existing+=(true)
     else existing+=(false); fi
 done
+frontend_node_default_plan "$selection" verify
+planned_default_before="$FRONTEND_DEFAULT_BEFORE"
+planned_default_after="$FRONTEND_DEFAULT_AFTER"
+if "$CHECK_ONLY"; then log 'nvm/Node 预检通过，未执行安装。'; exit 0; fi
 mkdir -p -- "$(dirname -- "$NVM_DIR")"
 frontend_check_directory "$(dirname -- "$NVM_DIR")"
 lock_candidate="$NVM_DIR.team-frontend.lock"
@@ -200,21 +209,36 @@ else
         [ ! -e "${candidates[$i]}" ] || die '安装期间 Node 目标已出现，已保留原内容'
     done
 fi
-for version in "${versions[@]}"; do
+for version in ${versions[@]+"${versions[@]}"}; do
     verify_nvm_node "$NVM_DIR" "$version" || die "安装后 nvm 切换 Node $version 验证失败"
     log "已验证 Node ${version}：nvm use $version"
 done
 frontend_check_directory "$NVM_DIR/alias"
 frontend_check_file "$NVM_DIR/alias/default"
-if [ "$selection" != all ] || [ ! -f "$NVM_DIR/alias/default" ]; then
-    if [ "$selection" = all ]; then default_version=18.20.8; else default_version="${versions[0]}"; fi
+FRONTEND_DEFAULT_BEFORE="$planned_default_before"
+FRONTEND_DEFAULT_AFTER="$planned_default_after"
+if [ "$selection" = none ]; then
+    log "本次仅安装 nvm，保留已有 Node 与默认别名。"
+elif [ "$FRONTEND_DEFAULT_BEFORE" != "$FRONTEND_DEFAULT_AFTER" ]; then
     (
         set +u
         . "$NVM_DIR/nvm.sh" --no-use
-        nvm alias default "v$default_version" >/dev/null
+        nvm alias default "$FRONTEND_DEFAULT_AFTER" >/dev/null
     ) || die '无法保存 nvm default'
-    [ "$(cat "$NVM_DIR/alias/default")" = "v$default_version" ] || die 'nvm default 保存验证失败'
-else log "保留已有 nvm default：$(cat "$NVM_DIR/alias/default")"; fi
+    [ "$(cat "$NVM_DIR/alias/default")" = "$FRONTEND_DEFAULT_AFTER" ] || die 'nvm default 保存验证失败'
+fi
+if [ "$selection" != none ]; then
+    frontend_node_default_plan all verify
+    [ "$FRONTEND_DEFAULT_VALIDATION" = valid ] || die 'nvm default 解析或运行验证失败'
+    log "已验证有效 nvm default：${FRONTEND_DEFAULT_BEFORE}；nvm use default 与 Node 加载验证通过。"
+fi
 body="$(printf 'export NVM_DIR=%s\n[ ! -s "$NVM_DIR/nvm.sh" ] || . "$NVM_DIR/nvm.sh"\n' "$(shell_quote "$NVM_DIR")")"
-frontend_update_zsh_block nvm "$body"
-log 'Node 环境已安装并验证。新开终端生效；使用 nvm use 14、nvm use 16 或 nvm use 18 切换。'
+frontend_update_zsh_block nvm "$body" "$nvm_profile"
+log 'nvm 环境已验证。新开终端生效；当前终端可先执行：'
+printf 'export NVM_DIR=%s\n. "$NVM_DIR/nvm.sh"\n' "$(shell_quote "$NVM_DIR")"
+log '查看版本：nvm ls'
+for version in ${versions[@]+"${versions[@]}"}; do log "当前终端切换：nvm use $version"; done
+if [ "$selection" != none ]; then
+    log '新终端默认：nvm alias default <已安装版本>；当前终端应用默认：nvm use default'
+    log '验证：node -v；npm -v'
+else log '本次未安装 Node；既有版本和默认值以 nvm ls 为准。'; fi

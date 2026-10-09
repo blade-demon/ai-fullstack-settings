@@ -222,7 +222,7 @@ class EnvironmentVerificationTests(unittest.TestCase):
         (self.home/'.config/java-dev/jdk.sh').write_text("export JAVA_HOME='"+str(self.jdk)+"'\n")
         result=self.run_script('check-env.sh')
         self.assertEqual(result.returncode,1)
-        self.assertIn('一键修复',result.stdout)
+        self.assertIn('安装与配置',result.stdout)
         self.assertIn('[待修复] JAVA_HOME',result.stdout)
 
     def test_gradle_runtime_version_failure_overrides_static_structure(self):

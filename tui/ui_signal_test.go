@@ -35,7 +35,8 @@ func TestUITerminationSignalsCancelAndReapTask(t *testing.T) {
 			page := "home"
 			if strings.HasPrefix(scenario, "interactive-") {
 				page = "cleanup"
-				fixtureScript(t, support, "scripts/run-cleanup.sh", "exec python3 -u backend.py")
+				fixtureScript(t, support, "scripts/run-cleanup.sh", `if [[ " $* " == *" --plan-json "* ]]; then printf '%s\n' '{"schema":1,"instances":[{"id":"jdk:fixture","component":"jdk","path":"/fixture/jdk","label":"JDK","removable":true}],"notes":[],"blockers":[]}'; exit 0; fi
+exec python3 -u backend.py`)
 				if err := os.WriteFile(filepath.Join(support, "backend.py"), []byte(interactiveSignalBackend), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -93,10 +94,10 @@ try:
     if scenario.startswith('interactive-'):
         read_until('安全卸载')
         output = b''
-        os.write(master, b'\x1b[B\r')
-        read_until('确认操作')
+        os.write(master, b' \r')
+        read_until('卸载实例')
         output = b''
-        os.write(master, b'\r')
+        os.write(master, b' \r')
         read_until('INTERACTIVE_READY')
         childpid = int((pathlib.Path(support) / 'child.pid').read_text())
     marker = pathlib.Path(support) / 'job.pid'

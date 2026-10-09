@@ -2,7 +2,7 @@
 
 维护者可以在 **Windows 或 macOS** 上准备资源、打包和运行下载服务。服务端只需 **Python 3.8+ 标准库**，不依赖 Bash、Homebrew、`hdiutil` 或系统压缩命令。下载到成员电脑的安装工具仍面向 **macOS**，Windows 服务端只托管这些文件。
 
-以下命令都在项目根目录执行。Windows 优先用 `py -3`；没有 `py` 时，用 `python --version` 确认版本后改用 `python`。macOS 使用 `python3`。本轮已在 macOS 做自动化验证，包括 Windows 路径规则、CRLF 和归档权限；**尚未在 Windows 实机运行验收**。
+以下命令都在项目根目录执行。Windows 优先用 `py -3`；没有 `py` 时，用 `python --version` 确认版本后改用 `python`。macOS 使用 `python3`。Windows 路径规则、CRLF 和归档权限有隔离测试覆盖；本次完整验收结果以[验证记录](verification.md)为准，不代表 Windows 实机已验证。
 
 ## 部署前安装 Python 3
 
@@ -54,7 +54,7 @@ python3 server/manage.py prepare --dry-run
 | macOS 下载资源时报 `CERTIFICATE_VERIFY_FAILED` | 确认已完成对应版本的 `Install Certificates.command`；企业代理证书由团队 IT 配置 |
 | 使用代理时下载报 `UNEXPECTED_EOF_WHILE_READING` 或连接重置 | 更新源码后重试；下载器会重新连接，必要时通过系统 curl 恢复。检查代理软件的 HTTP/Mixed 地址与系统设置，或使用运行文件内网镜像；不关闭证书校验 |
 
-内网服务器无法访问官网时，可在可联网电脑下载对应的完整 `.exe` / `.pkg` 安装包，再传到服务器安装；Mac 的证书初始化还需可用网络或团队配置的证书环境。Python 安装包不包含在本项目的成员启动包或资源清单中。
+内网服务器无法访问官网时，可在可联网电脑下载对应的完整 `.exe` / `.pkg` 安装包，再传到服务器安装；Mac 的证书初始化还需可用网络或团队配置的证书环境。Python 安装包不包含在本项目的成员工具或资源清单中。
 
 ## 自动准备界面与卸载工具
 
@@ -93,12 +93,12 @@ python3 server/manage.py start
 选定地址后，脚本先绑定 `0.0.0.0:8080`，成功后按以下顺序执行：
 
 1. `[1/3]` 先自动补齐并校验界面、卸载运行文件，再校验 SDK 等安装资源并下载缺项。
-2. `[2/3]` 带资源打包到 `dist/server`，生成完整工具、启动入口及 `release.json`。
-3. `[3/3]` 校验发布目录并开始 HTTP 下载，显示 `go-tui-<实际 TAR SHA-256 前 12 位>`、带该版本的 `start.zip?v=…` 和 `release.json` 链接。
+2. `[2/3]` 打包到 `dist/server`，仅生成 `devtool-helper.sh`、`dev-env/team-dev-env.tar.gz`、schema 2 的 `release.json`；默认不复制软件资源。
+3. `[3/3]` 校验发布目录并开始 HTTP 下载，显示 `go-tui-<实际 TAR SHA-256 前 12 位>`、带该版本的 `devtool-helper.sh?v=…` 和 `release.json` 链接。
 
 端口已占用时会在准备资源和改写发布文件前退出，不会关闭已有服务，并明确提示本次没有更新安装包，已有地址可能仍提供旧版本。
 
-重复运行会复用校验通过的资源；SDK 等安装资源校验失败时保留原样并报错，须检查后移走异常文件再重试。运行文件的失效缓存由上述锁定下载流程替换。首次缺少资源时需要联网下载；运行文件和安装资源均已缓存且有效时，可离线完成准备与打包。默认资源库为 `resources/`。保持终端窗口运行，并从成员电脑验证显示的链接；自动选址不能保证防火墙、VPN 或网段之间允许访问。IP 变化后重新 `start`，并让成员重新下载、解压启动包。
+重复运行会复用校验通过的资源；SDK 等安装资源校验失败时保留原样并报错，须检查后移走异常文件再重试。运行文件的失效缓存由上述锁定下载流程替换。首次缺少资源时需要联网下载；运行文件和安装资源均已缓存且有效时，可离线完成准备与打包。默认资源库为 `resources/`，本地服务只读映射包内清单的资源 URL 到源库，不重复复制大包。需要部署资源副本时显式传 `--with-resources`，副本不另写 `.sha256`。保持终端窗口运行，并从成员电脑验证显示的链接；自动选址不能保证防火墙、VPN 或网段之间允许访问。IP 变化后重新 `start`，并让成员重新下载 helper。
 
 **`git pull` 只更新源码，不会重新生成 `dist/server`，也不会重启旧进程。** 更新后停止自己管理的旧服务，再运行原 `start`；Windows 无需另外编译 Go 或搬运运行文件 ZIP。以本次就绪输出和 `/release.json` 的实际版本确认更新，不以拉取成功或端口仍能访问判断已发布。
 
@@ -142,13 +142,13 @@ macOS 的 `.command` 是便捷入口；服务端处理仍全部由 Python 完成
 python3 server/manage.py prepare-runtimes
 python3 server/manage.py prepare
 python3 server/manage.py prepare --verify
-python3 server/manage.py package --server "192.168.1.20:8080" --scheme http --with-resources --output dist/server
-python3 server/manage.py serve --directory dist/server --bind 0.0.0.0 --port 8080
+python3 server/manage.py package --server "192.168.1.20:8080" --scheme http --output dist/server
+python3 server/manage.py serve --directory dist/server --resources-dir resources --bind 0.0.0.0 --port 8080
 ```
 
-`prepare` 复用已校验的安装资源；`package` 只校验和生成发布文件，不联网下载运行文件或安装资源，也不启动服务。`serve` 启动前读取 `release.json`，核对六个发布文件的 SHA-256 和大小，拒绝缺少新版发布信息的旧目录和损坏包；随后只读托管，不重新打包或安装软件。
+`prepare` 复用已校验的安装资源；`package` 只校验和生成发布文件，不联网下载运行文件或安装资源，也不启动服务。`serve` 启动前读取 `release.json`，核对 schema 2 中 helper 与 TAR 的 SHA-256 和大小，拒绝缺少新版发布信息的旧目录和损坏包；随后只读托管，不重新打包或安装软件。
 
-已确认发布目录就是要提供的版本，且地址未变时，可只运行 `serve`。它能托管仍完整有效的历史发布版本，输出的是该目录的实际版本，不表示已把刚拉取的源码打包。分机器部署时，把完整输出目录连同 `release.json` 复制到实际服务器，再用 `serve --directory` 指向它；包内地址须是成员最终访问的地址。
+已确认发布目录就是要提供的版本，且地址未变时，可只运行 `serve`。它能托管仍完整有效的历史发布版本，输出的是该目录的实际版本，不表示已把刚拉取的源码打包。分机器或外部静态服务器部署时，打包显式加 `--with-resources`，再把三个发布文件及 `resources/` 中本次清单原包复制到实际服务器；副本不另写摘要。Python `serve --directory` 指向该目录，或用外部服务限制同样的路径白名单并关闭目录浏览。包内地址须是成员最终访问地址。
 
 `serve --bind 0.0.0.0` 允许其他电脑连接；默认不指定时只监听 `127.0.0.1`。`0.0.0.0` 是监听地址，不能作为成员下载地址。内置服务提供 HTTP；需要 HTTPS 时，由团队已有的 HTTPS 静态服务或反向代理提供，再用最终地址及 `package --scheme https` 打包，该参数本身不配置 TLS。
 
@@ -166,9 +166,9 @@ python3 server/manage.py preview --port 8081
 bash tools/preview.sh --port 8081
 ```
 
-看到“本机预览已就绪”后，保持窗口运行，下载 [本机启动包](http://127.0.0.1:8081/start.zip)，重新解压后运行。预览只监听 `127.0.0.1`，不能供其他电脑访问。
+看到“本机预览已就绪”后，保持窗口运行，下载 [本机 helper](http://127.0.0.1:8081/devtool-helper.sh)，在终端运行 `bash devtool-helper.sh`。预览只监听 `127.0.0.1`，不能供其他电脑访问。
 
-`preview` 默认端口是 **8081**，而 `start` / `serve` 默认是 **8080**。预览会把启动包的下载地址改成本机预览端口，退出时不会恢复旧的内网地址。因此正式分发前要重新运行 `start`，或在高级流程中用真实 `--server` 打包。运行成员的「开始配置.command」或「卸载环境.command」不会替维护者启动服务器。新 `start.zip` 同时包含两个入口；老用户需重新下载一次启动 ZIP，后续每次启动都会拉取服务器最新发布工具。
+`preview` 默认端口是 **8081**，start/serve 默认 **8080**。默认预览使用临时目录，忽略正式 output 配置，退出即清理，不覆盖 dist/server 或正式地址。需要保留时才显式传 `--output /absolute/path/preview`；该目录是本机地址快照，不能当作正式发布。正式分发用 start 或最终地址的 package。成员 helper 不替维护者启动服务器。
 
 ## 配置与优先级
 
@@ -178,9 +178,9 @@ bash tools/preview.sh --port 8081
 - **高级 `package` 的地址与协议：** 命令行 `--server` / `--scheme` → 环境变量 `SERVER_ADDR` / `SERVER_SCHEME` → JSON 的 `server` / `scheme` → `dev-kit/.support/config/env.sh` 中可安全读取的字面默认值 → `127.0.0.1:8080` / `http`。服务端不会执行该 Bash 配置文件；正式分发应显式指定最终下载地址。
 - **运行文件下载来源：** `start` / `preview` / `prepare-runtimes` 的 `--runtime-base-url` → JSON 的 `runtime_base_url` → `resources/runtime-lock.json` 固定的 GitHub Release URL。镜像仅替换来源，归档和文件摘要仍由同一锁文件决定。
 - **其他服务端参数：** 命令行 → JSON → 内置默认值。`output` 控制打包目录，`resources_dir` 控制本地资源库，`directory` 控制 `serve` 的服务根目录，`port` 控制监听端口。`start` 可另用 `--catalog` 指定资源清单。
-- **本机预览：** 固定绑定 `127.0.0.1`，按预览端口生成 HTTP 下载地址，不采用配置中的内网地址。
+- **本机预览：** 固定绑定 `127.0.0.1`，按预览端口生成 HTTP 下载地址，不采用配置中的内网地址；未显式 --output 时固定使用临时目录，不采用正式输出配置。
 
-所有子命令都支持 `--help`。只更新成员脚本时，`package` 省略 `--with-resources`，会保留输出目录已有资源；仍需保留本地资源库供校验和生成成员清单。
+所有子命令都支持 --help。默认 start/package 不复制资源，保留本地源库供校验和映射；显式 --with-resources 才创建外部部署副本，不另写摘要。省略时输出目录已有副本保留。serve 支持 --resources-dir 指定源库，显式参数优先于部署副本。
 
 ## 停止、重启、后台运行与端口
 
@@ -198,38 +198,41 @@ Get-NetTCPConnection -LocalPort 8080 -State Listen
 lsof -nP -iTCP:8080 -sTCP:LISTEN
 ```
 
-即使占用端口的是本工具，只有确认发布物已通过校验且属于本次预期版本，才可继续使用现有地址。刚拉取源码但本次 `start` 因端口占用退出时，不能把旧服务当成已更新。应停止自己管理的旧服务后重启；其他应用占用时换端口。一键启动改为 `start --port 8082`，预览改为 `preview --port 8082`；若显式 `--server` 含端口，也须同步修改。高级流程改端口时，同时更新打包时的 `--server` 和启动时的 `--port`。内网地址或端口变更后，让成员重新下载启动包。
+即使占用端口的是本工具，只有确认发布物已通过校验且属于本次预期版本，才可继续使用现有地址。刚拉取源码但本次 `start` 因端口占用退出时，不能把旧服务当成已更新。应停止自己管理的旧服务后重启；其他应用占用时换端口。一键启动改为 `start --port 8082`，预览改为 `preview --port 8082`；若显式 `--server` 含端口，也须同步修改。高级流程改端口时，同时更新打包时的 `--server` 和启动时的 `--port`。内网地址或端口变更后，让成员重新下载 helper。
 
 ## 服务根目录与下载验证
 
-**网站根目录必须直接包含 `start.zip` 和 `release.json`，通常为 `dist/server`，不能使用仓库根目录。** `serve` 会校验发布信息以及 `start.command`、`uninstall.command`、`start.zip`、`team-dev-env.zip`、`dev-env/team-dev-env.tar.gz` 和其 `.sha256` 六个文件，拒绝符号链接越界读取，并只提供下载，不接受上传。
+**网站根目录必须直接包含 devtool-helper.sh 和 release.json**，通常为 dist/server，不能用仓库根目录。serve 验证三个文件及 schema 2 的 launcher/bundle 元数据，只托管固定三路径与 TAR 内 resources.tsv 的资源路径；GET/HEAD 对未知、退场文件和目录浏览返回 404，查询参数或后来复制文件不扩大范围。
 
 ```text
 请求 /dev-env/team-dev-env.tar.gz
     → 网站根目录/dev-env/team-dev-env.tar.gz
-    → 本项目默认 dist/server/dev-env/team-dev-env.tar.gz
+    → 默认 dist/server/dev-env/team-dev-env.tar.gz
+请求 /resources/<包内清单路径>
+    → 本地源资源库或显式部署副本中的原包
 ```
 
-可以把发布目录复制到另一台 Windows 或 Mac 服务器，再用 `serve --directory "实际发布目录"` 托管；须保留 `release.json`、六个发布文件及 `resources/`。维护脚本仍从项目中的 `server/manage.py` 运行；使用绝对目录参数后，托管位置不受启动位置影响。
+serve 启动时有部署 resources/ 则可用该目录；显式 --resources-dir 优先，否则无副本时使用配置或默认源资源库。复制部署目录需带齐清单原包，或另外指定有效源库。服务器不公开 catalog、源库校验记录或未知文件。外部静态服务也须配置等效白名单和关闭目录浏览。
 
-从成员 Mac 检查以下地址，应返回 `200 OK`，再用浏览器下载和运行：
+从成员机器检查下面三个地址，再核对清单中的实际版本和地址：
 
 ```bash
-curl -fI "http://192.168.1.20:8080/start.zip"
+curl -fI "http://192.168.1.20:8080/devtool-helper.sh"
 curl -fI "http://192.168.1.20:8080/dev-env/team-dev-env.tar.gz"
-curl -fI "http://192.168.1.20:8080/dev-env/team-dev-env.tar.gz.sha256"
 curl -fsS "http://192.168.1.20:8080/release.json"
 ```
+
+工具每次获取清单和 TAR，校验大小、摘要、schema 和归档再执行统一 run-tool.sh；不使用旁置 TAR SHA。固定旧 start.zip、start.command、uninstall.command、team-dev-env.zip 和 TAR.sha256 已退场，package 成功后清理这些普通旧文件，serve 拒绝残留。
 
 | 现象 | 检查与处理 |
 | --- | --- |
 | 找不到 Python 或版本过低 | 先完成[部署前安装 Python 3](#部署前安装-python-3)并验证，再启动服务 |
 | 连接被拒绝或超时 | 服务是否运行、内网/VPN是否可达、IP/端口和防火墙是否正确 |
 | `HTTP 404` | 检查启动器显示的完整 URL、端口所属服务，以及网站根目录和发布文件 |
-| 只有 `start.zip` 能下载 | 检查是否遗漏 `dev-env`、`resources` 或 `.sha256` 文件 |
+| helper 能下载但工具/资源失败 | 检查 TAR、release.json 和包内清单资源映射；外部静态部署检查资源副本 |
 | 本机可用、其他电脑不可用 | 检查所选 IP、成员网段、VPN 和防火墙；高级 `serve` 确认使用 `--bind 0.0.0.0` |
 | 自动选址失败或后台启动要求地址 | 用 `start --server "实际主机或IP"` 显式指定；同时传 `--port` 时，端口须一致 |
-| 改地址或端口后仍请求旧地址 | 重新 `start`（高级流程重新打包），并下载、解压新的 `start.zip` |
+| 改地址或端口后仍请求旧地址 | 重新 `start`（高级流程重新打包），并下载新的 `devtool-helper.sh` |
 | 拉取代码后仍出现旧界面 | 检查是否真正完成本次 `start` 的三阶段，以及 `/release.json` 版本；端口占用退出不会更新旧包 |
 | 无法补齐运行文件 | 检查锁定 GitHub Release 或镜像连通性；源码与锁须配套，不能用旧 ZIP 绕过摘要校验 |
 | `serve` 提示发布信息无效或缺失 | 用 `start` 或 `package` 重新生成完整发布目录，不手改 `release.json` 或只替换其中一个文件 |

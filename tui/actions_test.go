@@ -1,11 +1,10 @@
 package main
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	tea "charm.land/bubbletea/v2"
 )
 
 // A literal tilde, USER-based reconstruction, or an extra Users directory would
@@ -17,15 +16,15 @@ func TestApplicationInstallDirectoryViewsUseExpandedHome(t *testing.T) {
 	t.Setenv("USER", "different-login-name")
 
 	for _, tc := range []struct{ page, id string }{
-		{"home", "idea"},
-		{"frontend", "iterm2"},
+		{"install", "idea"},
+		{"install", "iterm2"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			m := applicationActionMenu(t, tc.page, tc.id)
 			views := map[string]string{"menu": m.View().Content}
-			m, cmd := uiUpdate(m, uiKey(tea.KeyEnter))
-			if m.screen != screenConfirm || cmd != nil {
-				t.Fatal("selection must open confirmation without running an installer")
+			m, cmd := uiUpdate(m, uiKey(' '))
+			if m.screen != screenMenu || cmd != nil {
+				t.Fatal("selection must stay on the component page")
 			}
 			views["confirmation"] = m.View().Content
 			for name, view := range views {
@@ -49,13 +48,13 @@ func TestApplicationInstallDirectoryViewsExplainMissingHome(t *testing.T) {
 	t.Setenv("USER", "different-login-name")
 
 	for _, tc := range []struct{ page, id string }{
-		{"home", "idea"},
-		{"frontend", "iterm2"},
+		{"install", "idea"},
+		{"install", "iterm2"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			m := applicationActionMenu(t, tc.page, tc.id)
 			views := map[string]string{"menu": m.View().Content}
-			m, _ = uiUpdate(m, uiKey(tea.KeyEnter))
+			m, _ = uiUpdate(m, uiKey(' '))
 			views["confirmation"] = m.View().Content
 			for name, view := range views {
 				if !strings.Contains(view, "HOME") || !strings.Contains(view, "未设置") {

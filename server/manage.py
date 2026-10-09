@@ -18,7 +18,6 @@ import sys
 import tarfile
 import tempfile
 import urllib.parse
-import zipfile
 
 if __package__:
     from .cleanup_artifact import validate_cleanup_artifact
@@ -41,9 +40,10 @@ ROOT = Path(__file__).resolve().parents[1]
 HEADER = "# id\tgroup\tversion\tarch\tpath\turl\tsha256"
 SHA256 = re.compile(r"[a-fA-F0-9]{64}\Z")
 SERVER = re.compile(r"(?:[A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?\Z")
-PUBLICATION_ARTIFACTS = ("start.command", "uninstall.command", "start.zip", "team-dev-env.zip",
-                         "dev-env/team-dev-env.tar.gz", "dev-env/team-dev-env.tar.gz.sha256")
+PUBLICATION_ARTIFACTS = ("devtool-helper.sh", "dev-env/team-dev-env.tar.gz")
 PUBLISHED = PUBLICATION_ARTIFACTS + ("release.json",)
+RETIRED = ("start.command", "uninstall.command", "start.zip", "team-dev-env.zip",
+           "dev-env/team-dev-env.tar.gz.sha256")
 CLEANUP_FILES = (("cleanup-macos-universal2", "cleanup-macos"),
                  ("manifest.json", "manifest.json"), ("THIRD_PARTY_NOTICES.txt", "THIRD_PARTY_NOTICES.txt"))
 TEXT_SUFFIXES = {".sh", ".command", ".txt", ".yaml", ".yml", ".tsv", ".json", ".in", ".xsl"}
@@ -121,7 +121,11 @@ class Resource:
 
 def read_catalog(path):
     check_path(path, required=True)
-    lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    return parse_catalog(Path(path).read_text(encoding="utf-8-sig"))
+
+
+def parse_catalog(content, allow_empty=False):
+    lines = content.splitlines()
     if not lines or lines[0] != HEADER:
         raise UserError("清单首行必须为 # id、group、version、arch、path、url、sha256（制表符分隔）。")
     resources, ids, occupied = [], set(), set()
@@ -147,7 +151,7 @@ def read_catalog(path):
         occupied.update(names)
         ids.add(item.id)
         resources.append(dataclasses.replace(item, sha256=item.sha256.lower()))
-    if not resources:
+    if not resources and not allow_empty:
         raise UserError("清单没有资源条目。")
     return resources
 
@@ -339,16 +343,6 @@ def tui_members():
     return {"team-dev-env/.support/tui/" + name: payload for name, payload in payloads.items()}
 
 
-def write_zip(path, files):
-    with zipfile.ZipFile(str(path), "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name, payload in files.items():
-            info = zipfile.ZipInfo(name)
-            info.create_system = 3
-            info.external_attr = (stat.S_IFREG | archive_mode(name)) << 16
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, payload)
-
-
 def write_tar(path, files):
     with tarfile.open(str(path), "w:gz", format=tarfile.PAX_FORMAT) as archive:
         for name, payload in files.items():
@@ -382,8 +376,10 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
         if name in generated:
             raise UserError("白名单不能包含打包时生成的文件：%s" % name)
         files["team-dev-env/" + name] = member_bytes(ROOT / "dev-kit" / name)
-    if not {"开始配置.command", "卸载环境.command"}.issubset(members):
-        raise UserError("白名单缺少配置或卸载成员入口。")
+    if ".support/scripts/run-tool.sh" not in members:
+        raise UserError("白名单缺少统一成员入口。")
+    if {"开始配置.command", "卸载环境.command", ".support/menu.sh", "使用说明.txt"}.intersection(members):
+        raise UserError("白名单包含已退场入口或文档。")
     files.update(cleanup_members())
     files.update(tui_members())
     files["team-dev-env/.support/scripts/prepare-resources.sh"] = member_bytes(ROOT / "tools/prepare-resources.sh")
@@ -399,38 +395,26 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
         raise UserError("发布资源需要清单：%s" % catalog)
     files["team-dev-env/.support/config/resources.tsv"] = (
         HEADER + "\n" + "".join(item.line() + "\n" for item in resources)).encode("utf-8")
-    template = member_bytes(ROOT / "tools/start.command.in").replace(b"@SERVER_ADDR@", server.encode("ascii"))
+    template = member_bytes(ROOT / "tools/devtool-helper.sh.in").replace(b"@SERVER_ADDR@", server.encode("ascii"))
     template = template.replace(b"@SERVER_SCHEME@", scheme.encode("ascii"))
-    launchers = {}
-    for filename, entry_name, label in (("start.command", "开始配置.command", "配置"),
-                                        ("uninstall.command", "卸载环境.command", "卸载")):
-        content = template.replace(b"@ENTRY_NAME@", entry_name.encode("utf-8"))
-        launchers[filename] = (entry_name, content.replace(b"@ENTRY_LABEL@", label.encode("utf-8")))
     check_path(output, directory=True)
-    for name in PUBLISHED:
+    for name in PUBLISHED + RETIRED:
         check_path(output / name)
     if args.with_resources:
         check_path(output / "resources", directory=True)
         for item in resources:
             target = output / "resources" / item.path
             check_path(target)
-            check_path(receipt_path(target))
             if target.exists() and sha256_file(target) != item.sha256:
                 raise UserError("资源发布目标内容冲突，原文件已保留：%s" % target)
-            if receipt_path(target).exists() and read_receipt(target) != item.sha256:
-                raise UserError("资源发布目标校验记录冲突：%s" % receipt_path(target))
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".package.", dir=str(output)) as temporary:
         staging = Path(temporary)
         (staging / "dev-env").mkdir()
-        for filename, (_, content) in launchers.items():
-            (staging / filename).write_bytes(content)
-            (staging / filename).chmod(0o755)
-        write_zip(staging / "start.zip", dict(launchers.values()))
-        write_zip(staging / "team-dev-env.zip", files)
+        (staging / "devtool-helper.sh").write_bytes(template)
+        (staging / "devtool-helper.sh").chmod(0o755)
         archive = staging / "dev-env/team-dev-env.tar.gz"
         write_tar(archive, files)
-        write_receipt(archive, sha256_file(archive))
         runtime_sources = {
             kind: json.loads(files["team-dev-env/.support/%s/manifest.json" % kind]
                              .decode("utf-8-sig"))["source_sha256"].lower()
@@ -439,6 +423,7 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
         release = make_release(staging, PUBLICATION_ARTIFACTS, runtime_sources, server, scheme)
         (staging / "release.json").write_text(
             json.dumps(release, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        read_release(staging, PUBLICATION_ARTIFACTS)
         additions = []
         if args.with_resources:
             for item in resources:
@@ -451,9 +436,6 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
                     if sha256_file(staged) != item.sha256:
                         raise UserError("复制期间资源内容发生变化：%s" % item.path)
                     additions.append((staged, target))
-                if not receipt_path(target).exists():
-                    receipt_path(staged).write_bytes((item.sha256 + "  " + target.name + "\n").encode("utf-8"))
-                    additions.append((receipt_path(staged), receipt_path(target)))
         for name in PUBLISHED:
             check_path(output / name)
         for source, target in additions:
@@ -466,8 +448,18 @@ def package(args, settings, forced_server=None, catalog_path=None, announce=True
             target = output / name
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(str(staging / name), str(target))
+    # Only retire the fixed ordinary files after the new publication verifies.
+    read_release(output, PUBLICATION_ARTIFACTS)
+    for name in RETIRED:
+        target = output / name
+        check_path(target)
+        if target.exists():
+            try:
+                target.unlink()
+            except OSError as error:
+                raise UserError("旧发布文件清理失败，请处理 %s 后重试：%s" % (target, error)) from error
     if announce:
-        print("已生成：%s\n静态服务根目录：%s\n待部署下载地址：%s://%s/start.zip" % (output, output, scheme, server))
+        print("已生成：%s\n静态服务根目录：%s\n待部署下载地址：%s://%s/devtool-helper.sh" % (output, output, scheme, server))
         print("打包不会启动服务器。Windows/macOS 可使用 server/manage.py serve。", flush=True)
         print("Go TUI 发布版本：%s" % release["version"], flush=True)
     return output
@@ -502,35 +494,78 @@ def option_path(cli, settings, key, default):
     return absolute(path if path.is_absolute() else ROOT / path)
 
 
+def publication_routes(directory, resources_dir=None, settings=None):
+    """Read this publication's embedded resource scope, never the live source catalog."""
+    settings = settings or {}
+    routes = {name: directory / name for name in PUBLISHED}
+    try:
+        with tarfile.open(str(directory / "dev-env/team-dev-env.tar.gz"), "r:gz") as archive:
+            members = [item for item in archive.getmembers()
+                       if item.name == "team-dev-env/.support/config/resources.tsv"]
+            if len(members) != 1 or not members[0].isfile() or members[0].size > 1024 * 1024:
+                raise UserError("工具包缺少有效资源清单。")
+            content = archive.extractfile(members[0]).read().decode("utf-8-sig")
+    except (tarfile.TarError, UnicodeError, OSError) as error:
+        raise UserError("工具包资源清单不可读取：%s" % error) from error
+    resources = parse_catalog(content, allow_empty=True)
+    deployed = directory / "resources"
+    storage = (option_path(resources_dir, settings, "resources_dir", ROOT / "resources")
+               if resources_dir is not None or not deployed.exists() else deployed)
+    check_path(storage, directory=True)
+    for item in resources:
+        if item.sha256 == "-":
+            raise UserError("发布资源必须含固定摘要：%s" % item.id)
+        verify_resource(item, storage)
+        routes["resources/" + item.path] = storage / item.path
+    return routes
+
+
 class DownloadHandler(http.server.SimpleHTTPRequestHandler):
+    def requested_name(self):
+        decoded = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+        if not decoded.startswith("/") or decoded.startswith("//"):
+            raise UserError("路径无效")
+        return relative_path(decoded[1:], "下载路径")
+
     def end_headers(self):
-        requested = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).lstrip("/")
+        try:
+            requested = self.requested_name()
+        except (UserError, ValueError):
+            requested = None
         if requested in PUBLISHED:
             self.send_header("Cache-Control", "no-store, max-age=0")
             self.send_header("Pragma", "no-cache")
+            if requested == "devtool-helper.sh":
+                self.send_header("Content-Disposition", 'attachment; filename="devtool-helper.sh"')
         super().end_headers()
+
+    def translate_path(self, path):
+        name = self.requested_name()
+        routes = getattr(self.server, "download_routes", None)
+        if routes is None:
+            routes = {item: Path(self.directory) / item for item in PUBLISHED}
+        return str(routes[name])
+
+    def list_directory(self, path):
+        self.send_error(404, "Not found")
+        return None
 
     def send_head(self):
         try:
-            decoded = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
-            if "\\" in decoded or "\x00" in decoded or ".." in decoded.split("/"):
-                raise UserError("路径无效")
-            target = Path(self.translate_path(self.path))
-            relative = target.relative_to(absolute(self.directory))
-            if str(relative) != ".":
-                relative_path(relative.as_posix(), "下载路径")
-            if relative.as_posix() in PUBLISHED:
-                # A cached pre-TUI startup ZIP must never be reused after an update.
+            name = self.requested_name()
+            routes = getattr(self.server, "download_routes", None)
+            if routes is None:
+                routes = {item: Path(self.directory) / item for item in PUBLISHED}
+            if name not in routes:
+                raise UserError("下载范围外")
+            target = routes[name]
+            check_path(target, required=True)
+            if name in PUBLISHED:
                 for header in ("If-Modified-Since", "If-None-Match"):
                     if header in self.headers:
                         del self.headers[header]
-            check_path(target, directory=target.is_dir())
-            if target.is_dir():
-                # SimpleHTTPRequestHandler resolves these after the requested directory.
-                for name in ("index.html", "index.htm"):
-                    check_path(target / name)
         except (UserError, ValueError, OSError):
-            self.send_error(403, "Forbidden path")
+            self.send_error(404, "Not found")
             return None
         return super().send_head()
 
@@ -631,12 +666,14 @@ def start(args, settings):
                                    id=None, verify=False, dry_run=False), {})
         print("[2/3] 正在生成启动包和发布目录…", flush=True)
         package(argparse.Namespace(output=str(directory), resources_dir=str(storage), server=address,
-                                   scheme="http", with_resources=True), {}, forced_server=address,
+                                   scheme="http", with_resources=getattr(args, "with_resources", False)), {}, forced_server=address,
                 catalog_path=catalog, announce=False)
         release = verified_publication(directory)
-        print("[3/3] 下载服务已就绪\nGo TUI 发布版本：%s\n成员下载链接：http://%s/start.zip?v=%s\n"
+        server.download_routes = publication_routes(directory, str(storage))
+        print("[3/3] 下载服务已就绪\nGo TUI 发布版本：%s\n成员下载链接：http://%s/devtool-helper.sh?v=%s\n"
               "发布信息：http://%s/release.json" % (release["version"], address,
                                                   release["version"], address), flush=True)
+        print("运行方式：bash devtool-helper.sh", flush=True)
         print("监听：0.0.0.0:%s；托管目录：%s\n保持窗口运行，Ctrl+C 停止。" % (port, directory), flush=True)
         try:
             server.serve_forever()
@@ -656,6 +693,9 @@ def prepare_runtimes(args, settings):
 
 def verified_publication(directory):
     check_path(directory, directory=True, required=True)
+    for name in RETIRED:
+        if os.path.lexists(str(directory / name)):
+            raise UserError("服务目录仍有已退场文件 %s，请重新 package。" % name)
     for name in PUBLISHED:
         if not (directory / name).is_file():
             raise UserError("服务目录缺少新版发布文件 %s，请使用 start 或 package 重新打包：%s" %
@@ -665,6 +705,12 @@ def verified_publication(directory):
 
 
 def serve(args, settings, preview=False):
+    if preview and args.output is None:
+        # Never let the formal publication output/config choose a preview directory.
+        with tempfile.TemporaryDirectory(prefix="team-dev-env-preview-") as temporary:
+            copied = argparse.Namespace(**vars(args))
+            copied.output = str(Path(temporary).resolve())
+            return serve(copied, settings, preview=True)
     directory = (option_path(args.output, settings, "output", ROOT / "dist/server") if preview
                  else option_path(args.directory, settings, "directory",
                                   option_path(None, settings, "output", ROOT / "dist/server")))
@@ -675,6 +721,7 @@ def serve(args, settings, preview=False):
     port = checked_port(port)
     if not preview:
         verified_publication(directory)
+        routes = publication_routes(directory, getattr(args, "resources_dir", None), settings)
     handler = functools.partial(DownloadHandler, directory=str(directory))
     try:
         server = DownloadServer((bind, port), handler)
@@ -683,11 +730,12 @@ def serve(args, settings, preview=False):
     with server:
         if preview:
             prepare_runtimes(args, settings)
-            args.with_resources = True
             package(args, settings, forced_server="127.0.0.1:%s" % port)
+            routes = publication_routes(directory, getattr(args, "resources_dir", None), settings)
+        server.download_routes = routes
         release = verified_publication(directory)
-        print("%s：http://127.0.0.1:%s/start.zip" % ("本机预览已就绪" if preview else "下载服务已就绪", port), flush=True)
-        print("Go TUI 发布版本：%s；发布信息：/release.json" % release["version"], flush=True)
+        print("%s：http://127.0.0.1:%s/devtool-helper.sh" % ("本机预览已就绪" if preview else "下载服务已就绪", port), flush=True)
+        print("运行方式：bash devtool-helper.sh\nGo TUI 发布版本：%s；发布信息：/release.json" % release["version"], flush=True)
         print("监听：%s:%s；托管目录：%s\n客户端安装脚本仅适用于 macOS。保持窗口运行，Ctrl+C 停止。" % (bind, port, directory), flush=True)
         try:
             server.serve_forever()
@@ -725,6 +773,7 @@ def make_parser():
     startup.add_argument("--port", type=int, help="下载服务端口，默认 8080")
     startup.add_argument("--output", help="发布目录，默认 dist/server")
     startup.add_argument("--resources-dir", help="本地资源库，默认 resources")
+    startup.add_argument("--with-resources", action="store_true", help="显式复制资源供外部静态服务器部署")
     startup.add_argument("--catalog", help="资源清单，默认优先使用资源库内的 catalog.tsv")
     preparation = commands.add_parser("prepare", help="下载/校验固定清单资源，不执行安装程序")
     preparation.add_argument("--output")
@@ -745,12 +794,13 @@ def make_parser():
     packaging.add_argument("--scheme", choices=("http", "https"))
     packaging.add_argument("--with-resources", action="store_true")
     preview.add_argument("--port", type=int)
-    preview.set_defaults(server=None, scheme=None, with_resources=True)
+    preview.set_defaults(server=None, scheme=None, with_resources=False)
     for command in (startup, preview, runtimes):
         command.add_argument("--runtime-base-url", help="运行文件内网镜像目录；默认使用源码锁定的 GitHub Release")
     runtimes.add_argument("--offline", action="store_true", help="仅校验已有运行文件，不联网或写入")
     serving = commands.add_parser("serve", help="只读托管已打包目录，不修改发布文件")
     serving.add_argument("--directory")
+    serving.add_argument("--resources-dir")
     serving.add_argument("--bind", choices=("127.0.0.1", "0.0.0.0"))
     serving.add_argument("--port", type=int)
     return parser

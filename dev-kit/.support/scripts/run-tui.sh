@@ -3,10 +3,11 @@
 set -uo pipefail
 fail() {
     printf '界面未启动：%s\n' "$*" >&2
-    printf '%s\n' '请重新下载完整工具包，并保留同目录的 .support；也可使用启动器的 --plain 模式。' >&2
+    printf '%s\n' '请重新运行 devtool-helper.sh 获取完整工具，并使用交互终端。' >&2
     exit 1
 }
 page=home
+options=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --page)
@@ -14,10 +15,13 @@ while [ "$#" -gt 0 ]; do
             page="$2"
             shift 2
             ;;
-        *) printf '%s\n' '用法：run-tui.sh --page home|frontend|cleanup' >&2; exit 2 ;;
+        --components|--gradle-version|--node-version)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { printf '参数缺少值：%s\n' "$1" >&2; exit 2; }
+            options+=("$1" "$2"); shift 2 ;;
+        *) printf '%s\n' '用法：run-tui.sh --page home|install|cleanup [组件与版本选项]' >&2; exit 2 ;;
     esac
 done
-case "$page" in home|frontend|cleanup) ;; *) printf '%s\n' '不支持的界面页面。' >&2; exit 2 ;; esac
+case "$page" in home|install|cleanup) ;; *) printf '%s\n' '不支持的界面页面。' >&2; exit 2 ;; esac
 [ "$(/usr/bin/uname -s)" = Darwin ] || fail '本工具面向 macOS。'
 case "$(/usr/bin/uname -m)" in
     arm64) arch=arm64 ;;
@@ -39,4 +43,4 @@ actual="$(/usr/bin/shasum -a 256 "$binary")" || fail '无法校验界面程序�
 actual="${actual%% *}"
 expected="$(printf '%s' "$expected" | /usr/bin/tr 'A-F' 'a-f')"
 [ "$actual" = "$expected" ] || fail '界面程序校验失败。'
-exec "$binary" --support-dir "$support_dir" --page "$page"
+exec "$binary" --support-dir "$support_dir" --page "$page" ${options[@]+"${options[@]}"}

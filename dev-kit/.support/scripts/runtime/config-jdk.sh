@@ -3,7 +3,13 @@ set -euo pipefail
 source "$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 source "$REPO_ROOT/scripts/lib/environment.sh"
 source "$REPO_ROOT/scripts/lib/managed-env.sh"
-parse_args "$@"
+CHECK_ONLY=false
+arguments=()
+for argument in "$@"; do
+    if [ "$argument" = --check-only ]; then CHECK_ONLY=true
+    else arguments+=("$argument"); fi
+done
+parse_args ${arguments[@]+"${arguments[@]}"}
 if "$SHOW_HELP"; then
     log '用法：bash scripts/runtime/config-jdk.sh [--dry-run]'
     log '安装/复用 macOS JDK 8。配置见 config/env.sh，环境变量可覆盖。'
@@ -31,6 +37,20 @@ if "$DRY_RUN"; then
     exit 0
 fi
 
+managed_install_target_check "$JDK_INSTALL_DIR" jdk
+if [ -e "$JDK_INSTALL_DIR" ]; then
+    existing_home="$(find_java_home "$JDK_INSTALL_DIR" 2>/dev/null)" || die '现有安装目录不是完整 JDK，原目录已保留'
+    is_jdk8 "$existing_home" || die '现有安装目录不是可用 JDK 8，原目录已保留'
+    [ -d "$existing_home/jre" ] || die '现有 JDK 8 缺少实际 jre 目录，原目录已保留'
+fi
+probe_jdk8
+if [ -n "$PROBE_JDK_HOME" ]; then
+    [ -d "$PROBE_JDK_HOME/jre" ] || die '复用 JDK 8 缺少实际 jre 目录'
+else
+    for tool in curl tar shasum mktemp; do require_command "$tool"; done
+fi
+if "$CHECK_ONLY"; then log 'JDK 8 预检通过，未执行安装。'; exit 0; fi
+
 temp_dir=''
 env_temp=''
 cleanup() {
@@ -54,9 +74,7 @@ else
     mkdir -p "$(dirname "$JDK_INSTALL_DIR")"
     temp_dir="$(mktemp -d "$(dirname "$JDK_INSTALL_DIR")/.jdk-install.XXXXXX")"
     log "下载 JDK：$jdk_url"
-    if ! curl --fail --location --show-error --silent --connect-timeout 10 --max-time 600 \
-        --retry 2 --proto '=http,https' --proto-redir '=http,https' \
-        --output "$temp_dir/jdk.tar.gz" "$jdk_url"; then
+    if ! team_download "$temp_dir/jdk.tar.gz" "$jdk_url" --connect-timeout 10 --max-time 600 --retry 2; then
         die "无法获取 JDK 安装包。请确认已连接公司网络或 VPN，并联系维护者检查：$jdk_url"
     fi
     if [ -n "$JDK_SHA256" ]; then

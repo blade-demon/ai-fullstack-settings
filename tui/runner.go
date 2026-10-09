@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,6 +18,8 @@ import (
 type Event struct {
 	Kind, ID, Title, Status, Line string
 	Code                          int
+	Total, Completed, Attempt     int64
+	Resource                      string
 }
 
 type Runner struct{ SupportDir, LogRoot string }
@@ -31,30 +34,31 @@ type Job struct {
 	cancelled, finished bool
 	cancelDone          chan struct{}
 	cancelError         error
+	stopEvents          chan struct{}
 }
 
 func (j *Job) Done() <-chan struct{} { return j.done }
 func (j *Job) Wait()                 { <-j.done }
 
 func (j *Job) emit(event Event) {
+	// Reserve one slot for done so cancellation can finish after the UI stops reading.
+	if event.Kind == "done" {
+		j.events <- event
+		return
+	}
+	if len(j.events) >= cap(j.events)-1 && (event.Kind == "log" || event.Kind == "progress") {
+		return
+	}
+	for len(j.events) >= cap(j.events)-1 {
+		select {
+		case <-j.stopEvents:
+			return
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	select {
 	case j.events <- event:
-		return
-	default:
-	}
-	if event.Kind == "log" {
-		return
-	} // 完整输出始终保存在磁盘；界面队列有界。
-	for {
-		select {
-		case j.events <- event:
-			return
-		default:
-		}
-		select {
-		case <-j.events:
-		default:
-		}
+	case <-j.stopEvents:
 	}
 }
 
@@ -65,6 +69,7 @@ func (j *Job) Cancel() {
 		return
 	}
 	j.cancelled = true
+	close(j.stopEvents)
 	j.cancelDone = make(chan struct{})
 	pid := j.cmd.Process.Pid
 	signalProcessGroup(pid, syscall.SIGINT)
@@ -157,8 +162,8 @@ func (r *Runner) Start(action Action) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	events := make(chan Event, 256)
-	job := &Job{Events: events, events: events, LogPath: file.Name(), cmd: cmd, done: make(chan struct{})}
+	events := make(chan Event, 257)
+	job := &Job{Events: events, events: events, LogPath: file.Name(), cmd: cmd, done: make(chan struct{}), stopEvents: make(chan struct{})}
 	output := &eventWriter{file: file, emit: job.emit}
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -267,6 +272,32 @@ func (w *eventWriter) flush() {
 }
 func (w *eventWriter) publish() {
 	line := string(w.line)
+	parts := strings.Split(line, "\t")
+	if len(parts) == 5 && parts[0] == "@@TEAM_TUI" {
+		if parts[1] == "plan" && parts[2] == "components" {
+			total, err := strconv.ParseInt(parts[3], 10, 64)
+			if err == nil && total > 0 && total <= 6 {
+				w.emit(Event{Kind: "plan", Total: total, Title: safeLogLine(parts[4])})
+				return
+			}
+		}
+		if parts[1] == "component" && parts[2] != "" {
+			switch parts[3] {
+			case "running", "succeeded", "failed", "skipped", "cancelled", "pending":
+				w.emit(Event{Kind: "component", ID: safeLogLine(parts[2]), Status: parts[3], Title: safeLogLine(parts[4])})
+				return
+			}
+		}
+	}
+	if len(parts) == 7 && parts[0] == "@@TEAM_TUI" && parts[1] == "progress" {
+		attempt, e1 := strconv.ParseInt(parts[4], 10, 64)
+		completed, e2 := strconv.ParseInt(parts[5], 10, 64)
+		total, e3 := strconv.ParseInt(parts[6], 10, 64)
+		if e1 == nil && e2 == nil && e3 == nil && attempt > 0 && completed >= 0 && total >= 0 && (total == 0 || completed <= total) {
+			w.emit(Event{Kind: "progress", ID: safeLogLine(parts[2]), Resource: safeLogLine(parts[3]), Attempt: attempt, Completed: completed, Total: total})
+			return
+		}
+	}
 	fields := strings.SplitN(line, "\t", 5)
 	if len(fields) == 5 && fields[0] == "@@TEAM_TUI" && fields[1] == "stage" && fields[2] != "" {
 		switch fields[3] {

@@ -71,6 +71,26 @@ class GradleVersionTests(unittest.TestCase):
             binary.chmod(0o755)
         return home
 
+    def test_session_switch_is_independent_from_persistent_default(self):
+        first = self.seed_version('4.5.1')
+        second = self.seed_version('6.8')
+        self.assert_ok(self.run_script(extra={'GRADLE_VERSION': '4.5.1'}))
+        self.assert_ok(self.run_script(extra={'GRADLE_VERSION': '6.8'}))
+        command = r'''source "$1"; gradle_use 4.5.1 || exit; printf '%s\n' "$GRADLE_HOME"; cat "$GRADLE_DEFAULT_FILE"; gradle_use 4.5.1 --default >/dev/null || exit; gradle_use 6.8 >/dev/null || exit; gradle_use 4.5.1 >/dev/null || exit; printf '%s\n' "$PATH"; cat "$GRADLE_DEFAULT_FILE"'''
+        for shell in ('/bin/bash', '/bin/zsh'):
+            with self.subTest(shell=shell):
+                self.assert_ok(self.run_script(extra={'GRADLE_VERSION': '6.8'}))
+                result = subprocess.run([shell, '-f', '-c', command, 'switch', str(self.env_file)],
+                                        env=self.env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                lines = result.stdout.splitlines()
+                self.assertIn(str(first), lines)
+                self.assertIn('6.8', lines)
+                self.assertEqual(lines[-1], '4.5.1')
+                path = lines[-2].split(':')
+                self.assertEqual(path.count(str(first / 'bin')), 1)
+                self.assertNotIn(str(second / 'bin'), path)
+
     def test_gradle68_downloads_pinned_distribution_and_builds_with_jdk8(self):
         result = self.run_script("--project", str(self.project),
                                  extra={**self.archive_for("6.8"), "GRADLE_VERSION": "6.8"})

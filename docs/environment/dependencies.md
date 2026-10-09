@@ -1,6 +1,8 @@
 # 项目依赖
 
-Lombok、Spring、MySQL Connector/J 和 MyBatis 等依赖由真实业务项目的 `build.gradle` 及团队依赖仓库管理，不属于系统安装包。本仓库脚本只配置 JDK 与 Wrapper 下载地址，不修改业务依赖。
+Lombok、Spring、MySQL Connector/J 和 MyBatis 等依赖由真实业务项目的 `build.gradle` 及团队依赖仓库管理，不属于系统安装包。成员组件安装配置 SDK/工具和六个 IDEA 插件，维护者底层脚本还可配置 Wrapper 下载地址、检查并构建明确指定的项目；这些操作不修改业务依赖。IDEA Lombok 插件与项目 Lombok 库分别管理。
+
+六组件全量预检还要求所选资源、可用 Git（Oh My Zsh）、macOS 13+（iTerm2）及 Apple Silicon 的 Rosetta（Node 10/14）等前提。缺失或冲突时保留选择并说明原因，不执行或静默跳过所选组件。全量顺序为 JDK → Gradle → nvm/Node → iTerm2 → Oh My Zsh → IDEA/插件；Gradle 补入 JDK，IDEA 不隐式安装 JDK。
 
 导入项目前请确认：
 

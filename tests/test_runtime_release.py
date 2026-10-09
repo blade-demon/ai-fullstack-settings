@@ -66,7 +66,7 @@ class RuntimeReleaseTests(unittest.TestCase):
 
     def seed_previous(self):
         self.output.mkdir(parents=True)
-        for name in (ARCHIVE, ARCHIVE + ".sha256", "release-notes.md"):
+        for name in (ARCHIVE,):
             (self.output / name).write_bytes(("previous " + name).encode())
         self.lock.write_bytes(b"previous lock\n")
 
@@ -116,9 +116,8 @@ class RuntimeReleaseTests(unittest.TestCase):
             payload = (self.root / name).read_bytes()
             self.assertEqual(result["files"][name], {
                 "sha256": hashlib.sha256(payload).hexdigest(), "size": len(payload)})
-        self.assertEqual((self.output / (ARCHIVE + ".sha256")).read_bytes(),
-                         (digest + "  " + ARCHIVE + "\n").encode())
-        notes = (self.output / "release-notes.md").read_text(encoding="utf-8")
+        self.assertEqual({p.name for p in self.output.iterdir()}, {ARCHIVE})
+        notes = self.module.release_notes(result).decode("utf-8")
         for value in (release, digest, "Go", "Windows", *expected_sources.values(), *MEMBERS):
             self.assertIn(value, notes)
 
@@ -209,7 +208,7 @@ class RuntimeReleaseTests(unittest.TestCase):
     def test_write_failure_rolls_back_all_replaced_files_and_modes(self):
         self.seed_previous()
         before = self.snapshot()
-        for fail_at in (2, 3, 4):
+        for fail_at in (1, 2):
             with self.subTest(fail_at=fail_at):
                 replace, calls = self.module.os.replace, 0
 
@@ -229,15 +228,14 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.seed_previous()
         previous = {name: self.snapshot()[name] for name in (
             "dist/runtime-release/" + ARCHIVE,
-            "dist/runtime-release/" + ARCHIVE + ".sha256",
-            "dist/runtime-release/release-notes.md", "resources/runtime-lock.json")}
+            "resources/runtime-lock.json")}
         replace, calls = self.module.os.replace, 0
 
         def edit_after_lock(source, target):
             nonlocal calls
             calls += 1
             result = replace(source, target)
-            if calls == 4:
+            if calls == 2:
                 (self.root / "tools/uninstall_java_gradle.py").write_bytes(b"# concurrent cleanup edit\n")
             return result
 

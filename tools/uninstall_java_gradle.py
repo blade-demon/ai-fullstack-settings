@@ -4,6 +4,7 @@ import argparse
 from dataclasses import dataclass, field
 import datetime
 import errno
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,35 @@ REFERENCE = re.compile(r"\b" + VARIABLE + r"\b")
 ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?(" + VARIABLE + r")=(.*)$")
 PATH_ASSIGNMENT = re.compile(r"^(\s*(?:export\s+)?PATH=)(.*)$")
 OWNERSHIP_FILE = ".team-java-env-install.json"
+FRONTEND_OWNERSHIP_FILE = ".team-frontend-env-install.json"
+COMPONENTS = ("jdk", "gradle", "nvm", "idea", "iterm2", "oh-my-zsh")
+
+
+def parse_components(value):
+    values = value.split(",") if isinstance(value, str) else list(value)
+    if values == ["all"]:
+        return set(COMPONENTS)
+    if not values or any(item not in COMPONENTS for item in values):
+        raise CleanupError("--components 须为非空组件列表，或单独的 all。")
+    return set(values)
+
+
+def instance_id(component, path):
+    evidence = [str(path)]
+    if present(path):
+        evidence.append(str(identity(path)[:2]))
+    # ID 随替换对象或来源/应用标识变化；普通配置写入不改变已选实例 ID。
+    for name in (OWNERSHIP_FILE, FRONTEND_OWNERSHIP_FILE, "Contents/Info.plist", "Contents/Resources/product-info.json"):
+        file = path / name
+        if file.is_file() and not file.is_symlink():
+            evidence.append(name + ":" + hashlib.sha256(file.read_bytes()).hexdigest())
+    if component == "idea":
+        executable = path / "Contents/MacOS/idea"
+        if present(executable):
+            evidence.append("executable:" + str(identity(executable)))
+            if executable.is_file() and not executable.is_symlink():
+                evidence.append("executable-sha256:" + hashlib.sha256(executable.read_bytes()).hexdigest())
+    return component + ":" + hashlib.sha256("\0".join(evidence).encode("utf-8")).hexdigest()[:16]
 IDEA_PRODUCT = re.compile(r"(?:IdeaIC|IntelliJIdea|IntelliJ)[0-9]{1,4}(?:\.[0-9]+)*(?:[-.]?(?:EAP|Beta|RC)[0-9]*)?$")
 IDEA_IDS = {"com.jetbrains.intellij", "com.jetbrains.intellij.ce"}
 LEGACY_JDK_PATH = '''_java_dev_prefer_jdk() {
@@ -57,6 +87,17 @@ def identity(path):
 
 def present(path):
     return path.exists() or path.is_symlink()
+
+
+def tree_identity(root):
+    """不跟随链接，记录整个待删前端树，阻止预览后新增的嵌套用户文件。"""
+    result = []
+    for directory, children, files in os.walk(str(root), followlinks=False):
+        base = Path(directory)
+        for name in sorted(children + files):
+            path = base / name
+            result.append((path.relative_to(root).as_posix(), identity(path)))
+    return tuple(sorted(result))
 
 
 def check_parents(path):
@@ -139,6 +180,7 @@ class Removal:
     ownership: tuple = ()
     content: bytes = None
     app_files: tuple = ()
+    tree: tuple = ()
 
 
 @dataclass
@@ -165,12 +207,22 @@ class Plan:
     notes: list = field(default_factory=list)
     checks: list = field(default_factory=list)
     empty_dirs: list = field(default_factory=list)
+    instances: list = field(default_factory=list)
+    components: list = field(default_factory=list)
+
+    def as_json(self):
+        return dict(schema=1, components=self.components, instances=self.instances,
+                    removals=[dict(path=str(item.path), label=item.kind) for item in self.removals],
+                    edits=[dict(path=str(item.path), reason="清理所选实例配置") for item in self.edits],
+                    notes=self.notes, blockers=self.blockers)
 
     @staticmethod
     def verify_removal(item):
+        if item.tree and tree_identity(item.path) != item.tree:
+            raise CleanupError("待删目录树在预览后发生变化，已保留：{}".format(item.path))
         for path, stamp, content in item.app_files:
             if not path.is_file() or identity(path) != stamp or (content is not None and path.read_bytes() != content):
-                raise CleanupError("IDEA 应用标识或可执行文件在预览后发生变化，已保留：{}".format(item.path))
+                raise CleanupError("应用标识或可执行文件在预览后发生变化，已保留：{}".format(item.path))
         if item.content is not None:
             if item.path.is_symlink() or not item.path.is_file() or item.path.read_bytes() != item.content:
                 raise CleanupError("待清理的旧配置备份已变化，停止清理：{}".format(item.path))
@@ -190,7 +242,8 @@ class Plan:
         return True
 
     def describe(self):
-        lines = ["本工具安装的 JDK / Gradle 及所选 IDEA 清理计划（macOS，无备份）"]
+        lines = ["所选组件清理计划（macOS，无备份）：" + ",".join(self.components)]
+        lines.extend("[{}] {}：{}（{}）".format("可删除" if item["selected"] else "保留（未选实例）" if item["removable"] else "保留", item["label"], item["path"], item["reason"]) for item in self.instances)
         for item in self.removals:
             action = "删除链接" if item.path.is_symlink() else "删除 " + item.kind
             lines.append("[{}{}] {}".format(action, "，需 --include-system" if item.system and not self.include_system else "", item.path))
@@ -301,7 +354,8 @@ class Cleaner:
                  environ=None, include_system=False, remove_caches=False,
                  extra_jdks=(), extra_gradles=(), extra_profiles=(), include_idea=False,
                  extra_idea_apps=(), extra_idea_plugins=(), system_apps=Path("/Applications"),
-                 process_reader=None, include_idea_apps=False, quit_requester=None, quit_timeout=30):
+                 process_reader=None, include_idea_apps=False, quit_requester=None, quit_timeout=30,
+                 components=None, instances=None):
         self.home = Path(home).resolve()
         if self.home == Path("/"):
             raise CleanupError("HOME 不能是根目录。")
@@ -312,9 +366,19 @@ class Cleaner:
         self.extra_gradles = extra_gradles
         self.extra_profiles = extra_profiles
         self.plan = Plan(self.home, include_system)
+        self.legacy_scope = components is None
+        self.components = parse_components(components) if components is not None else {"jdk", "gradle"}
+        if components is None and (include_idea or include_idea_apps):
+            self.components.add("idea")
+        self.plan.components = [value for value in COMPONENTS if value in self.components]
+        self.instance_selection = None if instances is None else set(instances.split(",") if isinstance(instances, str) else instances)
+        if self.instance_selection is not None and (not self.instance_selection or "" in self.instance_selection):
+            raise CleanupError("--instances 必须提供非空实例白名单。")
+        self.known_instances = {}
+        self.idea_app_catalog = {}
         self.bin_paths = set()
-        self.include_idea = include_idea
-        self.include_idea_apps = include_idea_apps or include_idea
+        self.include_idea = include_idea and "idea" in self.components
+        self.include_idea_apps = "idea" in self.components and (include_idea_apps or include_idea or not self.legacy_scope)
         self.extra_idea_apps = extra_idea_apps
         self.extra_idea_plugins = extra_idea_plugins
         self.system_apps = Path(system_apps)
@@ -325,6 +389,18 @@ class Cleaner:
             raise CleanupError("自定义 IDEA 应用须同时使用 --include-idea-apps 或 --include-idea。")
         if extra_idea_plugins and not include_idea:
             raise CleanupError("自定义 IDEA 插件目录须同时使用 --include-idea。")
+
+    def candidate(self, component, path, label, removable, reason):
+        key = instance_id(component, path)
+        item = dict(id=key, component=component, path=str(path), label=label,
+                    removable=bool(removable), reason=reason)
+        self.known_instances[key] = item
+        selected = self.instance_selection is None or key in self.instance_selection
+        item["selected"] = selected and bool(removable)
+        return item["selected"]
+
+    def selected_path(self, path):
+        return any(item.path == path or item.path in path.parents for item in self.plan.removals)
 
     def path(self, value):
         value = str(value).replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))
@@ -345,6 +421,8 @@ class Cleaner:
         check_parents(path)
 
     def add_sdk(self, path, kind, system=False, explicit=False):
+        if kind.lower() not in self.components:
+            return False
         path = self.path(path)
         if any(item.kind == "IDEA 应用" and item.path in path.parents for item in self.plan.removals):
             self.bin_paths.add(str(path / "bin"))
@@ -352,6 +430,7 @@ class Cleaner:
         root = self.owned_sdk_root(path, kind)
         if root is None:
             if present(path):
+                self.candidate(kind.lower(), path, kind, False, "非本工具安装或来源未确认")
                 self.plan.notes.append("保留非本工具安装或来源未确认的 {}：{}".format(kind, path))
             return False
         path = root
@@ -371,6 +450,8 @@ class Cleaner:
                 homes = []
                 if not is_gradle(path):
                     raise CleanupError("无法确认 Gradle 安装的目录，已保留：{}".format(path))
+            if not self.candidate(kind.lower(), path, kind, True, "有效来源标记；仅处理所选实例"):
+                return False
             if not any(item.path == path for item in self.plan.removals):
                 marker = path / OWNERSHIP_FILE
                 self.plan.removals.append(Removal(path, kind, identity(path), system,
@@ -417,6 +498,8 @@ class Cleaner:
             return False
 
     def container(self, path, kind, pattern="*", system=False):
+        if kind.lower() not in self.components:
+            return
         if not present(path):
             return
         try:
@@ -432,6 +515,8 @@ class Cleaner:
             self.plan.blockers.append(str(error))
 
     def discover_assignment(self, name, value, path):
+        if ("gradle" if name.startswith("GRADLE") else "jdk") not in self.components:
+            return False
         # 不求值命令替换，只解析独立赋值中的绝对路径或 HOME 引用。
         try:
             values = shlex.split(value, comments=True)
@@ -484,11 +569,14 @@ class Cleaner:
         return "".join(lines)
 
     def clean_config(self, path):
+        if not self.legacy_scope:
+            return self.clean_scoped_config(path)
         check_parents(path)
         if path.is_symlink() or not path.is_file():
             raise CleanupError("配置不是普通文件，已保留：{}".format(path))
         before = path.read_bytes()
-        text = before.decode("utf-8")
+        existing_edit = next((edit for edit in self.plan.edits if edit.path == path), None)
+        text = (existing_edit.after if existing_edit else before).decode("utf-8")
         result = []
         managed = False
         complex_context = False
@@ -628,8 +716,554 @@ class Cleaner:
             else:
                 self.plan.edits.append(Edit(path, before, after, identity(path)))
 
+    def record_edit(self, path, before, after, dedicated=False):
+        if before == after:
+            return
+        self.plan.edits = [item for item in self.plan.edits if item.path != path]
+        if dedicated and not after.strip():
+            if not any(item.path == path for item in self.plan.removals):
+                self.plan.removals.append(Removal(path, "所选组件专属环境配置", identity(path), content=before))
+        else:
+            self.plan.edits.append(Edit(path, before, after, identity(path)))
+
+    def clean_scoped_config(self, path):
+        """只静态改写选中对象的独立赋值和 PATH；保留其他组件与函数。"""
+        check_parents(path)
+        if path.is_symlink() or not path.is_file():
+            raise CleanupError("配置不是普通文件，已保留：{}".format(path))
+        before = path.read_bytes()
+        existing_edit = next((edit for edit in self.plan.edits if edit.path == path), None)
+        text = (existing_edit.after if existing_edit else before).decode("utf-8")
+        lines = text.splitlines(keepends=True)
+        # 先收敛实际路径，保证 PATH 出现在赋值之前也能准确处理。
+        selected_variables = set()
+        kept_variables = set()
+        for line in lines:
+            assignment = ASSIGNMENT.fullmatch(line.rstrip("\r\n"))
+            if not assignment:
+                continue
+            name, value = assignment.groups()
+            component = "gradle" if name.startswith("GRADLE") else "jdk"
+            if component not in self.components:
+                kept_variables.add(name)
+                continue
+            if self.discover_assignment(name, value, path):
+                selected_variables.add(name)
+            else:
+                kept_variables.add(name)
+        # 如果同名变量还指向保留版本，不能清除它的 PATH 引用。
+        path_variables = selected_variables - kept_variables
+        gradle_module = self.path(self.environ.get("GRADLE_ENV_FILE", str(self.path(self.environ.get("ENV_FILE", str(self.home / ".config/java-dev/env.sh"))).parent / "gradle.sh")))
+        jdk_module = self.path(self.environ.get("JDK_ENV_FILE", str(gradle_module.parent / "jdk.sh")))
+        dedicated = path in {jdk_module, gradle_module}
+        # 最后一版移除时，只清理生成的切换函数与默认加载，保留用户设置。
+        mappings = [line for line in lines if re.match(r"^\s*(?:export\s+)?GRADLE_[0-9_]+_HOME=", line)]
+        kept_gradle = any(re.match(r"^\s*(?:export\s+)?GRADLE_[0-9_]+_HOME=", line) and
+                          ASSIGNMENT.match(line.rstrip("\r\n")).group(1) not in selected_variables for line in mappings)
+        if path == gradle_module and "gradle" in self.components and selected_variables and not kept_gradle:
+            if START in text and END in text:
+                text = self.strip_gradle_switch(text, path)
+                lines = text.splitlines(keepends=True)
+            elif "gradle_use()" in text:
+                self.plan.notes.append("Gradle 函数不在完整受管区块内，保留函数：{}".format(path))
+        result = []
+        managed = False
+        complex_context = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped == START:
+                if managed:
+                    raise CleanupError("受管区块嵌套：{}".format(path))
+                managed = True
+                result.append(line)
+                continue
+            if stripped == END:
+                if not managed:
+                    raise CleanupError("受管区块标记不完整：{}".format(path))
+                managed = False
+                result.append(line)
+                continue
+            assignment = ASSIGNMENT.fullmatch(line.rstrip("\r\n"))
+            if assignment and assignment.group(1) in selected_variables:
+                if self.discover_assignment(*assignment.groups(), path):
+                    if complex_context or re.search(r"[;&|]", line):
+                        raise CleanupError("所选组件配置包含复杂 Shell 逻辑，已保留：{}".format(path))
+                    continue
+            path_line = PATH_ASSIGNMENT.fullmatch(line.rstrip("\r\n"))
+            if path_line and (set(REFERENCE.findall(line)) & path_variables or any(binary in line for binary in self.bin_paths)):
+                prefix, value = path_line.groups()
+                quote = value[:1] if value[:1] in ("'", '"') else ""
+                if quote and value.endswith(quote):
+                    value = value[1:-1]
+                elif quote:
+                    raise CleanupError("PATH 配置无法安全拆分：{}".format(path))
+                if complex_context or re.search(r"[`()\\]|\$\(|[;&|]", value):
+                    raise CleanupError("PATH 包含复杂逻辑，已保留：{}".format(path))
+                entries = value.split(":")
+                kept = [entry for entry in entries if not (set(REFERENCE.findall(entry)) & path_variables) and
+                        entry.replace("${HOME}", str(self.home)).replace("$HOME", str(self.home)) not in self.bin_paths]
+                if kept:
+                    result.append(prefix + quote + ":".join(kept) + quote + ("\n" if line.endswith("\n") else ""))
+                continue
+            if stripped.startswith((". ", "source ", "[ ! -f ")):
+                for module in (jdk_module, gradle_module):
+                    expanded = line.replace("${HOME}", str(self.home)).replace("$HOME", str(self.home))
+                    if str(module) in expanded and self.selected_path(module):
+                        if complex_context:
+                            raise CleanupError("环境加载位于复杂 Shell 逻辑，已保留：{}".format(path))
+                        break
+                else:
+                    result.append(line)
+                    continue
+                continue
+            if re.search(r"(^|\s)(if|for|while|case|function|select)\b|\(\)\s*\{|<<|\\\s*$", line):
+                complex_context = True
+            result.append(line)
+        if managed:
+            raise CleanupError("受管区块没有结束标记：{}".format(path))
+        after = "".join(result)
+        after = re.sub(r"(?m)^" + re.escape(START) + r"\n\s*" + re.escape(END) + r"\n?", "", after)
+        self.record_edit(path, before, after.encode("utf-8"), dedicated)
+
+    @staticmethod
+    def strip_gradle_switch(text, path):
+        lines = text.splitlines(keepends=True)
+        result = []
+        index = 0
+        managed = False
+        while index < len(lines):
+            stripped = lines[index].strip()
+            if stripped == START:
+                managed = True
+            elif stripped == END:
+                managed = False
+            if managed and re.match(r"^\s*gradle_use\(\)\s*\{", lines[index]):
+                # 生成函数的最终大括号独立顶格；不对任意 Shell 代码做求值。
+                end = next((position for position in range(index + 1, len(lines)) if lines[position].rstrip("\r\n") == "}"), None)
+                if end is None or any(line.strip() == END for line in lines[index + 1:end]):
+                    raise CleanupError("Gradle 受管函数结构不完整，已保留：{}".format(path))
+                index = end + 1
+                continue
+            if managed and stripped == 'if [ -f "$GRADLE_DEFAULT_FILE" ] && [ ! -L "$GRADLE_DEFAULT_FILE" ]; then':
+                end = next((position for position in range(index + 1, len(lines)) if lines[position].rstrip("\r\n") == "fi"), None)
+                if end is None or any(line.strip() == END for line in lines[index + 1:end]):
+                    raise CleanupError("Gradle 默认加载区块不完整，已保留：{}".format(path))
+                index = end + 1
+                continue
+            if managed and re.match(r"^\s*(?:export\s+)?(?:GRADLE_USER_HOME|GRADLE_DEFAULT_FILE)=", lines[index]):
+                index += 1
+                continue
+            result.append(lines[index])
+            index += 1
+        return "".join(result)
+
+    def clean_gradle_default(self):
+        if "gradle" not in self.components:
+            return
+        root = self.path(self.environ.get("ENV_FILE", str(self.home / ".config/java-dev/env.sh"))).parent
+        default = self.path(self.environ.get("GRADLE_DEFAULT_FILE", str(root / "gradle-default")))
+        if not self.environ.get("GRADLE_DEFAULT_FILE"):
+            module = self.path(self.environ.get("GRADLE_ENV_FILE", str(root / "gradle.sh")))
+            if module.is_file() and not module.is_symlink():
+                check_parents(module)
+                recorded = set()
+                managed = False
+                for line in module.read_text(encoding="utf-8").splitlines():
+                    if line.strip() == START:
+                        managed = True
+                    elif line.strip() == END:
+                        managed = False
+                    matched = re.fullmatch(r"\s*(?:export\s+)?GRADLE_DEFAULT_FILE=(.*)", line) if managed else None
+                    if matched:
+                        try:
+                            values = shlex.split(matched.group(1), comments=True)
+                            if len(values) == 1:
+                                recorded.add(self.path(values[0]))
+                        except (ValueError, CleanupError):
+                            self.plan.notes.append("Gradle 默认文件引用无法静态确认，已保留：{}".format(module))
+                if len(recorded) == 1:
+                    default = next(iter(recorded))
+                elif len(recorded) > 1:
+                    self.plan.notes.append("Gradle 默认文件有多个引用，保留默认数据并提示重新选择。")
+                    return
+        if not present(default):
+            return
+        check_parents(default)
+        if default.is_symlink() or not default.is_file():
+            self.plan.blockers.append("Gradle 默认文件不是普通文件，已保留：{}".format(default))
+            return
+        content = default.read_bytes()
+        version = content.decode("utf-8").strip()
+        # Python 3.8 不含 removeprefix；版本来自固定命名目录或 launcher。
+        removed = {item.path.name[len("gradle-"):] for item in self.plan.removals if item.kind == "Gradle" and item.path.name.startswith("gradle-")}
+        removed.update(jar.name[len("gradle-launcher-"):-len(".jar")] for item in self.plan.removals if item.kind == "Gradle" for jar in (item.path / "lib").glob("gradle-launcher-*.jar"))
+        if version in removed:
+            self.plan.removals.append(Removal(default, "失效 Gradle 默认引用", identity(default), content=content))
+            self.plan.notes.append("删除失效 Gradle 默认 {}；保留版本未自动切换，请重新选择默认并加载环境。".format(version))
+
+    def frontend_marker(self, root, kind):
+        marker = root / FRONTEND_OWNERSHIP_FILE
+        try:
+            check_parents(marker)
+            if root.is_symlink() or marker.is_symlink() or not marker.is_file() or marker.stat().st_size > 8 * 1024 * 1024:
+                return None
+            content = marker.read_bytes()
+            data = json.loads(content.decode("utf-8"))
+            if not isinstance(data, dict) or type(data.get("schema")) is not int or data["schema"] != 1 or data.get("tool") != "team-frontend-env" or data.get("kind") != kind:
+                return None
+            if not isinstance(data.get("sha256"), str) or not re.fullmatch(r"[a-fA-F0-9]{64}", data["sha256"]):
+                return None
+            return data, (marker, identity(marker), content)
+        except (OSError, ValueError, UnicodeError, CleanupError):
+            return None
+
+    def frontend_guard(self, root):
+        protected = {self.home, *self.home.parents, Path("/"), Path("/Applications"), self.system_apps,
+                     self.home / "Applications", self.home / ".local", self.home / ".local/share",
+                     self.home / ".config", self.home / "Library"}
+        protected.update({Path("/opt"), Path("/Library")})
+        protected.update(self.home / name for name in ("Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", ".local/share/java-dev", ".local/share/team-frontend-env", ".sdkman", ".asdf", ".gradle", "Library/Application Support", "Library/Caches", "Library/Preferences", "Library/Logs"))
+        if root in protected or str(root).startswith(("/System/", "/usr/", "/Library/")):
+            raise CleanupError("拒绝把宽泛目录作为前端安装根：{}".format(root))
+        check_parents(root)
+        if root.is_symlink() or not root.is_dir():
+            raise CleanupError("前端安装路径不是普通目录：{}".format(root))
+
+    def add_frontend(self, root, component, kind, label, valid=True, reason="有效独立来源标记"):
+        marker = self.frontend_marker(root, kind)
+        if kind in ("zsh-autosuggestions", "zsh-syntax-highlighting"):
+            valid = valid and self.snapshot_clean(root, marker)
+            if not valid:
+                reason = "缺少原始快照清单、用户修改或新增内容，保留插件"
+        removable = marker is not None and valid
+        if not removable:
+            self.candidate(component, root, label, False, reason if not valid else "来源未确认，保留")
+            return False
+        self.frontend_guard(root)
+        if not self.candidate(component, root, label, True, reason):
+            return False
+        self.plan.removals.append(Removal(root, label, identity(root), ownership=marker[1], tree=tree_identity(root)))
+        return True
+
+    def snapshot_clean(self, root, marker, extra_directories=()):
+        if not marker:
+            return False
+        data = marker[0]
+        files, links, directories = data.get("files"), data.get("links"), data.get("directories")
+        if not isinstance(files, dict) or not isinstance(links, dict) or not isinstance(directories, list):
+            return False
+        def safe_name(name):
+            return isinstance(name, str) and name and not name.startswith("/") and all(part not in ("", ".", "..") for part in name.split("/"))
+        if not all(safe_name(name) for name in [*files, *links, *directories]):
+            return False
+        expected = set(files) | set(links) | set(directories) | {FRONTEND_OWNERSHIP_FILE} | set(extra_directories)
+        for directory, children, names in os.walk(str(root), followlinks=False):
+            base = Path(directory)
+            for name in children + names:
+                path = base / name
+                relative = path.relative_to(root).as_posix()
+                if self.selected_path(path):
+                    continue
+                if relative not in expected:
+                    return False
+                if relative in links:
+                    if not path.is_symlink() or os.readlink(str(path)) != links[relative]:
+                        return False
+                elif relative in files:
+                    if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != files[relative]:
+                        return False
+                elif relative in directories or relative in extra_directories:
+                    if path.is_symlink() or not path.is_dir():
+                        return False
+        return all(present(root / name) for name in set(files) | set(links) | set(directories))
+
+    def clean_frontend_block(self, marker, label, root):
+        data = marker[0]
+        if not data.get("profile"):
+            self.plan.notes.append("来源记录没有实际 Shell 文件，保留 {} 加载配置。".format(label))
+            return
+        try:
+            profile = self.path(data["profile"])
+            check_parents(profile)
+            if not present(profile):
+                return
+            if profile.is_symlink() or not profile.is_file():
+                raise CleanupError("Shell 配置不是普通文件：{}".format(profile))
+            previous = next((edit for edit in self.plan.edits if edit.path == profile), None)
+            before = previous.before if previous else profile.read_bytes()
+            text = (previous.after if previous else before).decode("utf-8")
+            start = "# >>> team-frontend-env {} >>>".format(label)
+            end = "# <<< team-frontend-env {} <<<".format(label)
+            if text.count(start) != 1 or text.count(end) != 1:
+                self.plan.notes.append("受管 {} 区块缺失或不完整，保留配置：{}".format(label, profile))
+                return
+            expression = re.compile(r"(?ms)^" + re.escape(start) + r"\n(.*?)^" + re.escape(end) + r"\n?")
+            match = expression.search(text)
+            referenced = False
+            if match:
+                for line in match.group(1).splitlines():
+                    try:
+                        tokens = shlex.split(line, comments=True)
+                        referenced = referenced or any(token == str(root) or token.endswith("=" + str(root)) or token.startswith(str(root) + "/") for token in tokens)
+                    except ValueError:
+                        continue
+            if not referenced:
+                self.plan.notes.append("受管 {} 区块与安装路径不一致，保留配置：{}".format(label, profile))
+                return
+            self.record_edit(profile, before, expression.sub("", text).encode("utf-8"))
+        except (OSError, UnicodeError, CleanupError) as error:
+            self.plan.notes.append("保留前端加载配置：{}".format(error))
+
+    @staticmethod
+    def nvm_alias_target(root, value, nodes):
+        seen = set()
+        versions = [path.name for path, _ in nodes if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", path.name)]
+        for _ in range(16):
+            if value in seen:
+                return None
+            seen.add(value)
+            if value in versions or "v" + value in versions:
+                return value if value.startswith("v") else "v" + value
+            if re.fullmatch(r"v?[0-9]+(?:\.[0-9]+)?", value):
+                prefix = "v" + value.lstrip("v") + "."
+                matching = [version for version in versions if version.startswith(prefix)]
+                return max(matching, key=lambda version: tuple(map(int, version[1:].split(".")))) if matching else None
+            if not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)?", value):
+                return None
+            alias = root / "alias" / value
+            try:
+                check_parents(alias)
+                if not alias.is_file() or alias.is_symlink() or alias.stat().st_size > 4096:
+                    return None
+                value = alias.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeError, CleanupError):
+                return None
+        return None
+
+    def frontend_roots(self, label, variable, default):
+        roots = {self.path(self.environ.get(variable, str(default)))}
+        profiles = {self.home / name for name in (".zshrc", ".bash_profile", ".bashrc", ".profile")}
+        profiles.update(self.path(value) for value in self.extra_profiles)
+        if self.environ.get("SHELL_PROFILE"):
+            profiles.add(self.path(self.environ["SHELL_PROFILE"]))
+        if self.environ.get("ZDOTDIR"):
+            profiles.add(self.path(self.environ["ZDOTDIR"]) / ".zshrc")
+        start = "# >>> team-frontend-env {} >>>".format(label)
+        end = "# <<< team-frontend-env {} <<<".format(label)
+        for profile in sorted(profiles):
+            try:
+                check_parents(profile)
+                if profile.is_symlink() or not profile.is_file() or profile.stat().st_size > 1024 * 1024:
+                    continue
+                text = profile.read_text(encoding="utf-8")
+                expression = re.compile(r"(?ms)^" + re.escape(start) + r"\n(.*?)^" + re.escape(end) + r"\n?")
+                for block in expression.findall(text):
+                    for line in block.splitlines():
+                        try:
+                            tokens = shlex.split(line, comments=True)
+                            for token in tokens:
+                                if token.startswith(variable + "="):
+                                    candidate = self.path(token[len(variable) + 1:])
+                                    marker = self.frontend_marker(candidate, "nvm" if label == "nvm" else "oh-my-zsh")
+                                    if marker and marker[0].get("profile") == str(profile):
+                                        roots.add(candidate)
+                        except (ValueError, CleanupError):
+                            continue
+            except (OSError, UnicodeError, CleanupError):
+                self.plan.notes.append("前端配置无法静态确认，保留：{}".format(profile))
+        return sorted(roots)
+
+    def scan_nvm(self):
+        for root in self.frontend_roots("nvm", "NVM_DIR", self.home / ".nvm"):
+            self.scan_nvm_root(root)
+
+    def scan_nvm_root(self, root):
+        if not present(root):
+            return
+        self.frontend_guard(root)
+        node_root = root / "versions/node"
+        nodes = []
+        if present(node_root):
+            check_parents(node_root / "placeholder")
+            for node in sorted(node_root.iterdir()):
+                if not node.is_dir() or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", node.name):
+                    nodes.append((node, False))
+                    continue
+                removed = self.add_frontend(node, "nvm", "node", "Node {}（含该版本全局包）".format(node.name),
+                                            valid=(node / "bin/node").is_file(), reason="有效 Node 独立来源；删除连带该版本全局包")
+                nodes.append((node, removed))
+        default = root / "alias/default"
+        if present(default):
+            if default.is_symlink() or not default.is_file():
+                self.plan.notes.append("nvm default 不是普通文件，保留：{}".format(default))
+            else:
+                content = default.read_bytes()
+                target = content.decode("utf-8").strip()
+                removed_versions = {node.name for node, removed in nodes if removed}
+                if self.nvm_alias_target(root, target, nodes) in removed_versions:
+                    self.plan.removals.append(Removal(default, "失效 nvm default 别名", identity(default), content=content))
+                    self.plan.notes.append("删除指向待删 Node 的 nvm default：{}；未自动切换到其他版本。".format(target))
+        marker = self.frontend_marker(root, "nvm")
+        # 任意外部版本、用户别名或未知文件都阻止整体认领。
+        clean = self.snapshot_clean(root, marker, ("versions", "versions/node", "alias", "alias/lts"))
+        retain = any(not removed for _, removed in nodes) or not clean
+        reason = "部分保留：外部 Node、别名或未知用户内容仍需要 nvm" if retain else "独立来源；所有子版本均在确认范围内"
+        removed = self.add_frontend(root, "nvm", "nvm", "nvm 管理器", valid=not retain and (root / "nvm.sh").is_file(), reason=reason)
+        if removed and marker:
+            self.clean_frontend_block(marker, "nvm", root)
+        elif retain:
+            self.plan.notes.append("nvm 部分保留：{}；保留管理器和加载配置。".format(root))
+
+    def scan_omz(self):
+        for root in self.frontend_roots("terminal-tools", "ZSH", self.home / ".oh-my-zsh"):
+            self.scan_omz_root(root)
+
+    def scan_omz_root(self, root):
+        custom = self.path(self.environ.get("ZSH_CUSTOM", str(root / "custom")))
+        marker = self.frontend_marker(root, "oh-my-zsh")
+        if marker and not self.environ.get("ZSH_CUSTOM") and marker[0].get("zsh_custom"):
+            custom = self.path(marker[0]["zsh_custom"])
+        removed_plugins = set()
+        retained_plugins = set()
+        plugin_markers = []
+        for plugin_root in {custom, root / "custom"}:
+            for name in ("zsh-autosuggestions", "zsh-syntax-highlighting"):
+                target = plugin_root / "plugins" / name
+                if present(target):
+                    source = self.frontend_marker(target, name)
+                    if self.add_frontend(target, "oh-my-zsh", name, name, valid=(target / (name + ".plugin.zsh")).is_file()):
+                        removed_plugins.add(name)
+                        if source:
+                            plugin_markers.append(source)
+                    elif (target / (name + ".plugin.zsh")).is_file():
+                        retained_plugins.add((plugin_root, name))
+        # 环境或来源记录确定的加载根才可保留引用；其他根的同名插件不是替代对象。
+        removed_plugins.difference_update(name for plugin_root, name in retained_plugins if plugin_root == custom)
+        if not present(root):
+            for source in plugin_markers:
+                self.clean_omz_plugin_references(source, removed_plugins)
+            return
+        self.frontend_guard(root)
+        clean = self.snapshot_clean(root, marker, ("custom", "custom/plugins"))
+        framework_removed = self.add_frontend(root, "oh-my-zsh", "oh-my-zsh", "Oh My Zsh 框架",
+                                              valid=clean and (root / "oh-my-zsh.sh").is_file(),
+                                              reason="部分保留：缺少快照清单、用户主题或未知内容" if not clean else "有效来源且快照清单完整")
+        if framework_removed and marker:
+            self.clean_frontend_block(marker, "terminal-tools", root)
+        elif not clean:
+            self.plan.notes.append("Oh My Zsh 部分保留；用户主题和自定义内容保留，加载区块继续有效：{}".format(root))
+        if not framework_removed:
+            for source in ([marker] if marker else plugin_markers):
+                self.clean_omz_plugin_references(source, removed_plugins)
+
+    def clean_omz_plugin_references(self, marker, plugins):
+        """框架保留时只移除受管列表中的已删插件名，保持其他加载逻辑。"""
+        if not plugins or not marker[0].get("profile"):
+            return
+        profile = self.path(marker[0]["profile"])
+        check_parents(profile)
+        if not profile.is_file() or profile.is_symlink():
+            self.plan.notes.append("插件实际 Shell 文件无法确认，保留：{}".format(profile))
+            return
+        previous = next((edit for edit in self.plan.edits if edit.path == profile), None)
+        before = previous.before if previous else profile.read_bytes()
+        text = (previous.after if previous else before).decode("utf-8")
+        start = "# >>> team-frontend-env terminal-tools >>>"
+        end = "# <<< team-frontend-env terminal-tools <<<"
+        expression = re.compile(r"(?ms)(^" + re.escape(start) + r"\n)(.*?)(^" + re.escape(end) + r"\n?)")
+        if text.count(start) != 1 or text.count(end) != 1:
+            self.plan.notes.append("终端受管区块不完整，保留插件配置：{}".format(profile))
+            return
+        def rewrite(match):
+            lines = []
+            for line in match.group(2).splitlines(keepends=True):
+                if re.match(r"^\s*for _team_plugin in ", line):
+                    for name in plugins:
+                        line = re.sub(r"(?<=\s)" + re.escape(name) + r"(?=[\s;])", "", line)
+                elif line.startswith('plugins=("${(@)plugins:#zsh-syntax-highlighting}" ') and "zsh-syntax-highlighting" in plugins:
+                    line = line.replace(" zsh-syntax-highlighting)", ")")
+                lines.append(line)
+            return match.group(1) + "".join(lines) + match.group(3)
+        self.record_edit(profile, before, expression.sub(rewrite, text).encode("utf-8"))
+
+    def ensure_iterm_stopped(self):
+        selected = {item.path for item in self.plan.removals if item.kind == "iTerm2 应用"}
+        if not selected:
+            return
+        if self.environ.get("TERM_PROGRAM") in ("iTerm.app", "iTerm2") or self.environ.get("ITERM_SESSION_ID"):
+            raise CleanupError("正在 iTerm2 宿主会话中运行，请从其他终端重试；不会自动退出宿主。")
+        for line in self.process_reader():
+            if any(str(app / "Contents/MacOS/") in line for app in selected):
+                raise CleanupError("所选 iTerm2 仍在运行，请正常退出后从其他终端重试；不会自动退出应用。")
+
+    @staticmethod
+    def verify_iterm_code(app, expected):
+        if not present(app):
+            return  # 已被同一批明确确认的计划删除；初始缺失由 preflight 的目标身份检查阻止。
+        try:
+            verified = subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)],
+                                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            if verified.returncode:
+                raise CleanupError("iTerm2 代码签名复核失败，已保留：{}".format(app))
+            details = subprocess.run(["/usr/bin/codesign", "-d", "--verbose=4", str(app)],
+                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+            hashes = re.findall(r"(?m)^CDHash=([a-fA-F0-9]{40,64})$", details.stderr + details.stdout)
+            if details.returncode or hashes != [expected]:
+                raise CleanupError("iTerm2 代码身份与安装收据不一致，已保留：{}".format(app))
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise CleanupError("无法复核 iTerm2 代码身份，已保留：{}".format(app)) from error
+
+    def scan_iterm(self):
+        receipts = self.home / ".local/share/team-frontend-env/receipts"
+        if not present(receipts):
+            return
+        check_parents(receipts / "placeholder")
+        for receipt in sorted(receipts.iterdir()):
+            marker = self.frontend_marker(receipt, "iterm2")
+            if not marker:
+                continue
+            data = marker[0]
+            app = self.path(data.get("app_path", str(self.home / "Applications/iTerm.app")))
+            if not present(app):
+                continue
+            try:
+                self.frontend_guard(app)
+                plist = app / "Contents/Info.plist"
+                metadata = plistlib.loads(plist.read_bytes())
+                executable = metadata.get("CFBundleExecutable")
+                if not isinstance(executable, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", executable):
+                    raise CleanupError("iTerm2 可执行文件名无效")
+                binary = app / "Contents/MacOS" / executable
+                evidence = (data.get("app_path") == str(app) and data.get("bundle_identifier") == "com.googlecode.iterm2" and
+                            metadata.get("CFBundleIdentifier") == data.get("bundle_identifier") and
+                            metadata.get("CFBundleShortVersionString") == data.get("bundle_version") and
+                            isinstance(data.get("code_identity"), str) and re.fullmatch(r"[a-fA-F0-9]{40,64}", data["code_identity"]) and
+                            not plist.is_symlink() and not binary.is_symlink() and
+                            hashlib.sha256(plist.read_bytes()).hexdigest() == data.get("info_sha256") and
+                            hashlib.sha256(binary.read_bytes()).hexdigest() == data.get("executable_sha256"))
+                if not evidence:
+                    self.candidate("iterm2", app, "iTerm2 应用", False, "旧收据不足或应用已替换，身份无法确认")
+                    continue
+                if self.candidate("iterm2", app, "iTerm2 应用", True, "外置收据绑定应用路径、版本及代码身份"):
+                    self.plan.removals.append(Removal(app, "iTerm2 应用", identity(app), self.system_apps in app.parents, ownership=marker[1],
+                                                      app_files=((plist, identity(plist), plist.read_bytes()), (binary, identity(binary), binary.read_bytes())), tree=tree_identity(app)))
+                    self.plan.checks.append(self.ensure_iterm_stopped)
+                    self.plan.checks.append(lambda app=app, expected=data["code_identity"]: self.verify_iterm_code(app, expected))
+                    if self.environ.get("TERM_PROGRAM") in ("iTerm.app", "iTerm2") or self.environ.get("ITERM_SESSION_ID"):
+                        self.plan.blockers.append("正在 iTerm2 宿主会话中运行；请从其他终端重试，不会自动退出宿主。")
+            except (OSError, ValueError, plistlib.InvalidFileException, CleanupError) as error:
+                self.candidate("iterm2", app, "iTerm2 应用", False, "身份或路径验证失败：{}".format(error))
+        self.plan.notes.append("保留 iTerm2 偏好、历史与会话数据。")
+
     def scan(self):
-        self.scan_legacy_backup()
+        if "jdk" in self.components:
+            self.scan_legacy_backup()
+        if "nvm" in self.components:
+            self.scan_nvm()
+        if "oh-my-zsh" in self.components:
+            self.scan_omz()
+        if "iterm2" in self.components:
+            self.scan_iterm()
         if self.include_idea_apps:
             self.scan_idea()
         team = self.home / ".local/share/java-dev"
@@ -643,31 +1277,38 @@ class Cleaner:
                     (self.environ.get("MISE_DATA_DIR", str(self.home / ".local/share/mise")), "installs")]
         for manager, directory in managers:
             for name, kind in (("java", "JDK"), ("gradle", "Gradle")):
-                self.container(self.path(manager) / directory / name, kind)
+                if kind.lower() in self.components:
+                    self.container(self.path(manager) / directory / name, kind)
         for key, kind in (("JDK_INSTALL_DIR", "JDK"), ("JAVA_HOME", "JDK"), ("GRADLE_INSTALL_DIR", "Gradle"), ("GRADLE_HOME", "Gradle")):
-            if self.environ.get(key):
+            if kind.lower() in self.components and self.environ.get(key):
                 candidate = self.path(self.environ[key])
                 if candidate.parts[-2:] == ("Contents", "Home"):
                     candidate = candidate.parent.parent
                 self.add_sdk(candidate, kind, system=self.system_jvms in candidate.parents)
         for paths, kind in ((self.extra_jdks, "JDK"), (self.extra_gradles, "Gradle")):
+            if kind.lower() not in self.components:
+                continue
             for path in paths:
                 path = self.path(path)
                 self.safe_root(path)
                 self.add_sdk(path, kind, system=self.system_jvms in path.parents, explicit=True)
-        config_root = self.path(self.environ.get("ENV_FILE", str(self.home / ".config/java-dev/env.sh"))).parent
-        profiles = {config_root / name for name in ("env.sh", "jdk.sh", "gradle.sh")}
+        config_root = self.path(self.environ.get("ENV_FILE", str(self.home / ".config/java-dev/env.sh"))).parent if self.components & {"jdk", "gradle"} else self.home / ".config/java-dev"
+        profiles = {config_root / "env.sh"} if self.components & {"jdk", "gradle"} else set()
+        profiles.update(config_root / (component + ".sh") for component in ("jdk", "gradle") if component in self.components)
         profiles.update(self.home / name for name in (".zshenv", ".zprofile", ".zshrc", ".zlogin", ".bash_profile", ".bash_login", ".bashrc", ".profile"))
-        if self.environ.get("ZDOTDIR"):
+        if self.components & {"jdk", "gradle"} and self.environ.get("ZDOTDIR"):
             profiles.update(self.path(self.environ["ZDOTDIR"]) / name for name in (".zshenv", ".zprofile", ".zshrc", ".zlogin"))
-        profiles.update(self.path(self.environ[key]) for key in ("ENV_FILE", "JDK_ENV_FILE", "GRADLE_ENV_FILE", "SHELL_PROFILE") if self.environ.get(key))
-        profiles.update(self.path(path) for path in self.extra_profiles)
+        profiles.update(self.path(self.environ[key]) for key in ("ENV_FILE", "JDK_ENV_FILE", "GRADLE_ENV_FILE", "SHELL_PROFILE") if self.components & {"jdk", "gradle"} and self.environ.get(key) and
+                        (key not in ("JDK_ENV_FILE", "GRADLE_ENV_FILE") or key.split("_")[0].lower() in self.components))
+        if self.components & {"jdk", "gradle"}:
+            profiles.update(self.path(path) for path in self.extra_profiles)
         # 静态收敛 SDK 路径与加载关系，避免排序靠前的入口引用稍后被删的模块。
         previous_state = None
+        frontend_edits = list(self.plan.edits)
         for _ in range(len(profiles) + 2):
-            self.plan.edits = []
+            self.plan.edits = list(frontend_edits)
             for path in sorted(profiles):
-                if present(path):
+                if present(path) and self.components & {"jdk", "gradle"}:
                     try:
                         self.clean_config(path)
                     except (OSError, UnicodeError, CleanupError) as error:
@@ -678,6 +1319,7 @@ class Cleaner:
             if state == previous_state:
                 break
             previous_state = state
+        self.clean_gradle_default()
         self.plan.notes.append("保留 Gradle 共享用户配置、缓存和 Wrapper 分发，以及版本管理器的原有选择配置。")
         # 父目录一旦在计划中，内部子目录不再单独删除。
         unique = []
@@ -685,7 +1327,14 @@ class Cleaner:
             if not any(parent.path == item.path or parent.path in item.path.parents for parent in unique):
                 unique.append(item)
         self.plan.removals = unique
-        self.plan_empty_tool_directories()
+        if self.components & {"jdk", "gradle"}:
+            self.plan_empty_tool_directories()
+        if self.instance_selection is not None:
+            unknown = self.instance_selection - set(self.known_instances)
+            invalid = [key for key in self.instance_selection if key in self.known_instances and not self.known_instances[key]["removable"]]
+            if unknown or invalid:
+                raise CleanupError("实例范围未知、已变化或不可删除，未执行修改：{}".format(",".join(sorted(unknown | set(invalid)))))
+        self.plan.instances = sorted(self.known_instances.values(), key=lambda item: (COMPONENTS.index(item["component"]), item["path"]))
         self.plan.blockers = list(dict.fromkeys(self.plan.blockers))
         self.plan.notes = list(dict.fromkeys(self.plan.notes))
         self.plan.notes.append("保留业务项目、系统 Java 占位程序、其他 SDKMAN 工具及 SDK 下载压缩包。")
@@ -694,11 +1343,16 @@ class Cleaner:
         elif not self.include_idea:
             self.plan.notes.append("保留 IDEA 与其内置 JBR；清理 IDEA 应用、配置和插件须加 --include-idea。")
         self.plan.notes.append("/etc 全局配置、launchctl 环境、安装器收据及未列出的自定义位置需另行核对。")
+        if "jdk" in self.components and "gradle" not in self.components:
+            self.plan.notes.append("只清理 JDK；保留 Gradle，但依赖所删 JDK 的版本可能无法运行。")
         return self.plan
 
     def scan_legacy_backup(self):
         path = self.home / ".config/java-dev/env.sh.bak"
         if not path.is_file() or path.is_symlink():
+            return
+        if self.instance_selection is not None:
+            self.plan.notes.append("实例白名单模式保留未单独确认的旧配置备份：{}".format(path))
             return
         try:
             check_parents(path)
@@ -849,6 +1503,22 @@ class Cleaner:
             return
         if metadata.get("CFBundleExecutable") != "idea" or not (path / "Contents/MacOS/idea").is_file():
             raise CleanupError("IDEA 应用包不完整，已保留：{}".format(path))
+        selector = None
+        product = path / "Contents/Resources/product-info.json"
+        if product.is_file() and not product.is_symlink():
+            try:
+                value = json.loads(product.read_text(encoding="utf-8")).get("dataDirectoryName")
+                if isinstance(value, str) and IDEA_PRODUCT.fullmatch(value):
+                    selector = value
+            except (ValueError, OSError, UnicodeError):
+                pass
+        if selector is None:
+            version = re.match(r"^([0-9]{4}\.[0-9]+)(?:\.|$)", str(metadata.get("CFBundleShortVersionString", "")))
+            if version:
+                selector = ("IdeaIC" if metadata["CFBundleIdentifier"].endswith(".ce") else "IntelliJIdea") + version.group(1)
+        self.idea_app_catalog[path] = (selector, metadata["CFBundleIdentifier"])
+        if not self.candidate("idea", path, "IDEA 应用", True, "应用标识验证通过；只处理选中应用"):
+            return
         resolved = path.resolve()
         if path.is_symlink():
             self.plan.notes.append("IDEA 应用只删除链接，不跟随外部目标：{} -> {}".format(path, resolved))
@@ -881,6 +1551,18 @@ class Cleaner:
         self.scan_idea_apps()
         if not self.include_idea:
             return
+        selected = {item.path for item in self.plan.removals if item.kind == "IDEA 应用"}
+        retained_apps = set(self.idea_app_catalog) - selected
+        selected_selectors = {selector for app, (selector, _) in self.idea_app_catalog.items() if app in selected and selector}
+        retained_selectors = {selector for app, (selector, _) in self.idea_app_catalog.items() if app not in selected and selector}
+        selectors = selected_selectors - retained_selectors
+        if any(not self.idea_app_catalog[app][0] for app in retained_apps):
+            selectors = set()
+            self.plan.notes.append("保留 IDEA 的用户目录关联不明；无法排除共享，保留用户配置、SDK 登记与插件。")
+        if not selectors:
+            self.plan.notes.append("IDEA 用户数据与所选应用关联不明或共享，保留配置、SDK 登记与插件。")
+        for selector in retained_selectors & selected_selectors:
+            self.plan.notes.append("其他 IDEA 仍共享 {}，保留该版本用户数据。".format(selector))
         roots = [(self.home / "Library/Application Support/JetBrains", "IDEA 用户配置与插件"),
                  (self.home / "Library/Application Support", "IDEA 旧版插件"),
                  (self.home / "Library/Preferences", "IDEA 旧版用户配置")]
@@ -895,11 +1577,13 @@ class Cleaner:
             try:
                 check_parents(root / "placeholder")
                 for path in sorted(root.iterdir()):
-                    if IDEA_PRODUCT.fullmatch(path.name):
+                    if path.name in selectors:
                         self.add_idea_data(path, kind)
             except (OSError, CleanupError) as error:
                 self.plan.blockers.append(str(error))
         for identifier in IDEA_IDS:
+            if not any(app in selected and value[1] == identifier for app, value in self.idea_app_catalog.items()) or any(app not in selected and value[1] == identifier for app, value in self.idea_app_catalog.items()):
+                continue
             path = self.home / "Library/Preferences" / (identifier + ".plist")
             if present(path):
                 try:
@@ -907,7 +1591,7 @@ class Cleaner:
                 except CleanupError as error:
                     self.plan.blockers.append(str(error))
         for root in self.home.iterdir():
-            if root.name.startswith(".") and IDEA_PRODUCT.fullmatch(root.name[1:]):
+            if root.name.startswith(".") and root.name[1:] in selectors:
                 for name, kind in (("config", "IDEA 旧版用户配置与插件"), ("plugins", "IDEA 旧版插件")):
                     try:
                         self.add_idea_data(root / name, kind)
@@ -922,7 +1606,22 @@ class Cleaner:
         if self.environ.get("IDEA_PLUGINS_DIR"):
             plugins.append(self.environ["IDEA_PLUGINS_DIR"])
         for path in plugins:
-            self.add_idea_data(path, "IDEA 自定义插件", explicit=True)
+            candidate = self.path(path)
+            self.idea_path_guard(candidate)
+            if present(candidate):
+                # 即使关联不明而保留，显式宽泛/混合目录也不能成为候选。
+                if candidate.is_symlink() or not candidate.is_dir():
+                    raise CleanupError("自定义 IDEA 插件位置不是普通目录：{}".format(candidate))
+                for child in candidate.iterdir():
+                    if child.name == ".DS_Store" or child.is_symlink() or child.is_file() and child.suffix == ".jar":
+                        continue
+                    if child.is_dir() and (any((child / "lib").glob("*.jar")) or (child / "META-INF/plugin.xml").is_file()):
+                        continue
+                    raise CleanupError("自定义 IDEA 插件目录含未识别资料，已保留：{}".format(child))
+            if selected and not retained_apps:
+                self.add_idea_data(path, "IDEA 自定义插件", explicit=True)
+            else:
+                self.plan.notes.append("自定义 IDEA 插件关联不明或仍有保留实例，保留：{}".format(path))
 
 
 
@@ -931,7 +1630,7 @@ def verify_confirmed_scope(approved, refreshed):
     previous = {(item.path, item.kind, item.system): item for item in approved.removals}
     for item in refreshed.removals:
         old = previous.get((item.path, item.kind, item.system))
-        if old is None or old.stamp[:2] != item.stamp[:2] or old.ownership != item.ownership or old.app_files != item.app_files:
+        if old is None or old.stamp[:2] != item.stamp[:2] or old.ownership != item.ownership or old.app_files != item.app_files or old.tree != item.tree:
             raise CleanupError("IDEA 退出后清理目标发生变化；尚未执行清理，请重新运行并确认计划：{}".format(item.path))
     if not {edit.path for edit in refreshed.edits}.issubset({edit.path for edit in approved.edits}):
         raise CleanupError("IDEA 退出后出现新的配置清理目标；尚未执行清理，请重新确认计划。")
@@ -945,8 +1644,11 @@ def main(argv=None, cleaner_factory=None, input_reader=None):
     mode.add_argument("--apply", action="store_true", help="执行计划，需输入 DELETE")
     mode.add_argument("--dry-run", action="store_true", help="只预览，不提问、不退出应用")
     parser.add_argument("--yes", action="store_true", help="仅配合 --apply 跳过输入确认")
+    parser.add_argument("--components", metavar="CSV|all", help="仅扫描所选 jdk,gradle,nvm,idea,iterm2,oh-my-zsh")
+    parser.add_argument("--instances", metavar="CSV", help="计划中实例 ID 的排他白名单，须明确 --components")
+    parser.add_argument("--plan-json", action="store_true", help="只输出 schema 1 的静态实例计划，不执行 SDK")
     parser.add_argument("--include-system", action="store_true", help="包含系统 JDK 与系统 Applications 中的 IDEA，必要时逐项 sudo")
-    parser.add_argument("--include-idea", action="store_true", help="直接删除 IDEA 全版本应用、配置及插件，不备份")
+    parser.add_argument("--include-idea", action="store_true", help="包含与所选 IDEA 明确关联且不共享的配置及插件")
     parser.add_argument("--include-idea-apps", action="store_true", help="只删除 IDEA 应用，保留用户配置、SDK 登记及插件")
     parser.add_argument("--idea-app", action="append", default=[], metavar="绝对路径", help="额外 IDEA .app，可重复，须 --include-idea-apps 或 --include-idea")
     parser.add_argument("--idea-plugins-dir", action="append", default=[], metavar="绝对路径", help="额外 IDEA 专属插件目录，可重复，须 --include-idea")
@@ -957,6 +1659,20 @@ def main(argv=None, cleaner_factory=None, input_reader=None):
     args = parser.parse_args(argv)
     if args.yes and not args.apply:
         parser.error("--yes 必须与 --apply 一起使用")
+    if args.apply and args.yes and args.components is None:
+        parser.error("--apply --yes 须明确 --components，不能将默认预览升级为全量删除")
+    if args.components is not None:
+        try:
+            parse_components(args.components)
+        except CleanupError as error:
+            parser.error(str(error))
+    if args.instances is not None and args.components is None:
+        parser.error("--instances 须明确指定 --components，不扩大组件范围")
+    if args.plan_json and args.apply:
+        parser.error("--plan-json 仅预览，不能与 --apply 一起使用")
+    terminal = sys.stdin.isatty() and sys.stdout.isatty()
+    if args.apply and not terminal and (args.components is None or not args.yes):
+        parser.error("非交互删除须明确 --components 并同时指定 --apply --yes")
     try:
         if sys.platform != "darwin":
             raise CleanupError("本工具面向 macOS；不在 Windows/Linux 上执行清理。")
@@ -964,18 +1680,33 @@ def main(argv=None, cleaner_factory=None, input_reader=None):
             raise CleanupError("请以目标用户运行，不要对整个脚本使用 sudo。")
         factory = cleaner_factory or Cleaner
         read_answer = input_reader or input
-        terminal = sys.stdin.isatty() and sys.stdout.isatty()
-        guided = terminal and not args.dry_run and not args.yes
+        guided = terminal and not args.dry_run and not args.plan_json and not args.yes
 
         def make_cleaner(include_apps=None):
+            selected_components = args.components
+            if selected_components is None:
+                selected_components = ("jdk,gradle,idea" if args.include_idea or args.include_idea_apps or include_apps else "jdk,gradle") if guided else "all"
             return factory(Path.home(), include_system=args.include_system,
                            remove_caches=args.remove_caches, extra_jdks=args.jdk_dir,
                            extra_gradles=args.gradle_dir, extra_profiles=args.profile,
                            include_idea=args.include_idea, extra_idea_apps=args.idea_app,
                            extra_idea_plugins=args.idea_plugins_dir,
-                           include_idea_apps=args.include_idea_apps if include_apps is None else include_apps)
+                           include_idea_apps=args.include_idea_apps if include_apps is None else include_apps,
+                           components=selected_components, instances=args.instances)
 
-        if guided and not (args.include_idea or args.include_idea_apps):
+        if guided and args.components is not None and "idea" in parse_components(args.components) and not (args.include_idea or args.include_idea_apps):
+            discovery = make_cleaner(True)
+            discovery.scan_idea_apps()
+            apps = [item.path for item in discovery.plan.removals if item.kind == "IDEA 应用"]
+            if apps:
+                print("所选 IDEA 软件：\n" + "\n".join("  " + str(path) for path in apps))
+                while True:
+                    preserve = read_answer("是否保留所选 IDEA 用户配置、SDK 登记和插件？[Y/n]：").strip().lower()
+                    if preserve in ("", "n", "no", "y", "yes"):
+                        args.include_idea_apps = True
+                        args.include_idea = preserve in ("n", "no")
+                        break
+        elif guided and args.components is None and not (args.include_idea or args.include_idea_apps):
             discovery = make_cleaner(True)
             discovery.scan_idea_apps()
             apps = [item.path for item in discovery.plan.removals if item.kind == "IDEA 应用"]
@@ -996,9 +1727,12 @@ def main(argv=None, cleaner_factory=None, input_reader=None):
                 print("本次保留 IDEA 软件、配置和插件；继续核对本工具 SDK 与环境配置清理计划。")
         cleaner = make_cleaner()
         plan = cleaner.scan()
+        if args.plan_json:
+            print(json.dumps(plan.as_json(), ensure_ascii=False))
+            return 0
         print(plan.describe())
         if not args.apply and not guided:
-            print("仅预览，未修改文件。执行需加 --apply；完整重装测试加 --include-idea --include-system --remove-caches。")
+            print("仅预览，未修改文件。执行须明确 --components；非交互删除还须同时加 --apply --yes。")
             return 0
         # 系统目录、来源标记与文件保护先核对；最终确认前不退出应用。
         plan.preflight(check_processes=False)

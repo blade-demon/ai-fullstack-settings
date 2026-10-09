@@ -664,11 +664,11 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.assertFalse(record.exists())
         self.assertTrue(jdk.exists())
 
-    def idea(self, path, identifier="com.jetbrains.intellij.ce"):
+    def idea(self, path, identifier="com.jetbrains.intellij.ce", version=None):
         (path / "Contents/MacOS").mkdir(parents=True)
         (path / "Contents/Info.plist").write_bytes(plistlib.dumps({
             "CFBundleIdentifier": identifier, "CFBundleExecutable": "idea",
-            "CFBundleShortVersionString": "2024.3.7.1"}))
+            "CFBundleShortVersionString": version or ("2026.1.0" if identifier == "com.jetbrains.intellij" else "2024.3.7.1")}))
         (path / "Contents/MacOS/idea").write_text("must never execute\n")
         self.jdk(path / "Contents/jbr")
         return path
@@ -691,7 +691,7 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.assertTrue(plugin.exists())
         self.assertFalse((self.home / "Library/Logs/team-java-env/cleanup").exists())
 
-    def test_all_idea_versions_plugins_and_config_are_deleted_without_backups(self):
+    def test_selected_idea_versions_delete_associated_data_and_keep_unassociated_old_versions(self):
         apps = [self.idea(self.home / "Applications/IntelliJ IDEA CE.app"),
                 self.idea(self.home / "Applications/Idea Ultimate 2026.app", "com.jetbrains.intellij")]
         configs = [self.write(self.home / "Library/Application Support/JetBrains" / version / "plugins/demo/lib/demo.jar", "plugin")
@@ -704,7 +704,7 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.idea_cleaner().scan().apply()
         self.assertTrue(all(not app.exists() for app in apps))
         self.assertTrue(all(not config.exists() for config in configs))
-        self.assertFalse(old_plugin.exists())
+        self.assertTrue(old_plugin.exists())
         self.assertFalse(preferences.exists())
         self.assertTrue(webstorm.exists())
         self.assertEqual(keep.read_text(), "keep")
@@ -717,6 +717,7 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.idea_cleaner().scan().apply()
         self.assertTrue(cache.exists())
         self.assertTrue(log.exists())
+        self.idea(self.home / "Applications/IntelliJ IDEA CE.app")
         self.idea_cleaner(remove_caches=True).scan().apply()
         self.assertFalse(cache.exists())
         self.assertFalse(log.exists())
@@ -743,6 +744,7 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.assertFalse((self.home / "Library/Logs/team-java-env/cleanup").exists())
 
     def test_idea_symlink_config_and_unsafe_custom_plugins_are_preserved(self):
+        self.idea(self.home / "Applications/IntelliJ IDEA CE.app")
         external = self.write(self.base / "external/config/options.xml", "keep")
         link = self.home / "Library/Application Support/JetBrains/IdeaIC2024.3"
         link.parent.mkdir(parents=True)
@@ -781,6 +783,7 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.assertFalse(app.exists())
 
     def test_legacy_hidden_idea_config_is_removed_but_cache_requires_cache_flag(self):
+        self.idea(self.home / "Applications/IntelliJ IDEA CE.app", version="2019.3.1")
         settings = self.write(self.home / ".IdeaIC2019.3/config/options/editor.xml", "settings")
         plugin = self.write(self.home / ".IdeaIC2019.3/config/plugins/demo/lib/demo.jar", "plugin")
         history = self.write(self.home / ".IdeaIC2019.3/system/LocalHistory/history", "history")
@@ -788,6 +791,7 @@ class UninstallJavaGradleTests(unittest.TestCase):
         self.assertFalse(settings.exists())
         self.assertFalse(plugin.exists())
         self.assertTrue(history.exists())
+        self.idea(self.home / "Applications/IntelliJ IDEA CE.app", version="2019.3.1")
         self.idea_cleaner(remove_caches=True).scan().apply()
         self.assertFalse(history.exists())
 

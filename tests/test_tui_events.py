@@ -26,7 +26,7 @@ class FrontendTuiEventsTests(unittest.TestCase):
     run_entry = frontend_fixtures.FrontendEnvironmentTests.run_entry
 
     def test_components_report_separate_statuses(self):
-        result = self.run_entry('--frontend', extra={'TEAM_TUI_EVENTS': '1', 'NODE_TEST_EXIT': '43'})
+        result = self.run_entry(extra={'TEAM_TUI_EVENTS': '1', 'NODE_TEST_EXIT': '43'})
         self.assertEqual(result.returncode, 43, result.stdout + result.stderr)
         self.assertIn('@@TEAM_TUI\tstage\tfrontend-node\tfailed', result.stdout)
         self.assertIn('@@TEAM_TUI\tstage\tfrontend-iterm2\tsucceeded', result.stdout)

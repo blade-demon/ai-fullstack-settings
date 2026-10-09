@@ -58,6 +58,6 @@ if [ -n "$PROJECT_DIR" ]; then
     else log '[缺失] 所选项目不存在或缺少 build.gradle/build.gradle.kts。'; failed=1; fi
 else log '[未选择项目] 本次未执行构建，不能据此宣称业务项目通过。'; fi
 log '[验证边界] 扫描不运行 Gradle 构建或启动 IDEA；签名、运行时、插件与项目构建由修复后的验证步骤确认。'
-if [ "$failed" -ne 0 ]; then log '[一键修复] 检测到缺失配置，可选择菜单 1；每次修复均保存可 review 的历史。'
-else log '[后续验证] 软件及配置静态检查齐全；可选择菜单 1 执行完整环境验证。项目构建需通过命令行指定 --project。'; fi
+if [ "$failed" -ne 0 ]; then log '[后续配置] 检测到缺失配置，请进入“安装与配置”选择需要的组件。'
+else log '[后续验证] 软件及配置静态检查齐全，可通过“安装与配置”验证所选组件；业务项目请按项目文档另行验证。'; fi
 exit "$failed"

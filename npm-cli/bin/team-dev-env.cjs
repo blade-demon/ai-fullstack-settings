@@ -6,9 +6,9 @@ const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-function fail(message) {
+function fail(message, code = 1) {
   process.stderr.write(`启动失败：${message}\n`);
-  process.exitCode = 1;
+  process.exitCode = code;
 }
 
 function signalExitCode(signal) {
@@ -81,24 +81,34 @@ function runLauncher(launcher, forwarded, environment) {
 }
 
 async function main(argv) {
+  if (argv.includes('--plain') || argv.includes('--frontend')) {
+    return fail('--plain/--frontend 已移除，请使用 install --components nvm,iterm2,oh-my-zsh。', 2);
+  }
+  let mode = 'install';
+  if (['install', 'uninstall'].includes(argv[0])) mode = argv.shift();
+  else if (argv[0] === 'help') {
+    argv.shift();
+    if (argv.length > 1 || (argv.length && !['install', 'uninstall'].includes(argv[0]))) {
+      return fail('帮助目标仅支持 install 或 uninstall。', 2);
+    }
+    argv = ['--help'];
+  } else if (argv[0] && !argv[0].startsWith('-')) return fail(`未知操作：${argv[0]}`, 2);
   if (argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write(`用法：team-dev-env [install|frontend|uninstall] --server 主机:端口 [选项]
+    process.stdout.write(`用法：team-dev-env [install|uninstall] --server 主机:端口 [选项]
 
-install     打开 Go TUI 主界面（默认）
-frontend    打开前端工具页面；明确安装参数支持 --component all|node|iterm2|zsh 和 --node-version 14|16|18|all
-uninstall   打开安全卸载页面；保留原 DELETE 确认
---plain     使用原文本菜单/命令行模式
+install     打开安装页，按 Enter 执行所选组件
+uninstall   打开卸载页，保留 DELETE 确认
+--components jdk,gradle,nvm,idea,iterm2,oh-my-zsh 或 all
+--gradle-version 4.5.1|6.8|all
+--node-version none|10|14|18|22|all
 --scheme    http 或 https，默认 http
---dry-run   仅显示下载地址与目标参数，不联网、不执行安装或卸载
+--dry-run   本地启动器预演，不联网、不执行
 
-也可使用 SERVER_ADDR、SERVER_SCHEME 环境变量指定团队服务。
-npx 需要已有 Node/npm；尚未安装 Node 的电脑请使用 start.zip 双击入口。
+也可使用 SERVER_ADDR、SERVER_SCHEME 指定团队服务。
+npx 需要 Node >=14.14；未安装 Node 时使用 bash devtool-helper.sh。
 `);
     return;
   }
-  if (process.platform !== 'darwin') return fail('成员安装工具仅支持 macOS。');
-  let mode = 'install';
-  if (['install', 'frontend', 'uninstall'].includes(argv[0])) mode = argv.shift();
   let server = process.env.SERVER_ADDR || '';
   let scheme = process.env.SERVER_SCHEME || 'http';
   let preview = false;
@@ -115,27 +125,39 @@ npx 需要已有 Node/npm；尚未安装 Node 的电脑请使用 start.zip 双�
     else if (value === '--dry-run') preview = true;
     else forwarded.push(value);
   }
+  for (let index = 0; index < forwarded.length; index += 1) {
+    const arg = forwarded[index];
+    let components;
+    if (arg === '--components') components = forwarded[++index];
+    else if (arg.startsWith('--components=')) components = arg.slice(13);
+    else continue;
+    if (!components || !components.split(',').every(item => ['jdk', 'gradle', 'nvm', 'idea', 'iterm2', 'oh-my-zsh', 'all'].includes(item)) ||
+        (components !== 'all' && components.split(',').includes('all'))) return fail('组件范围无效。', 2);
+  }
+  if (!preview && mode === 'install' && !(process.stdin.isTTY && process.stdout.isTTY) &&
+      !forwarded.some((arg, index) => (arg === '--components' && forwarded[index + 1] && !forwarded[index + 1].startsWith('-')) ||
+                                  (arg.startsWith('--components=') && arg.length > 13))) {
+    return fail('非交互安装必须明确 --components。', 2);
+  }
   if (!/^([A-Za-z0-9][A-Za-z0-9._-]*|\[[A-Fa-f0-9:]+\])(:[0-9]+)?$/.test(server)) {
     return fail('请用 --server 或 SERVER_ADDR 指定团队服务器（主机:端口，不含协议或路径）。');
   }
   if (!['http', 'https'].includes(scheme)) return fail('--scheme 只能为 http 或 https。');
-  const entry = mode === 'uninstall' ? '卸载环境.command' : '开始配置.command';
-  if (mode === 'frontend') forwarded.unshift('--frontend');
   if (preview) {
     process.stdout.write(`工具包：${scheme}://${server}/dev-env/team-dev-env.tar.gz\n`);
-    process.stdout.write(`入口：${entry}\n参数：${forwarded.join(' ')}\n仅预演，未联网或执行。\n`);
+    process.stdout.write(`入口：.support/scripts/run-tool.sh ${mode}\n参数：${forwarded.join(' ')}\n仅预演，未联网或执行。\n`);
     return;
   }
-  const candidates = [path.join(__dirname, '../assets/start.command.in'), path.join(__dirname, '../../tools/start.command.in')];
+  if (process.platform !== 'darwin') return fail('成员安装工具仅支持 macOS。');
+  const candidates = [path.join(__dirname, '../assets/devtool-helper.sh.in'), path.join(__dirname, '../../tools/devtool-helper.sh.in')];
   const templatePath = candidates.find(file => fs.existsSync(file));
   if (!templatePath) return fail('npm 包缺少下载模板，请重新获取完整包。');
   let temporary;
   try {
     const template = fs.readFileSync(templatePath, 'utf8')
-      .split('@SERVER_ADDR@').join(server).split('@SERVER_SCHEME@').join(scheme)
-      .split('@ENTRY_NAME@').join(entry).split('@ENTRY_LABEL@').join(mode === 'uninstall' ? '卸载' : '配置');
+      .split('@SERVER_ADDR@').join(server).split('@SERVER_SCHEME@').join(scheme);
     temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'team-dev-env-npx-'));
-    const launcher = path.join(temporary, 'launch.command');
+    const launcher = path.join(temporary, 'devtool-helper.sh');
     fs.writeFileSync(launcher, template, { mode: 0o700 });
     const childEnvironment = { ...process.env, SERVER_ADDR: server, SERVER_SCHEME: scheme };
     // npm exec 的临时 prefix 指向启动器的 Node，不能作为待安装 nvm 的全局目录。
@@ -145,7 +167,7 @@ npx 需要已有 Node/npm；尚未安装 Node 的电脑请使用 start.zip 双�
         if (key.toUpperCase() === 'NPM_CONFIG_PREFIX' || key === 'PREFIX') delete childEnvironment[key];
       }
     }
-    process.exitCode = await runLauncher(launcher, forwarded, childEnvironment);
+    process.exitCode = await runLauncher(launcher, [mode, ...forwarded], childEnvironment);
   } catch (error) {
     fail(error.message);
   } finally {
